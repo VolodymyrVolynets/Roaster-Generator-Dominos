@@ -1,0 +1,8 @@
+services:
+  roaster-generator:
+    build:
+      context: .
+      dockerfile: Roaster Generator/Dockerfile
+    image: roaster-generator
+    ports:
+      - "8080:8080"
