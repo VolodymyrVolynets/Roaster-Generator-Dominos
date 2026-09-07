@@ -18,13 +18,51 @@ function parseDate(dateValue) {
 async function fetchJson(url, options) {
   const response = await fetch(url, options)
   const body = await response.text()
-  const payload = body ? JSON.parse(body) : null
+  let payload = null
+
+  try {
+    payload = body ? JSON.parse(body) : null
+  } catch {
+    payload = null
+  }
 
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.title || 'The API request failed.')
+    const validationMessages = payload?.errors
+      ? Object.values(payload.errors).flatMap((messages) =>
+          Array.isArray(messages) ? messages : [messages],
+        )
+      : []
+    const messages = [payload?.message, payload?.detail, payload?.title, ...validationMessages]
+      .filter(Boolean)
+      .filter((message, index, allMessages) => allMessages.indexOf(message) === index)
+
+    throw new Error(messages.join('\n') || body || 'The API request failed.')
   }
 
   return payload
+}
+
+function ErrorPopup({ message, onClose }) {
+  if (!message) {
+    return null
+  }
+
+  return (
+    <div className="error-popup" role="alert" aria-live="assertive">
+      <div className="error-popup-header">
+        <strong>Something went wrong</strong>
+        <button
+          type="button"
+          className="error-popup-close"
+          aria-label="Close error message"
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      <p>{message}</p>
+    </div>
+  )
 }
 
 function TimeSelector({ id, label, value, onChange }) {
@@ -58,6 +96,7 @@ function App() {
   const [schedule, setSchedule] = useState(null)
   const [saveState, setSaveState] = useState({ status: 'idle' })
   const [weekOffset, setWeekOffset] = useState(minWeekOffset)
+  const [errorPopup, setErrorPopup] = useState('')
 
   useEffect(() => {
     fetchJson('/api/employees')
@@ -66,7 +105,10 @@ function App() {
         setSelectedEmployeeId(payload.length ? String(payload[0].id) : '')
         setEmployeesState({ status: 'success' })
       })
-      .catch((error) => setEmployeesState({ status: 'error', message: error.message }))
+      .catch((error) => {
+        setEmployeesState({ status: 'error', message: error.message })
+        setErrorPopup(error.message)
+      })
   }, [])
 
   useEffect(() => {
@@ -79,13 +121,17 @@ function App() {
     setScheduleState({ status: 'loading' })
     setSchedule(null)
     setSaveState({ status: 'idle' })
+    setErrorPopup('')
 
     fetchJson(`/api/employees/${selectedEmployeeId}/schedule?weekOffset=${weekOffset}`)
       .then((payload) => {
         setSchedule(payload)
         setScheduleState({ status: 'success' })
       })
-      .catch((error) => setScheduleState({ status: 'error', message: error.message }))
+      .catch((error) => {
+        setScheduleState({ status: 'error', message: error.message })
+        setErrorPopup(error.message)
+      })
   }, [selectedEmployeeId, weekOffset])
 
   function updateDay(date, field, value) {
@@ -117,6 +163,7 @@ function App() {
   async function saveSchedule(event) {
     event.preventDefault()
     setSaveState({ status: 'saving' })
+    setErrorPopup('')
 
     try {
       const payload = await fetchJson(
@@ -139,11 +186,14 @@ function App() {
       setSaveState({ status: 'success', message: 'Schedule saved.' })
     } catch (error) {
       setSaveState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
     }
   }
 
   return (
-    <main className="page-shell">
+    <>
+      <ErrorPopup message={errorPopup} onClose={() => setErrorPopup('')} />
+      <main className="page-shell">
       <section className="app-card">
         <header className="page-header">
           <span className="eyebrow">Roaster Generator</span>
@@ -288,7 +338,8 @@ function App() {
           </form>
         )}
       </section>
-    </main>
+      </main>
+    </>
   )
 }
 
