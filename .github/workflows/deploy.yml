@@ -81,8 +81,6 @@ jobs:
             -i "$HOME/.ssh/deploy_key" \
             "$VPS_USER@$VPS_HOST" \
             'docker network inspect roaster-generator_default >/dev/null 2>&1 || docker network create roaster-generator_default
-             TRAEFIK_CONTAINER="$(docker ps -a --filter name=traefik --format "{{.Names}}" | head -n 1)"
-             if [ -n "$TRAEFIK_CONTAINER" ]; then docker network connect roaster-generator_default "$TRAEFIK_CONTAINER" 2>/dev/null || true; fi
              cd /opt/roaster-generator &&
              docker compose -f compose.prod.yaml pull &&
              docker compose -f compose.prod.yaml up -d --remove-orphans &&
