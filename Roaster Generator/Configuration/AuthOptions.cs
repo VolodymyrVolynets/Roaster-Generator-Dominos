@@ -1,0 +1,12 @@
+namespace Roaster_Generator.Configuration;
+
+public sealed class AuthOptions
+{
+    public const string SectionName = "Auth";
+
+    public string AdminUsername { get; set; } = string.Empty;
+
+    public string AdminPassword { get; set; } = string.Empty;
+
+    public const string DefaultEmployeePassword = "12345";
+}

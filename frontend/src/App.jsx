@@ -9,6 +9,12 @@ const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2,
 const minWeekOffset = 1
 const maxWeekOffset = 3
 const weekLabels = ['Current week', 'Next week', 'Week after next', 'Three weeks ahead']
+const emptyEmployeeForm = {
+  employeeNumber: '',
+  firstName: '',
+  lastName: '',
+  phoneNumber: '',
+}
 
 function parseDate(dateValue) {
   const [year, month, day] = dateValue.split('-').map(Number)
@@ -34,7 +40,7 @@ function getShiftDuration(startTime, finishTime) {
 }
 
 async function fetchJson(url, options) {
-  const response = await fetch(url, options)
+  const response = await fetch(url, { ...options, credentials: 'include' })
   const body = await response.text()
   let payload = null
 
@@ -54,7 +60,9 @@ async function fetchJson(url, options) {
       .filter(Boolean)
       .filter((message, index, allMessages) => allMessages.indexOf(message) === index)
 
-    throw new Error(messages.join('\n') || body || 'The API request failed.')
+    const error = new Error(messages.join('\n') || body || 'The API request failed.')
+    error.status = response.status
+    throw error
   }
 
   return payload
@@ -83,6 +91,52 @@ function ErrorPopup({ message, onClose }) {
   )
 }
 
+function LoginView({ onLogin, error, isSubmitting }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+
+  function submit(event) {
+    event.preventDefault()
+    onLogin(username, password)
+  }
+
+  return (
+    <main className="page-shell centered-page">
+      <section className="app-card login-card">
+        <header className="page-header">
+          <span className="eyebrow">Roaster Generator</span>
+          <h1>Sign in</h1>
+          <p className="lead">Use your employee number or administrator account.</p>
+        </header>
+
+        <form className="login-form" onSubmit={submit}>
+          <label htmlFor="login-username">Username</label>
+          <input
+            id="login-username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            autoComplete="username"
+            required
+          />
+          <label htmlFor="login-password">Password</label>
+          <input
+            id="login-password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            required
+          />
+          {error && <p className="message error-message">{error}</p>}
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+      </section>
+    </main>
+  )
+}
+
 function TimeSelector({ id, label, value, onChange }) {
   const selectedHour = value ? value.split(':')[0] : ''
 
@@ -107,6 +161,7 @@ function TimeSelector({ id, label, value, onChange }) {
 }
 
 function App() {
+  const [authState, setAuthState] = useState({ status: 'loading', user: null, message: '' })
   const [employees, setEmployees] = useState([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
   const [employeesState, setEmployeesState] = useState({ status: 'loading' })
@@ -115,22 +170,46 @@ function App() {
   const [saveState, setSaveState] = useState({ status: 'idle' })
   const [weekOffset, setWeekOffset] = useState(minWeekOffset)
   const [errorPopup, setErrorPopup] = useState('')
+  const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm)
+  const [isCreatingEmployee, setIsCreatingEmployee] = useState(false)
+  const [employeeSaveState, setEmployeeSaveState] = useState({ status: 'idle' })
+  const [availability, setAvailability] = useState(null)
+
+  const isAuthenticated = authState.status === 'authenticated'
+  const isAdmin = isAuthenticated && authState.user.isAdmin
 
   useEffect(() => {
-    fetchJson('/api/employees')
+    fetchJson('/api/auth/me')
+      .then((user) => setAuthState({ status: 'authenticated', user, message: '' }))
+      .catch(() => setAuthState({ status: 'anonymous', user: null, message: '' }))
+  }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return
+    }
+
+    setEmployeesState({ status: 'loading' })
+    const endpoint = isAdmin ? '/api/admin/employees' : '/api/employees'
+
+    fetchJson(endpoint)
       .then((payload) => {
         setEmployees(payload)
-        setSelectedEmployeeId(payload.length ? String(payload[0].id) : '')
+        const ownEmployeeId = authState.user.employeeId
+        const defaultEmployee = ownEmployeeId
+          ? payload.find((employee) => employee.id === ownEmployeeId)
+          : payload.find((employee) => employee.isActive)
+        setSelectedEmployeeId(defaultEmployee ? String(defaultEmployee.id) : '')
         setEmployeesState({ status: 'success' })
       })
       .catch((error) => {
         setEmployeesState({ status: 'error', message: error.message })
         setErrorPopup(error.message)
       })
-  }, [])
+  }, [authState, isAuthenticated, isAdmin])
 
   useEffect(() => {
-    if (!selectedEmployeeId) {
+    if (!isAuthenticated || !selectedEmployeeId) {
       setSchedule(null)
       setScheduleState({ status: 'idle' })
       return
@@ -150,7 +229,31 @@ function App() {
         setScheduleState({ status: 'error', message: error.message })
         setErrorPopup(error.message)
       })
-  }, [selectedEmployeeId, weekOffset])
+  }, [isAuthenticated, selectedEmployeeId, weekOffset])
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setAvailability(null)
+      return
+    }
+
+    fetchJson(`/api/admin/availability?weekOffset=${weekOffset}`)
+      .then(setAvailability)
+      .catch((error) => setErrorPopup(error.message))
+  }, [isAdmin, weekOffset])
+
+  useEffect(() => {
+    const employee = employees.find((item) => String(item.id) === selectedEmployeeId)
+
+    if (employee && !isCreatingEmployee) {
+      setEmployeeForm({
+        employeeNumber: employee.employeeNumber,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        phoneNumber: employee.phoneNumber,
+      })
+    }
+  }, [employees, selectedEmployeeId, isCreatingEmployee])
 
   function updateDay(date, field, value) {
     setSchedule((current) => ({
@@ -176,6 +279,96 @@ function App() {
     setWeekOffset((current) =>
       Math.min(maxWeekOffset, Math.max(minWeekOffset, current + direction)),
     )
+  }
+
+  async function login(username, password) {
+    setAuthState((current) => ({ ...current, status: 'logging-in', message: '' }))
+
+    try {
+      await fetchJson('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      const user = await fetchJson('/api/auth/me')
+      setAuthState({ status: 'authenticated', user, message: '' })
+      setWeekOffset(minWeekOffset)
+      setErrorPopup('')
+    } catch (error) {
+      setAuthState({ status: 'anonymous', user: null, message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function logout() {
+    try {
+      await fetchJson('/api/auth/logout', { method: 'POST' })
+    } catch (error) {
+      setErrorPopup(error.message)
+    }
+
+    setAuthState({ status: 'anonymous', user: null, message: '' })
+    setEmployees([])
+    setSelectedEmployeeId('')
+    setSchedule(null)
+  }
+
+  function updateEmployeeForm(field, value) {
+    setEmployeeForm((current) => ({ ...current, [field]: value }))
+    setEmployeeSaveState({ status: 'idle' })
+  }
+
+  async function saveEmployee(event) {
+    event.preventDefault()
+    setEmployeeSaveState({ status: 'saving' })
+
+    const endpoint = isCreatingEmployee
+      ? '/api/admin/employees'
+      : `/api/admin/employees/${selectedEmployeeId}`
+
+    try {
+      const savedEmployee = await fetchJson(endpoint, {
+        method: isCreatingEmployee ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(employeeForm),
+      })
+
+      setEmployees((current) => {
+        const withoutSaved = current.filter((employee) => employee.id !== savedEmployee.id)
+        return [...withoutSaved, savedEmployee].sort((left, right) =>
+          `${left.lastName} ${left.firstName}`.localeCompare(`${right.lastName} ${right.firstName}`),
+        )
+      })
+      setSelectedEmployeeId(String(savedEmployee.id))
+      setIsCreatingEmployee(false)
+      setEmployeeSaveState({ status: 'success', message: 'Employee saved.' })
+    } catch (error) {
+      setEmployeeSaveState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function changeEmployeeStatus(action) {
+    if (!selectedEmployeeId) {
+      return
+    }
+
+    try {
+      const employee = await fetchJson(
+        `/api/admin/employees/${selectedEmployeeId}/${action}`,
+        { method: 'POST' },
+      )
+      setEmployees((current) =>
+        current.map((item) => (item.id === employee.id ? employee : item)),
+      )
+      setEmployeeSaveState({
+        status: 'success',
+        message: action === 'deactivate' ? 'Employee deactivated.' : 'Employee reactivated.',
+      })
+    } catch (error) {
+      setEmployeeSaveState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
   }
 
   async function saveSchedule(event) {
@@ -208,6 +401,23 @@ function App() {
     }
   }
 
+  if (authState.status === 'loading') {
+    return <main className="page-shell centered-page"><p className="message info-message">Checking sign-in…</p></main>
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <ErrorPopup message={errorPopup} onClose={() => setErrorPopup('')} />
+        <LoginView
+          onLogin={login}
+          error={authState.message}
+          isSubmitting={authState.status === 'logging-in'}
+        />
+      </>
+    )
+  }
+
   return (
     <>
       <ErrorPopup message={errorPopup} onClose={() => setErrorPopup('')} />
@@ -217,31 +427,46 @@ function App() {
           <span className="eyebrow">Roaster Generator</span>
           <h1>Weekly shifts</h1>
           <p className="lead">
-            Choose an employee and set their start and finish times for next week.
+            {isAdmin
+              ? 'Manage employees and review or edit schedules.'
+              : 'Set your start and finish times for the available weeks.'}
           </p>
         </header>
 
-        <div className="employee-picker">
-          <label htmlFor="employee">Employee</label>
-          <select
-            id="employee"
-            value={selectedEmployeeId}
-            onChange={(event) => {
-              setSelectedEmployeeId(event.target.value)
-              setWeekOffset(minWeekOffset)
-            }}
-            disabled={employeesState.status !== 'success' || employees.length === 0}
-          >
-            <option value="">
-              {employeesState.status === 'loading' ? 'Loading employees…' : 'Select an employee'}
-            </option>
-            {employees.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.firstName} {employee.lastName}
-              </option>
-            ))}
-          </select>
+        <div className="app-toolbar">
+          <span className="role-badge">{isAdmin ? 'Admin' : 'Employee'}</span>
+          <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
         </div>
+
+        {isAdmin ? (
+          <div className="employee-picker">
+            <label htmlFor="employee">Employee</label>
+            <select
+              id="employee"
+              value={selectedEmployeeId}
+              onChange={(event) => {
+                setSelectedEmployeeId(event.target.value)
+                setWeekOffset(minWeekOffset)
+                setIsCreatingEmployee(false)
+              }}
+              disabled={employeesState.status !== 'success' || employees.length === 0}
+            >
+              <option value="">
+                {employeesState.status === 'loading' ? 'Loading employees…' : 'Select an employee'}
+              </option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.firstName} {employee.lastName}{employee.isActive ? '' : ' (inactive)'}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="current-employee">
+            <span className="eyebrow">Signed in as</span>
+            <strong>{authState.user.employeeName || authState.user.username}</strong>
+          </div>
+        )}
 
         {employeesState.status === 'error' && (
           <p className="message error-message">{employeesState.message}</p>
@@ -257,6 +482,123 @@ function App() {
 
         {scheduleState.status === 'error' && (
           <p className="message error-message">{scheduleState.message}</p>
+        )}
+
+        {isAdmin && (
+          <section className="admin-tools">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Administration</span>
+                <h2>{isCreatingEmployee ? 'Add employee' : 'Edit employee'}</h2>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setIsCreatingEmployee((current) => !current)
+                  setEmployeeForm(emptyEmployeeForm)
+                  setEmployeeSaveState({ status: 'idle' })
+                }}
+              >
+                {isCreatingEmployee ? 'Cancel' : 'Add employee'}
+              </button>
+            </div>
+
+            {(isCreatingEmployee || selectedEmployeeId) && (
+              <form className="employee-form" onSubmit={saveEmployee}>
+                <label htmlFor="employee-number">Employee number</label>
+                <input
+                  id="employee-number"
+                  value={employeeForm.employeeNumber}
+                  onChange={(event) => updateEmployeeForm('employeeNumber', event.target.value)}
+                  required
+                />
+                <label htmlFor="employee-first-name">First name</label>
+                <input
+                  id="employee-first-name"
+                  value={employeeForm.firstName}
+                  onChange={(event) => updateEmployeeForm('firstName', event.target.value)}
+                  required
+                />
+                <label htmlFor="employee-last-name">Last name</label>
+                <input
+                  id="employee-last-name"
+                  value={employeeForm.lastName}
+                  onChange={(event) => updateEmployeeForm('lastName', event.target.value)}
+                  required
+                />
+                <label htmlFor="employee-phone">Phone number</label>
+                <input
+                  id="employee-phone"
+                  value={employeeForm.phoneNumber}
+                  onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
+                />
+                <div className="employee-form-actions">
+                  <button type="submit" disabled={employeeSaveState.status === 'saving'}>
+                    {employeeSaveState.status === 'saving' ? 'Saving…' : 'Save employee'}
+                  </button>
+                  {!isCreatingEmployee && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => changeEmployeeStatus(
+                        employees.find((employee) => String(employee.id) === selectedEmployeeId)?.isActive
+                          ? 'deactivate'
+                          : 'reactivate',
+                      )}
+                    >
+                      {employees.find((employee) => String(employee.id) === selectedEmployeeId)?.isActive
+                        ? 'Deactivate'
+                        : 'Reactivate'}
+                    </button>
+                  )}
+                </div>
+                {employeeSaveState.message && (
+                  <p className={`save-message ${employeeSaveState.status}`}>
+                    {employeeSaveState.message}
+                  </p>
+                )}
+              </form>
+            )}
+          </section>
+        )}
+
+        {isAdmin && availability && (
+          <section className="availability-section">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Admin overview</span>
+                <h2>All employee availability</h2>
+              </div>
+              <span className="week-range">
+                {dateFormatter.format(parseDate(availability.weekStart))} –{' '}
+                {dateFormatter.format(parseDate(availability.weekEnd))}
+              </span>
+            </div>
+            <div className="availability-table" role="table">
+              <div className="availability-row availability-header" role="row">
+                <strong>Employee</strong>
+                {availability.employees[0]?.days.map((day) => (
+                  <span key={day.date}>{day.dayOfWeek.slice(0, 3)}</span>
+                ))}
+              </div>
+              {availability.employees.map((employeeSchedule) => (
+                <div className="availability-row" role="row" key={employeeSchedule.employeeId}>
+                  <strong>{employeeSchedule.employeeName}</strong>
+                  {employeeSchedule.days.map((day) => (
+                    <span key={day.date}>
+                      {day.startTime && day.finishTime
+                        ? `${day.startTime}–${day.finishTime}`
+                        : 'Off'}
+                    </span>
+                  ))}
+                </div>
+              ))}
+              {availability.employees.length === 0 && (
+                <p className="message info-message">No active employees.</p>
+              )}
+            </div>
+          </section>
         )}
 
         {schedule && (

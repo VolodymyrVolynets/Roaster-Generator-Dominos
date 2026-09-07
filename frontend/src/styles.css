@@ -31,6 +31,11 @@ select {
     #030712;
 }
 
+.centered-page {
+  display: grid;
+  place-items: center;
+}
+
 .app-card {
   width: min(100%, 920px);
   margin: 0 auto;
@@ -86,6 +91,41 @@ h2 {
   margin: 36px 0 28px;
 }
 
+.app-toolbar,
+.section-heading,
+.employee-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.app-toolbar {
+  margin-top: 24px;
+}
+
+.role-badge {
+  padding: 6px 10px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 999px;
+  color: #bae6fd;
+  background: rgba(14, 116, 144, 0.25);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.current-employee {
+  display: grid;
+  gap: 6px;
+  margin: 36px 0 28px;
+}
+
+.current-employee strong {
+  color: #f8fafc;
+  font-size: 1.1rem;
+}
+
 .employee-picker label,
 .schedule-header {
   color: #94a3b8;
@@ -96,7 +136,7 @@ h2 {
 }
 
 select,
-input[type="time"] {
+input {
   min-height: 46px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 10px;
@@ -110,10 +150,9 @@ select {
   padding: 0 14px;
 }
 
-input[type="time"] {
+input {
   width: 100%;
   padding: 0 12px;
-  color-scheme: dark;
 }
 
 .time-selector {
@@ -127,13 +166,102 @@ input[type="time"] {
 }
 
 select:focus,
-input[type="time"]:focus {
+input:focus {
   border-color: #38bdf8;
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
 }
 
 .schedule-form {
   margin-top: 32px;
+}
+
+.login-card {
+  width: min(100%, 520px);
+}
+
+.login-form,
+.employee-form {
+  display: grid;
+  gap: 10px;
+}
+
+.login-form {
+  margin-top: 32px;
+}
+
+.login-form label,
+.employee-form label {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.admin-tools,
+.availability-section {
+  margin-top: 32px;
+  padding: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.section-heading {
+  align-items: flex-end;
+  margin-bottom: 18px;
+}
+
+.section-heading h2 {
+  margin-top: 4px;
+}
+
+.employee-form {
+  grid-template-columns: 1fr 1fr;
+}
+
+.employee-form label {
+  align-self: end;
+}
+
+.employee-form input {
+  min-height: 42px;
+}
+
+.employee-form-actions,
+.employee-form .save-message {
+  grid-column: 1 / -1;
+}
+
+.availability-table {
+  overflow-x: auto;
+}
+
+.availability-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.7fr) repeat(7, minmax(78px, 1fr));
+  gap: 10px;
+  min-width: 760px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.availability-row:first-child {
+  border-top: 0;
+}
+
+.availability-row strong {
+  color: #f8fafc;
+  text-align: left;
+}
+
+.availability-header {
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.72);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .schedule-heading {
@@ -245,6 +373,19 @@ button {
   background: #7dd3fc;
   cursor: pointer;
   font-weight: 800;
+}
+
+.secondary-button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #cbd5e1;
+  background: rgba(51, 65, 85, 0.6);
+  font-size: 0.88rem;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: rgba(71, 85, 105, 0.8);
 }
 
 .week-navigation .week-arrow {
@@ -369,6 +510,20 @@ select:disabled {
   .week-navigation {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .employee-form {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-form-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .employee-form-actions,
+  .employee-form .save-message {
+    grid-column: auto;
   }
 
   .schedule-row {

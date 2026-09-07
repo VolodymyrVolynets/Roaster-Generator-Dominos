@@ -36,6 +36,46 @@ public sealed class WeeklyScheduleService(AppDbContext db)
         return BuildResponse(employee, weekStart, shifts);
     }
 
+    public async Task<WeeklyAvailabilityResponse> GetWeekForAllAsync(
+        int weekOffset,
+        CancellationToken cancellationToken)
+    {
+        var weekStart = GetWeekMonday(weekOffset);
+        var weekEnd = weekStart.AddDays(7);
+
+        var employees = await db.Employees
+            .AsNoTracking()
+            .Where(employee => employee.IsActive)
+            .OrderBy(employee => employee.LastName)
+            .ThenBy(employee => employee.FirstName)
+            .ToListAsync(cancellationToken);
+
+        var employeeIds = employees.Select(employee => employee.Id).ToArray();
+        var shifts = await db.Shifts
+            .AsNoTracking()
+            .Where(shift => employeeIds.Contains(shift.EmployeeId))
+            .Where(shift => shift.Date >= weekStart && shift.Date < weekEnd)
+            .OrderBy(shift => shift.Date)
+            .ToListAsync(cancellationToken);
+
+        var shiftsByEmployee = shifts
+            .GroupBy(shift => shift.EmployeeId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyCollection<Shift>)group.ToList());
+
+        var schedules = employees
+            .Select(employee => shiftsByEmployee.TryGetValue(employee.Id, out var employeeShifts)
+                ? BuildResponse(employee, weekStart, employeeShifts)
+                : BuildResponse(employee, weekStart, []))
+            .ToList();
+
+        return new WeeklyAvailabilityResponse
+        {
+            WeekStart = weekStart,
+            WeekEnd = weekStart.AddDays(6),
+            Employees = schedules
+        };
+    }
+
     public async Task<WeeklyScheduleResponse?> ReplaceWeekAsync(
         Guid employeeId,
         WeeklyScheduleRequest request,

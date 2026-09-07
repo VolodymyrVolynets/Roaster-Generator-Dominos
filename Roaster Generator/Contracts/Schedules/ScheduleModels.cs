@@ -34,6 +34,15 @@ public sealed class WeeklyScheduleResponse
     public IReadOnlyList<ScheduleDayResponse> Days { get; init; } = [];
 }
 
+public sealed class WeeklyAvailabilityResponse
+{
+    public DateOnly WeekStart { get; init; }
+
+    public DateOnly WeekEnd { get; init; }
+
+    public IReadOnlyList<WeeklyScheduleResponse> Employees { get; init; } = [];
+}
+
 public sealed class ScheduleDayResponse
 {
     public DateOnly Date { get; init; }

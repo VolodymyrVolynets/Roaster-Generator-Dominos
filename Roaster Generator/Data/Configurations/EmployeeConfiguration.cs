@@ -38,6 +38,11 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasMaxLength(32)
             .IsRequired();
 
+        builder.Property(employee => employee.IsActive)
+            .HasColumnName("is_active")
+            .HasDefaultValue(true)
+            .IsRequired();
+
         builder.HasIndex(employee => employee.EmployeeNumber)
             .IsUnique();
 
@@ -203,5 +208,10 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
                 PhoneNumber = "0894582680"
             }
         );
+
+        builder.HasOne(employee => employee.User)
+            .WithOne(user => user.Employee)
+            .HasForeignKey<ApplicationUser>(user => user.EmployeeId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

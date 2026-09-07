@@ -25,6 +25,8 @@ services:
       - "8080"
     environment:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=roaster;Username=roaster;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      Auth__AdminUsername: ${ADMIN_USERNAME:?ADMIN_USERNAME is required}
+      Auth__AdminPassword: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
     depends_on:
       postgres:
         condition: service_healthy

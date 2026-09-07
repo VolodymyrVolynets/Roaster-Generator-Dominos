@@ -39,4 +39,10 @@ Create `/opt/roaster-generator/.env` on the VPS before the first production depl
 
 ```dotenv
 POSTGRES_PASSWORD=replace-with-a-long-random-password
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace-with-a-long-random-password
 ```
+
+Employee accounts use their `EmployeeNumber` as the username and are created with
+the initial password `12345`. Change this flow before production use if employees
+need to choose their own passwords.

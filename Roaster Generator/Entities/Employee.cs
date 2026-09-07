@@ -12,5 +12,9 @@ public sealed class Employee
 
     public string PhoneNumber { get; set; } = string.Empty;
 
+    public bool IsActive { get; set; } = true;
+
     public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
+
+    public ApplicationUser? User { get; set; }
 }
