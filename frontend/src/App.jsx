@@ -560,28 +560,14 @@ function WeekSelector({ weekOffset, onChange, disabled = false }) {
   )
 }
 
-function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
+function RosterTimerPanel({ setErrorPopup, isVisible = true }) {
   const [weekOffset, setWeekOffset] = useState(minWeekOffset)
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
   const [generationLogs, setGenerationLogs] = useState([])
-  const [roster, setRoster] = useState(null)
   const [weekSummary, setWeekSummary] = useState(null)
-  const [settingsForm, setSettingsForm] = useState({
-    targetHoursWeight: 100,
-    longShiftBonus: 25,
-    shortShiftPenalty: 10,
-    dailyShiftCountPenalty: 25,
-    shortBreakPenalty: 100,
-    populationSize: 24,
-    generationCount: 150,
-    mutationRate: 0.03,
-    eliteCount: 2,
-    tournamentSize: 2,
-    exactSearchNodeLimit: 500000,
-  })
-  const [settingsState, setSettingsState] = useState({ status: 'loading', message: '' })
   const generationRef = useRef(null)
+  const generationLogRef = useRef(null)
   const generationRequestedRef = useRef(false)
 
   useEffect(() => {
@@ -589,21 +575,18 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
   }, [generation])
 
   useEffect(() => {
+    const log = generationLogRef.current
+
+    if (log) {
+      log.scrollTop = log.scrollHeight
+    }
+  }, [generationLogs])
+
+  useEffect(() => {
     setGeneration(null)
     setGenerationLogs([])
     generationRequestedRef.current = false
   }, [weekOffset])
-
-  useEffect(() => {
-    setRoster(null)
-    fetchJson(`/api/admin/roster?weekOffset=${weekOffset}`, { cache: 'no-store' })
-      .then(setRoster)
-      .catch((error) => {
-        if (error.status !== 404) {
-          setErrorPopup(error.message)
-        }
-      })
-  }, [setErrorPopup, weekOffset])
 
   useEffect(() => {
     setWeekSummary(null)
@@ -613,22 +596,9 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
   }, [setErrorPopup, weekOffset])
 
   useEffect(() => {
-    setSettingsState({ status: 'loading', message: '' })
-    fetchJson('/api/admin/roster/settings')
-      .then((settings) => {
-        setSettingsForm(settings)
-        setSettingsState({ status: 'idle', message: '' })
-      })
-      .catch((error) => {
-        setSettingsState({ status: 'error', message: error.message })
-        setErrorPopup(error.message)
-      })
-  }, [setErrorPopup])
-
-  useEffect(() => {
     let isMounted = true
     const connection = new HubConnectionBuilder()
-      .withUrl('/hubs/roster-generation', {
+      .withUrl('/hubs/roster-timer', {
         transport: HttpTransportType.WebSockets,
         skipNegotiation: true,
       })
@@ -701,38 +671,12 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
         return current
       })
 
-      if (payload.status === 'completed') {
-        fetchJson(`/api/admin/roster?weekOffset=${payload.weekOffset}`, { cache: 'no-store' })
-          .then((plan) => {
-            if (isMounted) {
-              setRoster(plan)
-            }
-          })
-          .catch((error) => {
-            if (isMounted) {
-              setErrorPopup(error.message)
-            }
-          })
-
-        fetchJson(`/api/admin/roster/summary?weekOffset=${payload.weekOffset}`, { cache: 'no-store' })
-          .then((summary) => {
-            if (isMounted) {
-              setWeekSummary(summary)
-            }
-          })
-          .catch((error) => {
-            if (isMounted) {
-              setErrorPopup(error.message)
-            }
-          })
-      }
-
       if (payload.status === 'failed') {
         setErrorPopup(payload.message)
       }
     }
 
-    connection.on('rosterGenerationProgress', handleProgress)
+    connection.on('rosterTimerProgress', handleProgress)
     connection.onreconnecting(() => {
       if (isMounted) {
         setHubStatus('reconnecting')
@@ -761,7 +705,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
           jobId: currentGeneration?.jobId || null,
         }),
       ], { type: 'application/json' })
-      const endpoint = '/api/admin/roster/generate/cancel'
+      const endpoint = '/api/admin/roster/timer/cancel'
 
       try {
         if (navigator.sendBeacon?.(endpoint, body)) {
@@ -798,7 +742,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
 
     return () => {
       isMounted = false
-      connection.off('rosterGenerationProgress', handleProgress)
+      connection.off('rosterTimerProgress', handleProgress)
       window.removeEventListener('pagehide', cancelOnPageHide)
       connection.stop()
     }
@@ -808,19 +752,18 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
     || generation?.status === 'started'
     || generation?.status === 'running'
 
-  async function generateRoster() {
+  async function startTimer() {
     generationRequestedRef.current = true
     setGeneration({
       status: 'starting',
       stage: 'starting',
       progress: 0,
-      message: 'Starting roster generation…',
+      message: 'Starting 10-second WebSocket timer…',
     })
     setGenerationLogs([])
-    setRoster(null)
 
     try {
-      const payload = await fetchJson('/api/admin/roster/generate', {
+      const payload = await fetchJson('/api/admin/roster/timer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ weekOffset }),
@@ -843,29 +786,6 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
     }
   }
 
-  function updateSetting(field, value) {
-    setSettingsForm((current) => ({ ...current, [field]: Number(value) }))
-    setSettingsState({ status: 'idle', message: '' })
-  }
-
-  async function saveSettings(event) {
-    event.preventDefault()
-    setSettingsState({ status: 'saving', message: '' })
-
-    try {
-      const settings = await fetchJson('/api/admin/roster/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settingsForm),
-      })
-      setSettingsForm(settings)
-      setSettingsState({ status: 'success', message: 'Generator weights saved.' })
-    } catch (error) {
-      setSettingsState({ status: 'error', message: error.message })
-      setErrorPopup(error.message)
-    }
-  }
-
   return (
     <section
       className="admin-tools roster-generation-tools"
@@ -875,7 +795,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
       <div className="section-heading">
         <div>
           <span className="eyebrow">Administration</span>
-          <h2>Generate roster</h2>
+          <h2>WebSocket timer</h2>
         </div>
         <WeekSelector
           weekOffset={weekOffset}
@@ -884,7 +804,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
       </div>
 
       <p className="demand-help">
-        Select a future week and start roster generation. Progress is sent live over a WebSocket connection.
+        Select a week and start the 10-second timer. Progress is sent live over a WebSocket connection to every admin screen.
       </p>
 
       {weekSummary && (
@@ -908,98 +828,17 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
         <p className="message info-message">No demand has been imported for this week yet.</p>
       )}
 
-      <form className="roster-settings-form" onSubmit={saveSettings}>
-        <div className="roster-settings-header">
-          <div>
-            <span className="eyebrow">Admin settings</span>
-            <h3>Roster optimization weights</h3>
-          </div>
-          <p>These values tune the evolutionary algorithm. Demand coverage and scheduling safety rules remain mandatory.</p>
-        </div>
-        <div className="roster-settings-grid">
-          <label>
-            Target-hour balance
-            <input
-              type="number"
-              min="0"
-              max="1000"
-              step="1"
-              value={settingsForm.targetHoursWeight}
-              onChange={(event) => updateSetting('targetHoursWeight', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Long-shift bonus
-            <input
-              type="number"
-              min="0"
-              max="1000"
-              step="1"
-              value={settingsForm.longShiftBonus}
-              onChange={(event) => updateSetting('longShiftBonus', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Short-shift penalty
-            <input
-              type="number"
-              min="0"
-              max="1000"
-              step="1"
-              value={settingsForm.shortShiftPenalty}
-              onChange={(event) => updateSetting('shortShiftPenalty', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Daily shift-count penalty
-            <input
-              type="number"
-              min="0"
-              max="1000"
-              step="1"
-              value={settingsForm.dailyShiftCountPenalty}
-              onChange={(event) => updateSetting('dailyShiftCountPenalty', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Short-break penalty
-            <input
-              type="number"
-              min="0"
-              max="1000"
-              step="1"
-              value={settingsForm.shortBreakPenalty}
-              onChange={(event) => updateSetting('shortBreakPenalty', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-        </div>
-        <div className="roster-settings-actions">
-          <button
-            type="submit"
-            disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-          >
-            {settingsState.status === 'saving' ? 'Saving…' : 'Save generator settings'}
-          </button>
-          {settingsState.message && (
-            <span className={`save-message ${settingsState.status}`} aria-live="polite">
-              {settingsState.message}
-            </span>
-          )}
-        </div>
-      </form>
+      <div className="message info-message">
+        Roster generation has been removed. This screen only runs a 10-second WebSocket timer; no shifts are calculated or saved.
+      </div>
 
       <div className="roster-generation-actions">
         <button
           type="button"
-          onClick={generateRoster}
+          onClick={startTimer}
           disabled={hubStatus !== 'connected' || isRunning}
         >
-          {isRunning ? 'Generating roster…' : 'Generate roster'}
+          {isRunning ? 'Timer running…' : 'Start 10-second timer'}
         </button>
         <span className={`hub-status ${hubStatus}`}>
           Live updates: {hubStatus}
@@ -1026,15 +865,15 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
       )}
 
       {generationLogs.length > 0 && (
-        <div className="roster-generation-log" aria-label="Roster generation log">
+        <div className="roster-generation-log" aria-label="WebSocket timer log">
           <div className="roster-generation-log-heading">
             <div>
               <span className="eyebrow">Live activity</span>
-              <h3>Generation log</h3>
+              <h3>WebSocket timer log</h3>
             </div>
             <span>{generationLogs.length} events</span>
           </div>
-          <ol>
+          <ol ref={generationLogRef}>
             {generationLogs.map((log, index) => (
               <li key={`${log.jobId}-${log.timestampUtc}-${index}`}>
                 <time dateTime={log.timestampUtc}>
@@ -1048,43 +887,6 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
         </div>
       )}
 
-      {roster && (
-        <div className="roster-result">
-          <div className="roster-result-heading">
-            <div>
-              <span className="eyebrow">Generated roster</span>
-              <h3>Week starting {roster.weekStart}</h3>
-            </div>
-            <strong>{roster.totalScheduledHours} driver-hours</strong>
-          </div>
-          <div className="roster-result-table-wrapper">
-            <table className="roster-result-table">
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Target</th>
-                  <th>Scheduled</th>
-                  <th>Shifts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {roster.employees.map((employee) => (
-                  <tr key={employee.employeeId}>
-                    <th>{employee.employeeName}</th>
-                    <td>{employee.targetHours}h</td>
-                    <td>{employee.scheduledHours}h</td>
-                    <td>
-                      {employee.shifts.map((shift) =>
-                        `${shift.date} ${shift.startTime}–${shift.finishTime} (${shift.durationHours}h)`,
-                      ).join(', ')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </section>
   )
 }
@@ -1205,10 +1007,10 @@ function AdminConsole({
             </button>
             <button
               type="button"
-              className={activeTab === 'generate-roster' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => switchTab('generate-roster')}
+              className={activeTab === 'roster-timer' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => switchTab('roster-timer')}
             >
-              Generate roster
+              WebSocket timer
             </button>
           </nav>
 
@@ -1497,9 +1299,9 @@ function AdminConsole({
 
           {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} />}
 
-          <RosterGenerationPanel
+          <RosterTimerPanel
             setErrorPopup={setErrorPopup}
-            isVisible={activeTab === 'generate-roster'}
+            isVisible={activeTab === 'roster-timer'}
           />
         </section>
       </main>

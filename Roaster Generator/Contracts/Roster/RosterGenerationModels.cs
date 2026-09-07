@@ -1,6 +1,6 @@
 namespace Roaster_Generator.Contracts.Roster;
 
-public sealed class RosterGenerationStartResponse
+public sealed class RosterTimerStartResponse
 {
     public Guid JobId { get; init; }
 
@@ -17,61 +17,11 @@ public sealed class RosterGenerationStartResponse
     public string Message { get; init; } = string.Empty;
 }
 
-public sealed class RosterGenerationCancelRequest
+public sealed class RosterTimerCancelRequest
 {
     public int WeekOffset { get; init; }
 
     public Guid? JobId { get; init; }
-}
-
-public sealed class RosterGenerationSettingsRequest
-{
-    public int TargetHoursWeight { get; set; }
-
-    public int LongShiftBonus { get; set; }
-
-    public int ShortShiftPenalty { get; set; }
-
-    public int DailyShiftCountPenalty { get; set; }
-
-    public int ShortBreakPenalty { get; set; }
-
-    public int PopulationSize { get; set; }
-
-    public int GenerationCount { get; set; }
-
-    public decimal MutationRate { get; set; }
-
-    public int EliteCount { get; set; }
-
-    public int TournamentSize { get; set; }
-
-    public int ExactSearchNodeLimit { get; set; }
-}
-
-public sealed class RosterGenerationSettingsResponse
-{
-    public int TargetHoursWeight { get; init; }
-
-    public int LongShiftBonus { get; init; }
-
-    public int ShortShiftPenalty { get; init; }
-
-    public int DailyShiftCountPenalty { get; init; }
-
-    public int ShortBreakPenalty { get; init; }
-
-    public int PopulationSize { get; init; }
-
-    public int GenerationCount { get; init; }
-
-    public decimal MutationRate { get; init; }
-
-    public int EliteCount { get; init; }
-
-    public int TournamentSize { get; init; }
-
-    public int ExactSearchNodeLimit { get; init; }
 }
 
 public sealed class RosterPlanResponse
@@ -126,7 +76,7 @@ public sealed class RosterShiftResponse
     public int DurationHours { get; init; }
 }
 
-public sealed class RosterGenerationProgressResponse
+public sealed class RosterTimerProgressResponse
 {
     public Guid JobId { get; init; }
 

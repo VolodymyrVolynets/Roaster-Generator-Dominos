@@ -42,6 +42,16 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             .HasDefaultValue(100)
             .IsRequired();
 
+        builder.Property(settings => settings.DailyOptionPoolSize)
+            .HasColumnName("daily_option_pool_size")
+            .HasDefaultValue(256)
+            .IsRequired();
+
+        builder.Property(settings => settings.DailyOptionSearchNodeLimit)
+            .HasColumnName("daily_option_search_node_limit")
+            .HasDefaultValue(100_000)
+            .IsRequired();
+
         builder.Property(settings => settings.PopulationSize)
             .HasColumnName("population_size")
             .HasDefaultValue(24)
@@ -81,6 +91,8 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             ShortShiftPenalty = 10,
             DailyShiftCountPenalty = 25,
             ShortBreakPenalty = 100,
+            DailyOptionPoolSize = 256,
+            DailyOptionSearchNodeLimit = 100_000,
             PopulationSize = 24,
             GenerationCount = 150,
             MutationRate = 0.03m,

@@ -6,11 +6,11 @@ using Roaster_Generator.Services;
 namespace Roaster_Generator.Hubs;
 
 [Authorize(Roles = RoleNames.Admin)]
-public sealed class RosterGenerationHub(RosterGenerationService rosterGeneration) : Hub
+public sealed class RosterTimerHub(RosterTimerService rosterTimer) : Hub
 {
     public override async Task OnConnectedAsync()
     {
         await base.OnConnectedAsync();
-        await rosterGeneration.SendActiveLogsAsync(Context.ConnectionId);
+        await rosterTimer.SendActiveLogsAsync(Context.ConnectionId);
     }
 }

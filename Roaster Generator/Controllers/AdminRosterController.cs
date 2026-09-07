@@ -13,9 +13,8 @@ namespace Roaster_Generator.Controllers;
 [Route("api/admin/roster")]
 public sealed class AdminRosterController(
     IValidator<WeekSelectionRequest> weekValidator,
-    RosterGenerationService rosterGeneration,
-    RosterPlanService rosterPlans,
-    RosterGenerationSettingsService rosterSettings) : ApiControllerBase
+    RosterTimerService rosterTimer,
+    RosterPlanService rosterPlans) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(
@@ -70,29 +69,8 @@ public sealed class AdminRosterController(
         return Ok(await rosterPlans.GetSummaryAsync(selection.WeekOffset, cancellationToken));
     }
 
-    [HttpGet("settings")]
-    public async Task<IActionResult> GetSettings(CancellationToken cancellationToken) =>
-        Ok(await rosterSettings.GetAsync(cancellationToken));
-
-    [HttpPut("settings")]
-    public async Task<IActionResult> UpdateSettings(
-        [FromBody] RosterGenerationSettingsRequest request,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return Ok(await rosterSettings.UpdateAsync(request, cancellationToken));
-        }
-        catch (RosterGenerationSettingsValidationException exception)
-        {
-            return ValidationError(
-                new Dictionary<string, string[]> { ["settings"] = [exception.Message] },
-                "Generator settings are invalid.");
-        }
-    }
-
-    [HttpPost("generate")]
-    public async Task<IActionResult> Generate(
+    [HttpPost("timer")]
+    public async Task<IActionResult> StartTimer(
         [FromBody] WeekSelectionRequest request,
         CancellationToken cancellationToken)
     {
@@ -111,17 +89,17 @@ public sealed class AdminRosterController(
 
         try
         {
-            return Accepted(rosterGeneration.Start(request.WeekOffset));
+            return Accepted(rosterTimer.Start(request.WeekOffset));
         }
-        catch (RosterGenerationAlreadyRunningException exception)
+        catch (RosterTimerAlreadyRunningException exception)
         {
             return Conflict(new { message = exception.Message });
         }
     }
 
-    [HttpPost("generate/cancel")]
+    [HttpPost("timer/cancel")]
     public async Task<IActionResult> Cancel(
-        [FromBody] RosterGenerationCancelRequest request,
+        [FromBody] RosterTimerCancelRequest request,
         CancellationToken cancellationToken)
     {
         var selection = new WeekSelectionRequest
@@ -141,8 +119,8 @@ public sealed class AdminRosterController(
             return ValidationError(errors, "The selected week is invalid.");
         }
 
-        return rosterGeneration.Cancel(selection.WeekOffset, request.JobId)
-            ? Accepted(new { message = "Roster generation cancellation requested." })
-            : NotFound(new { message = "No active roster generation was found for the selected week." });
+        return rosterTimer.Cancel(selection.WeekOffset, request.JobId)
+            ? Accepted(new { message = "WebSocket timer cancellation requested." })
+            : NotFound(new { message = "No active WebSocket timer was found for the selected week." });
     }
 }

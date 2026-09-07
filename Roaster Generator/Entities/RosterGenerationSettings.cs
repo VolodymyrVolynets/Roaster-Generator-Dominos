@@ -17,6 +17,10 @@ public sealed class RosterGenerationSettings
 
     public int ShortBreakPenalty { get; set; } = 100;
 
+    public int DailyOptionPoolSize { get; set; } = 256;
+
+    public int DailyOptionSearchNodeLimit { get; set; } = 100_000;
+
     public int PopulationSize { get; set; } = 24;
 
     public int GenerationCount { get; set; } = 150;

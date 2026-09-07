@@ -50,10 +50,8 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<DemandService>();
 builder.Services.AddScoped<WeeklyScheduleService>();
-builder.Services.AddScoped<RosterGenerationAlgorithm>();
-builder.Services.AddScoped<RosterGenerationSettingsService>();
 builder.Services.AddScoped<RosterPlanService>();
-builder.Services.AddSingleton<RosterGenerationService>();
+builder.Services.AddSingleton<RosterTimerService>();
 builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
 builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();
 
@@ -71,6 +69,6 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 app.MapControllers();
-app.MapHub<Roaster_Generator.Hubs.RosterGenerationHub>("/hubs/roster-generation");
+app.MapHub<Roaster_Generator.Hubs.RosterTimerHub>("/hubs/roster-timer");
 
 app.Run();

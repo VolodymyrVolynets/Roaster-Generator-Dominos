@@ -639,6 +639,18 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(25)
                         .HasColumnName("daily_shift_count_penalty");
 
+                    b.Property<int>("DailyOptionPoolSize")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(256)
+                        .HasColumnName("daily_option_pool_size");
+
+                    b.Property<int>("DailyOptionSearchNodeLimit")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(100000)
+                        .HasColumnName("daily_option_search_node_limit");
+
                     b.Property<int>("EliteCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -707,6 +719,8 @@ namespace Roaster_Generator.Data.Migrations
                         new
                         {
                             Id = new Guid("8f0a9c55-9d8a-4c1c-9a30-1d7e83e8c0f5"),
+                            DailyOptionPoolSize = 256,
+                            DailyOptionSearchNodeLimit = 100000,
                             DailyShiftCountPenalty = 25,
                             EliteCount = 2,
                             ExactSearchNodeLimit = 500000,

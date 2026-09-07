@@ -1,25 +1,23 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.DependencyInjection;
 using Roaster_Generator.Contracts.Roster;
-using Roaster_Generator.Entities;
 using Roaster_Generator.Hubs;
 
 namespace Roaster_Generator.Services;
 
-public sealed class RosterGenerationAlreadyRunningException : Exception
+public sealed class RosterTimerAlreadyRunningException : Exception
 {
-    public RosterGenerationAlreadyRunningException()
-        : base("Roster generation is already running for the selected week.")
+    public RosterTimerAlreadyRunningException()
+        : base("A WebSocket timer is already running for the selected week.")
     {
     }
 }
 
-public sealed class RosterGenerationService(
-    IHubContext<RosterGenerationHub> hub,
-    ILogger<RosterGenerationService> logger,
-    IServiceScopeFactory scopeFactory)
+public sealed class RosterTimerService(
+    IHubContext<RosterTimerHub> hub,
+    ILogger<RosterTimerService> logger)
 {
+    private const int TimerSeconds = 10;
     private readonly ConcurrentDictionary<DateOnly, ActiveJob> activeJobs = new();
 
     public async Task SendActiveLogsAsync(string connectionId)
@@ -32,12 +30,12 @@ public sealed class RosterGenerationService(
         foreach (var log in logs)
         {
             await hub.Clients.Client(connectionId).SendAsync(
-                "rosterGenerationProgress",
+                "rosterTimerProgress",
                 log);
         }
     }
 
-    public RosterGenerationStartResponse Start(int weekOffset)
+    public RosterTimerStartResponse Start(int weekOffset)
     {
         var weekStart = WeeklyScheduleService.GetWeekMonday(weekOffset);
         var jobId = Guid.NewGuid();
@@ -46,12 +44,12 @@ public sealed class RosterGenerationService(
 
         if (!activeJobs.TryAdd(weekStart, activeJob))
         {
-            throw new RosterGenerationAlreadyRunningException();
+            throw new RosterTimerAlreadyRunningException();
         }
 
         _ = RunAsync(activeJob);
 
-        return new RosterGenerationStartResponse
+        return new RosterTimerStartResponse
         {
             JobId = jobId,
             WeekOffset = weekOffset,
@@ -59,7 +57,7 @@ public sealed class RosterGenerationService(
             Status = "started",
             Stage = "queued",
             Progress = 0,
-            Message = "Roster generation started."
+            Message = "WebSocket timer started."
         };
     }
 
@@ -102,48 +100,43 @@ public sealed class RosterGenerationService(
                 "started",
                 "initializing",
                 0,
-                "Roster generation started.");
+                "WebSocket timer started.");
 
             await PublishAsync(
                 jobId,
                 weekOffset,
                 weekStart,
                 "running",
-                "initializing",
-                2,
-                "Initializing roster generation.");
+                "timer",
+                0,
+                $"Waiting {TimerSeconds} seconds; no roster will be generated.");
 
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var algorithm = scope.ServiceProvider.GetRequiredService<RosterGenerationAlgorithm>();
+            for (var second = 1; second <= TimerSeconds; second++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
 
-            var plan = await algorithm.GenerateAsync(
-                weekStart,
-                cancellationToken,
-                (stage, progress, message) => PublishAsync(
+                await PublishAsync(
                     jobId,
                     weekOffset,
                     weekStart,
                     "running",
-                    stage,
-                    progress,
-                    message));
-            cancellationToken.ThrowIfCancellationRequested();
-            var totalScheduledHours = plan.Shifts.Sum(GetDurationHours);
+                    "timer",
+                    second * 100 / TimerSeconds,
+                    $"WebSocket timer: {second}/{TimerSeconds} second(s) elapsed.");
+            }
 
             await PublishAsync(
                 jobId,
                 weekOffset,
                 weekStart,
                 "completed",
-                "completed",
+                "timer-completed",
                 100,
-                $"Roster generated with {totalScheduledHours} driver-hours.",
-                plan.Id,
-                totalScheduledHours);
+                $"The {TimerSeconds}-second WebSocket timer completed. No roster was generated or saved.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            logger.LogInformation("Roster generation job {JobId} was cancelled.", jobId);
+            logger.LogInformation("WebSocket timer job {JobId} was cancelled.", jobId);
 
             await PublishAsync(
                 jobId,
@@ -152,11 +145,11 @@ public sealed class RosterGenerationService(
                 "cancelled",
                 "cancelled",
                 0,
-                "Roster generation was cancelled because the generation page was closed.");
+                "The WebSocket timer was cancelled because the timer page was closed.");
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Roster generation job {JobId} failed.", jobId);
+            logger.LogError(exception, "WebSocket timer job {JobId} failed.", jobId);
 
             await PublishAsync(
                 jobId,
@@ -165,9 +158,7 @@ public sealed class RosterGenerationService(
                 "failed",
                 "failed",
                 0,
-                exception is RosterGenerationException
-                    ? exception.Message
-                    : "Roster generation failed.");
+                "WebSocket timer failed.");
         }
         finally
         {
@@ -187,7 +178,7 @@ public sealed class RosterGenerationService(
         Guid? rosterPlanId = null,
         int? totalScheduledHours = null)
     {
-        var payload = new RosterGenerationProgressResponse
+        var payload = new RosterTimerProgressResponse
         {
             JobId = jobId,
             WeekOffset = weekOffset,
@@ -207,15 +198,8 @@ public sealed class RosterGenerationService(
         }
 
         return hub.Clients.All.SendAsync(
-            "rosterGenerationProgress",
+            "rosterTimerProgress",
             payload);
-    }
-
-    private static int GetDurationHours(RosterShift shift)
-    {
-        var start = shift.StartTime.Hour;
-        var finish = shift.FinishTime.Hour;
-        return finish > start ? finish - start : 24 - start + finish;
     }
 
     private sealed class ActiveJob(Guid jobId, int weekOffset, DateOnly weekStart)
@@ -226,7 +210,7 @@ public sealed class RosterGenerationService(
 
         public DateOnly WeekStart { get; } = weekStart;
 
-        public ConcurrentQueue<RosterGenerationProgressResponse> Logs { get; } = new();
+        public ConcurrentQueue<RosterTimerProgressResponse> Logs { get; } = new();
 
         public CancellationTokenSource CancellationTokenSource { get; } = new();
     }
