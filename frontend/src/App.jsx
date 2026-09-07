@@ -1,9 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import {
-  HubConnectionBuilder,
-  HttpTransportType,
-  LogLevel,
-} from '@microsoft/signalr'
+import { useEffect, useState } from 'react'
+import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',
@@ -52,28 +48,6 @@ function getShiftDuration(startTime, finishTime) {
   }
 
   return `${duration} ${duration === 1 ? 'hour' : 'hours'}`
-}
-
-function formatGenerationStage(stage) {
-  if (!stage) {
-    return 'starting'
-  }
-
-  return stage
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase())
-}
-
-function formatGenerationLogTime(timestampUtc) {
-  if (!timestampUtc) {
-    return ''
-  }
-
-  return new Date(timestampUtc).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
 }
 
 async function fetchJson(url, options) {
@@ -381,8 +355,8 @@ function DemandManager({ setErrorPopup }) {
 
       <p className="demand-help">
         Import the single weekly demand template as an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
-        and read-only, while demand is calculated from deliveries and can be edited below. Open hours always
-        require at least one driver. Hours are shown
+        and read-only, while demand is calculated from deliveries and can be edited below. Enter 0 when no drivers
+        are needed; every open hour needs an explicit demand value before generation. Hours are shown
         as 06–23, followed by next-day 00–05. Importing new data replaces the existing template.
       </p>
 
@@ -560,337 +534,6 @@ function WeekSelector({ weekOffset, onChange, disabled = false }) {
   )
 }
 
-function RosterTimerPanel({ setErrorPopup, isVisible = true }) {
-  const [weekOffset, setWeekOffset] = useState(minWeekOffset)
-  const [hubStatus, setHubStatus] = useState('connecting')
-  const [generation, setGeneration] = useState(null)
-  const [generationLogs, setGenerationLogs] = useState([])
-  const [weekSummary, setWeekSummary] = useState(null)
-  const generationRef = useRef(null)
-  const generationLogRef = useRef(null)
-  const generationRequestedRef = useRef(false)
-
-  useEffect(() => {
-    generationRef.current = generation
-  }, [generation])
-
-  useEffect(() => {
-    const log = generationLogRef.current
-
-    if (log) {
-      log.scrollTop = log.scrollHeight
-    }
-  }, [generationLogs])
-
-  useEffect(() => {
-    setGeneration(null)
-    setGenerationLogs([])
-    generationRequestedRef.current = false
-  }, [weekOffset])
-
-  useEffect(() => {
-    setWeekSummary(null)
-    fetchJson(`/api/admin/roster/summary?weekOffset=${weekOffset}`, { cache: 'no-store' })
-      .then(setWeekSummary)
-      .catch((error) => setErrorPopup(error.message))
-  }, [setErrorPopup, weekOffset])
-
-  useEffect(() => {
-    let isMounted = true
-    const connection = new HubConnectionBuilder()
-      .withUrl('/hubs/roster-timer', {
-        transport: HttpTransportType.WebSockets,
-        skipNegotiation: true,
-      })
-      .withAutomaticReconnect()
-      .configureLogging(LogLevel.Warning)
-      .build()
-
-    const handleProgress = (payload) => {
-      if (!isMounted) {
-        return
-      }
-
-      if (payload.weekOffset !== weekOffset) {
-        return
-      }
-
-      if (payload.status === 'starting' ||
-          payload.status === 'started' ||
-          payload.status === 'running') {
-        generationRequestedRef.current = true
-      } else if (payload.status === 'completed' ||
-                 payload.status === 'failed' ||
-                 payload.status === 'cancelled') {
-        generationRequestedRef.current = false
-      }
-
-      setGenerationLogs((current) => {
-        const alreadyHasJob = current.some((entry) => entry.jobId === payload.jobId)
-        const hasDifferentJob = current.some((entry) => entry.jobId !== payload.jobId)
-        const alreadyAdded = current.some((entry) =>
-          entry.jobId === payload.jobId &&
-          entry.timestampUtc === payload.timestampUtc &&
-          entry.message === payload.message,
-        )
-
-        if (alreadyAdded) {
-          return current
-        }
-
-        const previousLogs = !alreadyHasJob && hasDifferentJob ? [] : current
-
-        return [...previousLogs, payload].sort((first, second) =>
-          new Date(first.timestampUtc).getTime() - new Date(second.timestampUtc).getTime(),
-        )
-      })
-
-      setGeneration((current) => {
-        if (current?.jobId === payload.jobId) {
-          const currentTimestamp = current.timestampUtc
-            ? new Date(current.timestampUtc).getTime()
-            : 0
-          const payloadTimestamp = payload.timestampUtc
-            ? new Date(payload.timestampUtc).getTime()
-            : 0
-
-          if (current.progress > payload.progress ||
-              (current.progress === payload.progress && currentTimestamp >= payloadTimestamp)) {
-            return current
-          }
-        }
-
-        if (!current ||
-            !current.jobId ||
-            current.jobId === payload.jobId ||
-            current.status === 'completed' ||
-            current.status === 'failed') {
-          return payload
-        }
-
-        return current
-      })
-
-      if (payload.status === 'failed') {
-        setErrorPopup(payload.message)
-      }
-    }
-
-    connection.on('rosterTimerProgress', handleProgress)
-    connection.onreconnecting(() => {
-      if (isMounted) {
-        setHubStatus('reconnecting')
-      }
-    })
-    connection.onreconnected(() => {
-      if (isMounted) {
-        setHubStatus('connected')
-      }
-    })
-    connection.onclose(() => {
-      if (isMounted) {
-        setHubStatus('disconnected')
-      }
-    })
-
-    const cancelOnPageHide = () => {
-      if (!generationRequestedRef.current) {
-        return
-      }
-
-      const currentGeneration = generationRef.current
-      const body = new Blob([
-        JSON.stringify({
-          weekOffset,
-          jobId: currentGeneration?.jobId || null,
-        }),
-      ], { type: 'application/json' })
-      const endpoint = '/api/admin/roster/timer/cancel'
-
-      try {
-        if (navigator.sendBeacon?.(endpoint, body)) {
-          return
-        }
-      } catch {
-        // Fall back to a keepalive request when sendBeacon is unavailable.
-      }
-
-      void fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        credentials: 'include',
-        keepalive: true,
-      }).catch(() => {})
-    }
-
-    window.addEventListener('pagehide', cancelOnPageHide)
-
-    connection
-      .start()
-      .then(() => {
-        if (isMounted) {
-          setHubStatus('connected')
-        }
-      })
-      .catch((error) => {
-        if (isMounted) {
-          setHubStatus('error')
-          setErrorPopup(`Live roster updates are unavailable: ${error.message}`)
-        }
-      })
-
-    return () => {
-      isMounted = false
-      connection.off('rosterTimerProgress', handleProgress)
-      window.removeEventListener('pagehide', cancelOnPageHide)
-      connection.stop()
-    }
-  }, [setErrorPopup, weekOffset])
-
-  const isRunning = generation?.status === 'starting'
-    || generation?.status === 'started'
-    || generation?.status === 'running'
-
-  async function startTimer() {
-    generationRequestedRef.current = true
-    setGeneration({
-      status: 'starting',
-      stage: 'starting',
-      progress: 0,
-      message: 'Starting 10-second WebSocket timer…',
-    })
-    setGenerationLogs([])
-
-    try {
-      const payload = await fetchJson('/api/admin/roster/timer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ weekOffset }),
-      })
-
-      setGeneration((current) => {
-        if (current?.jobId === payload.jobId && current.progress > payload.progress) {
-          return current
-        }
-
-        return payload
-      })
-    } catch (error) {
-      if (error.status === 409) {
-        generationRequestedRef.current = false
-      } else {
-        setGeneration(null)
-      }
-      setErrorPopup(error.message)
-    }
-  }
-
-  return (
-    <section
-      className="admin-tools roster-generation-tools"
-      hidden={!isVisible}
-      aria-hidden={!isVisible}
-    >
-      <div className="section-heading">
-        <div>
-          <span className="eyebrow">Administration</span>
-          <h2>WebSocket timer</h2>
-        </div>
-        <WeekSelector
-          weekOffset={weekOffset}
-          onChange={setWeekOffset}
-        />
-      </div>
-
-      <p className="demand-help">
-        Select a week and start the 10-second timer. Progress is sent live over a WebSocket connection to every admin screen.
-      </p>
-
-      {weekSummary && (
-        <div className="roster-week-summary" aria-label="Roster week summary">
-          <div className="roster-week-summary-card">
-            <span>Hours needed</span>
-            <strong>{weekSummary.requiredDriverHours}h</strong>
-          </div>
-          <div className="roster-week-summary-card">
-            <span>Availability entered</span>
-            <strong>{weekSummary.enteredAvailabilityHours}h</strong>
-          </div>
-          <div className="roster-week-summary-card">
-            <span>Drivers with no availability</span>
-            <strong>{weekSummary.driversWithoutAvailability}</strong>
-          </div>
-        </div>
-      )}
-
-      {weekSummary && !weekSummary.demandPlanExists && (
-        <p className="message info-message">No demand has been imported for this week yet.</p>
-      )}
-
-      <div className="message info-message">
-        Roster generation has been removed. This screen only runs a 10-second WebSocket timer; no shifts are calculated or saved.
-      </div>
-
-      <div className="roster-generation-actions">
-        <button
-          type="button"
-          onClick={startTimer}
-          disabled={hubStatus !== 'connected' || isRunning}
-        >
-          {isRunning ? 'Timer running…' : 'Start 10-second timer'}
-        </button>
-        <span className={`hub-status ${hubStatus}`}>
-          Live updates: {hubStatus}
-        </span>
-      </div>
-
-      {generation && (
-        <div className={`roster-generation-status ${generation.status}`}>
-          <div className="roster-generation-status-heading">
-            <div className="roster-generation-stage">
-              <span className="eyebrow">Stage</span>
-              <strong>{formatGenerationStage(generation.stage)}</strong>
-            </div>
-            <span>{generation.progress}%</span>
-          </div>
-          <p className="roster-generation-message">{generation.message}</p>
-          <div className="roster-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={generation.progress}>
-            <span style={{ width: `${generation.progress}%` }} />
-          </div>
-          {generation.weekStart && (
-            <small>Week starting {generation.weekStart}</small>
-          )}
-        </div>
-      )}
-
-      {generationLogs.length > 0 && (
-        <div className="roster-generation-log" aria-label="WebSocket timer log">
-          <div className="roster-generation-log-heading">
-            <div>
-              <span className="eyebrow">Live activity</span>
-              <h3>WebSocket timer log</h3>
-            </div>
-            <span>{generationLogs.length} events</span>
-          </div>
-          <ol ref={generationLogRef}>
-            {generationLogs.map((log, index) => (
-              <li key={`${log.jobId}-${log.timestampUtc}-${index}`}>
-                <time dateTime={log.timestampUtc}>
-                  {formatGenerationLogTime(log.timestampUtc)}
-                </time>
-                <strong>{formatGenerationStage(log.stage)}</strong>
-                <span>{log.message}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-
-    </section>
-  )
-}
-
 function AdminConsole({
   authState,
   errorPopup,
@@ -922,6 +565,7 @@ function AdminConsole({
   onTabChange,
 }) {
   const [activeTab, setActiveTab] = useState('employees')
+  const [savedWeekStart, setSavedWeekStart] = useState(null)
 
   function switchTab(tab) {
     setActiveTab(tab)
@@ -968,7 +612,7 @@ function AdminConsole({
           <header className="page-header">
             <span className="eyebrow">Roaster Generator</span>
             <h1>Admin console</h1>
-            <p className="lead">Manage employees, review availability, and prepare demand data.</p>
+            <p className="lead">Manage availability, configure demand, and generate balanced rosters.</p>
           </header>
 
           <div className="app-toolbar">
@@ -1007,10 +651,17 @@ function AdminConsole({
             </button>
             <button
               type="button"
-              className={activeTab === 'roster-timer' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => switchTab('roster-timer')}
+              className={activeTab === 'generate-roster' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => switchTab('generate-roster')}
             >
-              WebSocket timer
+              Generate roster
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'saved-rosters' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => { setSavedWeekStart(null); switchTab('saved-rosters') }}
+            >
+              Saved rosters
             </button>
           </nav>
 
@@ -1299,10 +950,18 @@ function AdminConsole({
 
           {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} />}
 
-          <RosterTimerPanel
+          <RosterGenerationPanel
+            fetchJson={fetchJson}
             setErrorPopup={setErrorPopup}
-            isVisible={activeTab === 'roster-timer'}
+            isVisible={activeTab === 'generate-roster'}
+            onShowSaved={(weekStart) => { setSavedWeekStart(weekStart); switchTab('saved-rosters') }}
           />
+          {activeTab === 'saved-rosters' && <SavedRosterPanel
+            key={savedWeekStart || 'upcoming'}
+            fetchJson={fetchJson}
+            setErrorPopup={setErrorPopup}
+            initialWeekStart={savedWeekStart}
+          />}
         </section>
       </main>
     </>

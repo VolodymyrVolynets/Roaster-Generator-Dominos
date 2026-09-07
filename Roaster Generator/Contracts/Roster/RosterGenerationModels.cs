@@ -1,7 +1,13 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Roaster_Generator.Contracts.Roster;
 
 public sealed class RosterTimerStartResponse
 {
+    public DateTimeOffset TimestampUtc { get; init; }
+
+    public long Sequence { get; init; }
+
     public Guid JobId { get; init; }
 
     public int WeekOffset { get; init; }
@@ -36,6 +42,37 @@ public sealed class RosterPlanResponse
 
     public int TotalScheduledHours { get; init; }
 
+    // Derive from actual shifts so historical snapshots also expose this metric.
+    public double AverageHoursPerShift
+    {
+        get
+        {
+            var count = Employees.Sum(employee => employee.Shifts.Count);
+            return count == 0 ? 0 : Math.Round(
+                Employees.Sum(employee => employee.Shifts.Sum(shift => shift.DurationHours)) / (double)count, 2);
+        }
+    }
+
+    public double? CoveragePercent { get; init; }
+
+    public string SolverStatus { get; init; } = "legacy";
+
+    public bool IsOptimal { get; init; }
+
+    public double SolveSeconds { get; init; }
+
+    public double? MinimumRestHours { get; init; }
+
+    public double FairnessSpreadPercentagePoints { get; init; }
+
+    public double HistoricalFairnessSpreadPercentagePoints { get; init; }
+
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    public RosterSettingsRequest? Settings { get; init; }
+
+    public IReadOnlyList<RosterCoverageResponse> Coverage { get; init; } = [];
+
     public IReadOnlyList<RosterEmployeeResponse> Employees { get; init; } = [];
 }
 
@@ -62,6 +99,23 @@ public sealed class RosterEmployeeResponse
 
     public int ScheduledHours { get; init; }
 
+    public double AverageHoursPerShift => Shifts.Count == 0 ? 0
+        : Math.Round(Shifts.Sum(shift => shift.DurationHours) / (double)Shifts.Count, 2);
+
+    public double? TargetPercentage { get; init; }
+
+    public int PreviousScheduledHours { get; init; }
+
+    public int PreviousTargetHours { get; init; }
+
+    public double? PreviousTargetPercentage { get; init; }
+
+    public int HistoryWeeks { get; init; }
+
+    public double? BalancedTargetHours { get; init; }
+
+    public double? CumulativeTargetPercentage { get; init; }
+
     public IReadOnlyList<RosterShiftResponse> Shifts { get; init; } = [];
 }
 
@@ -74,6 +128,10 @@ public sealed class RosterShiftResponse
     public string FinishTime { get; init; } = string.Empty;
 
     public int DurationHours { get; init; }
+
+    public int StartDayOffset { get; init; }
+
+    public int FinishDayOffset { get; init; }
 }
 
 public sealed class RosterTimerProgressResponse
@@ -97,4 +155,39 @@ public sealed class RosterTimerProgressResponse
     public Guid? RosterPlanId { get; init; }
 
     public int? TotalScheduledHours { get; init; }
+
+    public long Sequence { get; init; }
+
+    public string Severity { get; init; } = "info";
+
+    public IReadOnlyList<string> Diagnostics { get; init; } = [];
+}
+
+public sealed class RosterCoverageResponse
+{
+    public DateOnly Date { get; init; }
+    public string StartTime { get; init; } = string.Empty;
+    public int StartDayOffset { get; init; }
+    public int Required { get; init; }
+    public int Scheduled { get; init; }
+}
+
+public sealed class RosterSettingsRequest : IValidatableObject
+{
+    [Range(0, 1000)] public int TargetHoursWeight { get; set; } = 100;
+    [Range(0, 1000)] public int HistoryFairnessWeight { get; set; } = 100;
+    [Range(0, 1000)] public int FairnessSpreadWeight { get; set; } = 1000;
+    [Range(0, 1000)] public int LongShiftBonus { get; set; } = 25;
+    [Range(0, 1000)] public int ShortShiftPenalty { get; set; } = 10;
+    [Range(0, 1000)] public int DailyShiftCountPenalty { get; set; } = 25;
+    [Range(0, 1000)] public int ShortBreakPenalty { get; set; } = 100;
+    [Range(0, 24)] public int MinimumRestHours { get; set; } = 8;
+    [Range(0, 48)] public int PreferredRestHours { get; set; } = 12;
+    [Range(1, 120)] public int MaxSolveSeconds { get; set; } = 20;
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (PreferredRestHours < MinimumRestHours)
+            yield return new ValidationResult("Preferred rest must be at least the minimum rest.", [nameof(PreferredRestHours)]);
+    }
 }

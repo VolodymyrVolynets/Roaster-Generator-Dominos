@@ -100,5 +100,16 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             TournamentSize = 2,
             ExactSearchNodeLimit = 500_000
         });
+
+        builder.Property(settings => settings.MinimumRestHours)
+            .HasColumnName("minimum_rest_hours").HasDefaultValue(8).IsRequired();
+        builder.Property(settings => settings.PreferredRestHours)
+            .HasColumnName("preferred_rest_hours").HasDefaultValue(12).IsRequired();
+        builder.Property(settings => settings.MaxSolveSeconds)
+            .HasColumnName("max_solve_seconds").HasDefaultValue(20).IsRequired();
+        builder.Property(settings => settings.HistoryFairnessWeight)
+            .HasColumnName("history_fairness_weight").HasDefaultValue(100).IsRequired();
+        builder.Property(settings => settings.FairnessSpreadWeight)
+            .HasColumnName("fairness_spread_weight").HasDefaultValue(1000).IsRequired();
     }
 }

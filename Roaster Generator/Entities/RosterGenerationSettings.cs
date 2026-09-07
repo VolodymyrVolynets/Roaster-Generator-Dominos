@@ -9,6 +9,10 @@ public sealed class RosterGenerationSettings
 
     public int TargetHoursWeight { get; set; } = 100;
 
+    public int HistoryFairnessWeight { get; set; } = 100;
+
+    public int FairnessSpreadWeight { get; set; } = 1000;
+
     public int LongShiftBonus { get; set; } = 25;
 
     public int ShortShiftPenalty { get; set; } = 10;
@@ -16,6 +20,12 @@ public sealed class RosterGenerationSettings
     public int DailyShiftCountPenalty { get; set; } = 25;
 
     public int ShortBreakPenalty { get; set; } = 100;
+
+    public int MinimumRestHours { get; set; } = 8;
+
+    public int PreferredRestHours { get; set; } = 12;
+
+    public int MaxSolveSeconds { get; set; } = 20;
 
     public int DailyOptionPoolSize { get; set; } = 256;
 

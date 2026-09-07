@@ -72,6 +72,9 @@ public sealed class RosterPlan
 
     public DateTimeOffset UpdatedAtUtc { get; set; }
 
+    // Immutable generation inputs/metrics and employee names/targets for historical display.
+    public string? SnapshotJson { get; set; }
+
     public ICollection<RosterShift> Shifts { get; set; } = new List<RosterShift>();
 }
 

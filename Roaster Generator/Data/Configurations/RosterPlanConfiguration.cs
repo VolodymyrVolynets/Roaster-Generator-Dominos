@@ -35,5 +35,9 @@ public sealed class RosterPlanConfiguration : IEntityTypeConfiguration<RosterPla
 
         builder.HasIndex(plan => plan.WeekStart)
             .IsUnique();
+
+        builder.Property(plan => plan.SnapshotJson)
+            .HasColumnName("snapshot_json")
+            .HasColumnType("jsonb");
     }
 }

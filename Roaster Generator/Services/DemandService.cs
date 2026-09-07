@@ -727,9 +727,7 @@ public sealed class DemandService(
                         return new ParsedDemandValue(
                             column.Position,
                             value.Deliveries,
-                            IsShopOpen(weekStart, column.Position, item.Key)
-                                ? Math.Max(1, value.Demand ?? 0)
-                                : value.Demand);
+                            value.Demand);
                     })
                     .ToList()))
             .ToList();

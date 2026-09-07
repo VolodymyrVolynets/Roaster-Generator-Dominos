@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Roaster_Generator.Data;
@@ -11,9 +12,11 @@ using Roaster_Generator.Data;
 namespace Roaster_Generator.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907221410_AddExactRosterGeneration")]
+    partial class AddExactRosterGeneration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -663,23 +666,11 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(500000)
                         .HasColumnName("exact_search_node_limit");
 
-                    b.Property<int>("FairnessSpreadWeight")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(1000)
-                        .HasColumnName("fairness_spread_weight");
-
                     b.Property<int>("GenerationCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(150)
                         .HasColumnName("generation_count");
-
-                    b.Property<int>("HistoryFairnessWeight")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(100)
-                        .HasColumnName("history_fairness_weight");
 
                     b.Property<int>("LongShiftBonus")
                         .ValueGeneratedOnAdd()
@@ -754,9 +745,7 @@ namespace Roaster_Generator.Data.Migrations
                             DailyShiftCountPenalty = 25,
                             EliteCount = 2,
                             ExactSearchNodeLimit = 500000,
-                            FairnessSpreadWeight = 1000,
                             GenerationCount = 150,
-                            HistoryFairnessWeight = 100,
                             LongShiftBonus = 25,
                             MaxSolveSeconds = 20,
                             MinimumRestHours = 8,
