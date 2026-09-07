@@ -1,8 +1,43 @@
 services:
   roaster-generator:
+    container_name: backend
     build:
       context: .
       dockerfile: Roaster Generator/Dockerfile
     image: roaster-generator
     ports:
       - "8080:8080"
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=roaster;Username=roaster;Password=roaster_dev_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    container_name: database
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: roaster
+      POSTGRES_USER: roaster
+      POSTGRES_PASSWORD: roaster_dev_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roaster -d roaster"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    container_name: frontend
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    image: roaster-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - roaster-generator
+
+volumes:
+  postgres_data:

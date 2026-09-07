@@ -1,11 +1,56 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: roaster
+      POSTGRES_USER: roaster
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roaster -d roaster"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   roaster-generator:
     image: ghcr.io/volodymyrvolynets/roaster-generator-dominos:latest
-    container_name: roaster-generator
+    container_name: backend
     restart: unless-stopped
     expose:
       - "8080"
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=roaster;Username=roaster;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
+      - backend
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=roaster-generator_default"
+      - "traefik.http.routers.roaster-api.rule=Host(`dominos-roaster.online`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.roaster-api.entrypoints=websecure"
+      - "traefik.http.routers.roaster-api.priority=100"
+      - "traefik.http.routers.roaster-api.tls=true"
+      - "traefik.http.routers.roaster-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.roaster-api.loadbalancer.server.port=8080"
+
+  frontend:
+    image: ghcr.io/volodymyrvolynets/roaster-frontend:latest
+    container_name: frontend
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      - roaster-generator
+    networks:
+      - backend
       - traefik-public
     labels:
       - "traefik.enable=true"
@@ -14,7 +59,7 @@ services:
       - "traefik.http.routers.roaster.entrypoints=websecure"
       - "traefik.http.routers.roaster.tls=true"
       - "traefik.http.routers.roaster.tls.certresolver=letsencrypt"
-      - "traefik.http.services.roaster.loadbalancer.server.port=8080"
+      - "traefik.http.services.roaster.loadbalancer.server.port=80"
       - "traefik.http.routers.roaster-http.rule=Host(`dominos-roaster.online`)"
       - "traefik.http.routers.roaster-http.entrypoints=web"
       - "traefik.http.routers.roaster-http.middlewares=roaster-redirect"
@@ -22,6 +67,11 @@ services:
       - "traefik.http.middlewares.roaster-redirect.redirectscheme.scheme=https"
 
 networks:
+  backend:
+    internal: true
   traefik-public:
     external: true
     name: roaster-generator_default
+
+volumes:
+  postgres_data:

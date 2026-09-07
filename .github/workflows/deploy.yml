@@ -9,6 +9,7 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/volodymyrvolynets/roaster-generator-dominos
+  FRONTEND_IMAGE_NAME: ghcr.io/volodymyrvolynets/roaster-frontend
 
 jobs:
   build-and-push:
@@ -39,6 +40,16 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Build and push React frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE_NAME }}:latest
+            ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
     name: Deploy to VPS

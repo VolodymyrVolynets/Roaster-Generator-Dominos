@@ -9,6 +9,8 @@
 **/bin
 **/obj
 **/node_modules
+**/dist
+**/.npm-cache
 **/Dockerfile*
 **/docker-compose*
 **/*.user
