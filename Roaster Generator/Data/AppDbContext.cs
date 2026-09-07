@@ -20,6 +20,10 @@ public sealed class AppDbContext(
 
     public DbSet<DemandValue> DemandValues => Set<DemandValue>();
 
+    public DbSet<RosterPlan> RosterPlans => Set<RosterPlan>();
+
+    public DbSet<RosterShift> RosterShifts => Set<RosterShift>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

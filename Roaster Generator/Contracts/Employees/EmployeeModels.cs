@@ -9,6 +9,8 @@ public sealed class EmployeeRequest
     public string LastName { get; set; } = string.Empty;
 
     public string PhoneNumber { get; set; } = string.Empty;
+
+    public int TargetHours { get; set; } = 20;
 }
 
 public sealed class EmployeeResponse
@@ -24,4 +26,6 @@ public sealed class EmployeeResponse
     public string PhoneNumber { get; init; } = string.Empty;
 
     public bool IsActive { get; init; }
+
+    public int TargetHours { get; init; }
 }

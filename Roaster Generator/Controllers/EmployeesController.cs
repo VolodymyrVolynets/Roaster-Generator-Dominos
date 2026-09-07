@@ -156,6 +156,7 @@ public sealed class EmployeesController(
         FirstName = employee.FirstName,
         LastName = employee.LastName,
         PhoneNumber = employee.PhoneNumber,
-        IsActive = employee.IsActive
+        IsActive = employee.IsActive,
+        TargetHours = employee.TargetHours
     };
 }

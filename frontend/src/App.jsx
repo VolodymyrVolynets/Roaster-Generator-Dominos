@@ -19,6 +19,7 @@ const emptyEmployeeForm = {
   firstName: '',
   lastName: '',
   phoneNumber: '',
+  targetHours: 20,
 }
 
 function parseDate(dateValue) {
@@ -553,6 +554,18 @@ function RosterGenerationPanel({ setErrorPopup }) {
   const [weekOffset, setWeekOffset] = useState(minWeekOffset)
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
+  const [roster, setRoster] = useState(null)
+
+  useEffect(() => {
+    setRoster(null)
+    fetchJson(`/api/admin/roster?weekOffset=${weekOffset}`)
+      .then(setRoster)
+      .catch((error) => {
+        if (error.status !== 404) {
+          setErrorPopup(error.message)
+        }
+      })
+  }, [setErrorPopup, weekOffset])
 
   useEffect(() => {
     let isMounted = true
@@ -577,6 +590,24 @@ function RosterGenerationPanel({ setErrorPopup }) {
 
         return current
       })
+
+      if (payload.status === 'completed') {
+        fetchJson(`/api/admin/roster?weekOffset=${payload.weekOffset}`)
+          .then((plan) => {
+            if (isMounted) {
+              setRoster(plan)
+            }
+          })
+          .catch((error) => {
+            if (isMounted) {
+              setErrorPopup(error.message)
+            }
+          })
+      }
+
+      if (payload.status === 'failed') {
+        setErrorPopup(payload.message)
+      }
     }
 
     connection.on('rosterGenerationProgress', handleProgress)
@@ -622,6 +653,7 @@ function RosterGenerationPanel({ setErrorPopup }) {
     || generation?.status === 'running'
 
   async function generateRoster() {
+    setRoster(null)
     setGeneration({
       status: 'starting',
       progress: 0,
@@ -689,6 +721,44 @@ function RosterGenerationPanel({ setErrorPopup }) {
           )}
         </div>
       )}
+
+      {roster && (
+        <div className="roster-result">
+          <div className="roster-result-heading">
+            <div>
+              <span className="eyebrow">Generated roster</span>
+              <h3>Week starting {roster.weekStart}</h3>
+            </div>
+            <strong>{roster.totalScheduledHours} driver-hours</strong>
+          </div>
+          <div className="roster-result-table-wrapper">
+            <table className="roster-result-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Target</th>
+                  <th>Scheduled</th>
+                  <th>Shifts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roster.employees.map((employee) => (
+                  <tr key={employee.employeeId}>
+                    <th>{employee.employeeName}</th>
+                    <td>{employee.targetHours}h</td>
+                    <td>{employee.scheduledHours}h</td>
+                    <td>
+                      {employee.shifts.map((shift) =>
+                        `${shift.date} ${shift.startTime}–${shift.finishTime} (${shift.durationHours}h)`,
+                      ).join(', ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -738,6 +808,7 @@ function AdminConsole({
     updateEmployeeForm('firstName', '')
     updateEmployeeForm('lastName', '')
     updateEmployeeForm('phoneNumber', '')
+    updateEmployeeForm('targetHours', 20)
   }
 
   function closeEmployeeEditor() {
@@ -836,6 +907,7 @@ function AdminConsole({
                     <strong>{employee.firstName} {employee.lastName}</strong>
                     <span>Employee number: {employee.employeeNumber}</span>
                     <span>Phone: {employee.phoneNumber || 'Not set'}</span>
+                    <span>Target hours: {employee.targetHours}</span>
                     <span className="employee-card-status">
                       {employee.isActive ? 'Active' : 'Inactive'}
                     </span>
@@ -886,6 +958,17 @@ function AdminConsole({
                       id="admin-employee-phone"
                       value={employeeForm.phoneNumber}
                       onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
+                    />
+                    <label htmlFor="admin-employee-target-hours">Target hours per week</label>
+                    <input
+                      id="admin-employee-target-hours"
+                      type="number"
+                      min="3"
+                      max="168"
+                      step="1"
+                      value={employeeForm.targetHours}
+                      onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
+                      required
                     />
 
                     <div className="employee-form-actions">
@@ -1195,6 +1278,7 @@ function App() {
         firstName: employee.firstName,
         lastName: employee.lastName,
         phoneNumber: employee.phoneNumber,
+        targetHours: employee.targetHours,
       })
     }
   }, [employees, selectedEmployeeId, isCreatingEmployee])
@@ -1530,6 +1614,17 @@ function App() {
                   id="employee-phone"
                   value={employeeForm.phoneNumber}
                   onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
+                />
+                <label htmlFor="employee-target-hours">Target hours per week</label>
+                <input
+                  id="employee-target-hours"
+                  type="number"
+                  min="3"
+                  max="168"
+                  step="1"
+                  value={employeeForm.targetHours}
+                  onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
+                  required
                 />
                 <div className="employee-form-actions">
                   <button type="submit" disabled={employeeSaveState.status === 'saving'}>

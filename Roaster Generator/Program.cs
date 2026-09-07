@@ -42,6 +42,8 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<DemandService>();
 builder.Services.AddScoped<WeeklyScheduleService>();
+builder.Services.AddScoped<RosterGenerationAlgorithm>();
+builder.Services.AddScoped<RosterPlanService>();
 builder.Services.AddSingleton<RosterGenerationService>();
 builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
 builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();

@@ -43,6 +43,11 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(employee => employee.TargetHours)
+            .HasColumnName("target_hours")
+            .HasDefaultValue(20)
+            .IsRequired();
+
         builder.HasIndex(employee => employee.EmployeeNumber)
             .IsUnique();
 

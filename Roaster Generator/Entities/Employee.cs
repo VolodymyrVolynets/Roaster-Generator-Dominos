@@ -14,7 +14,11 @@ public sealed class Employee
 
     public bool IsActive { get; set; } = true;
 
+    public int TargetHours { get; set; } = 20;
+
     public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
+
+    public ICollection<RosterShift> RosterShifts { get; set; } = new List<RosterShift>();
 
     public ApplicationUser? User { get; set; }
 }

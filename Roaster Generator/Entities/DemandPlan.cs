@@ -61,3 +61,35 @@ public sealed class DemandValue
 
     public DemandColumn Column { get; set; } = null!;
 }
+
+public sealed class RosterPlan
+{
+    public Guid Id { get; set; }
+
+    public DateOnly WeekStart { get; set; }
+
+    public DateTimeOffset CreatedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+
+    public ICollection<RosterShift> Shifts { get; set; } = new List<RosterShift>();
+}
+
+public sealed class RosterShift
+{
+    public Guid Id { get; set; }
+
+    public Guid RosterPlanId { get; set; }
+
+    public Guid EmployeeId { get; set; }
+
+    public DateOnly Date { get; set; }
+
+    public TimeOnly StartTime { get; set; }
+
+    public TimeOnly FinishTime { get; set; }
+
+    public RosterPlan RosterPlan { get; set; } = null!;
+
+    public Employee Employee { get; set; } = null!;
+}

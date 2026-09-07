@@ -41,7 +41,7 @@ public sealed class AdminEmployeesController(
         var lastName = request.LastName.Trim();
         var phoneNumber = request.PhoneNumber.Trim();
 
-        var validation = ValidateEmployee(employeeNumber, firstName, lastName);
+        var validation = ValidateEmployee(employeeNumber, firstName, lastName, request.TargetHours);
 
         if (validation is not null)
         {
@@ -67,6 +67,7 @@ public sealed class AdminEmployeesController(
             FirstName = firstName,
             LastName = lastName,
             PhoneNumber = phoneNumber,
+            TargetHours = request.TargetHours,
             IsActive = true
         };
 
@@ -130,7 +131,7 @@ public sealed class AdminEmployeesController(
         var lastName = request.LastName.Trim();
         var phoneNumber = request.PhoneNumber.Trim();
 
-        var validation = ValidateEmployee(employeeNumber, firstName, lastName);
+        var validation = ValidateEmployee(employeeNumber, firstName, lastName, request.TargetHours);
 
         if (validation is not null)
         {
@@ -172,6 +173,7 @@ public sealed class AdminEmployeesController(
         employee.FirstName = firstName;
         employee.LastName = lastName;
         employee.PhoneNumber = phoneNumber;
+        employee.TargetHours = request.TargetHours;
         await db.SaveChangesAsync(cancellationToken);
 
         return Ok(ToEmployeeResponse(employee));
@@ -248,15 +250,29 @@ public sealed class AdminEmployeesController(
     private static IActionResult? ValidateEmployee(
         string employeeNumber,
         string firstName,
-        string lastName)
+        string lastName,
+        int targetHours)
     {
-        return string.IsNullOrWhiteSpace(employeeNumber) ||
+        if (string.IsNullOrWhiteSpace(employeeNumber) ||
             string.IsNullOrWhiteSpace(firstName) ||
             string.IsNullOrWhiteSpace(lastName)
-            ? new BadRequestObjectResult(new ValidationProblemDetails(
+            )
+        {
+            return new BadRequestObjectResult(new ValidationProblemDetails(
                 new Dictionary<string, string[]>
                 {
                     ["employee"] = ["Employee number, first name, and last name are required."]
+                })
+                {
+                    Title = "The employee is invalid."
+                });
+        }
+
+        return targetHours is < 3 or > 168
+            ? new BadRequestObjectResult(new ValidationProblemDetails(
+                new Dictionary<string, string[]>
+                {
+                    ["targetHours"] = ["Target hours must be between 3 and 168 per week."]
                 })
                 {
                     Title = "The employee is invalid."
@@ -271,6 +287,7 @@ public sealed class AdminEmployeesController(
         FirstName = employee.FirstName,
         LastName = employee.LastName,
         PhoneNumber = employee.PhoneNumber,
-        IsActive = employee.IsActive
+        IsActive = employee.IsActive,
+        TargetHours = employee.TargetHours
     };
 }

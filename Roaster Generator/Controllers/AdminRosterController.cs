@@ -13,8 +13,37 @@ namespace Roaster_Generator.Controllers;
 [Route("api/admin/roster")]
 public sealed class AdminRosterController(
     IValidator<WeekSelectionRequest> weekValidator,
-    RosterGenerationService rosterGeneration) : ApiControllerBase
+    RosterGenerationService rosterGeneration,
+    RosterPlanService rosterPlans) : ApiControllerBase
 {
+    [HttpGet]
+    public async Task<IActionResult> Get(
+        [FromQuery] int? weekOffset,
+        CancellationToken cancellationToken)
+    {
+        var selection = new WeekSelectionRequest
+        {
+            WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
+        };
+        var validationResult = await weekValidator.ValidateAsync(selection, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            var errors = validationResult.Errors
+                .GroupBy(error => error.PropertyName)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(error => error.ErrorMessage).ToArray());
+
+            return ValidationError(errors, "The selected week is invalid.");
+        }
+
+        var plan = await rosterPlans.GetAsync(selection.WeekOffset, cancellationToken);
+        return plan is null
+            ? NotFound(new { message = "A roster has not been generated for this week." })
+            : Ok(plan);
+    }
+
     [HttpPost("generate")]
     public async Task<IActionResult> Generate(
         [FromBody] WeekSelectionRequest request,
