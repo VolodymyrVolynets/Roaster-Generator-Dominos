@@ -93,6 +93,16 @@ function App() {
     setSaveState({ status: 'idle' })
   }
 
+  function resetDay(date) {
+    setSchedule((current) => ({
+      ...current,
+      days: current.days.map((day) =>
+        day.date === date ? { ...day, startTime: null, finishTime: null } : day,
+      ),
+    }))
+    setSaveState({ status: 'idle' })
+  }
+
   async function saveSchedule(event) {
     event.preventDefault()
     setSaveState({ status: 'saving' })
@@ -180,11 +190,12 @@ function App() {
             </div>
 
             <div className="schedule-table" role="table" aria-label="Next week schedule">
-              <div className="schedule-row schedule-header" role="row">
-                <span role="columnheader">Day</span>
-                <span role="columnheader">Start time</span>
-                <span role="columnheader">Finish time</span>
-              </div>
+                <div className="schedule-row schedule-header" role="row">
+                  <span role="columnheader">Day</span>
+                  <span role="columnheader">Start time</span>
+                  <span role="columnheader">Finish time</span>
+                  <span role="columnheader">Reset</span>
+                </div>
 
               {schedule.days.map((day) => (
                 <div className="schedule-row" role="row" key={day.date}>
@@ -203,19 +214,29 @@ function App() {
                       onChange={(value) => updateDay(day.date, 'startTime', value)}
                     />
                   </div>
-                  <div role="cell">
-                    <label className="visually-hidden" htmlFor={`${day.date}-finish`}>
-                      {day.dayOfWeek} finish time
+                    <div role="cell">
+                      <label className="visually-hidden" htmlFor={`${day.date}-finish`}>
+                        {day.dayOfWeek} finish time
                     </label>
                     <TimeSelector
                       id={`${day.date}-finish`}
                       label={`${day.dayOfWeek} finish time`}
                       value={day.finishTime || ''}
-                      onChange={(value) => updateDay(day.date, 'finishTime', value)}
-                    />
+                        onChange={(value) => updateDay(day.date, 'finishTime', value)}
+                      />
+                    </div>
+                    <div role="cell">
+                      <button
+                        type="button"
+                        className="reset-button"
+                        onClick={() => resetDay(day.date)}
+                        disabled={!day.startTime && !day.finishTime}
+                      >
+                        Reset
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
 
             <div className="form-footer">
