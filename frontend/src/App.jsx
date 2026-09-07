@@ -22,9 +22,11 @@ function getShiftDuration(startTime, finishTime) {
 
   const startHour = Number(startTime.split(':')[0])
   const finishHour = Number(finishTime.split(':')[0])
-  const duration = finishHour - startHour
+  const duration = finishHour > startHour
+    ? finishHour - startHour
+    : 24 - startHour + finishHour
 
-  if (duration <= 0) {
+  if (duration === 24) {
     return null
   }
 

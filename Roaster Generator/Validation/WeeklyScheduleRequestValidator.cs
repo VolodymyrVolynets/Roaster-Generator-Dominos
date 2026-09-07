@@ -99,11 +99,11 @@ public sealed class ScheduleDayRequestValidator : AbstractValidator<ScheduleDayR
                         "Shift times must use whole hours, for example 09:00.");
                 }
 
-                if (day.FinishTime <= day.StartTime)
+                if (day.FinishTime == day.StartTime)
                 {
                     context.AddFailure(
                         "FinishTime",
-                        "Finish time must be after start time.");
+                        "Start and finish times must be different. For an overnight shift, use a finish time earlier than the start time.");
                 }
             });
     }
