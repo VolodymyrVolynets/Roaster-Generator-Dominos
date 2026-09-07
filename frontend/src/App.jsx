@@ -797,7 +797,6 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
     || generation?.status === 'running'
 
   async function generateRoster() {
-    setRoster(null)
     generationRequestedRef.current = true
     setGeneration({
       status: 'starting',
@@ -900,9 +899,9 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
         <div className="roster-settings-header">
           <div>
             <span className="eyebrow">Admin settings</span>
-            <h3>Generator weights and parameters</h3>
+            <h3>Roster optimization weights</h3>
           </div>
-          <p>These values tune the optimizer. Demand coverage and scheduling safety rules remain mandatory.</p>
+          <p>These values tune the CP-SAT objective. Demand coverage and scheduling safety rules remain mandatory.</p>
         </div>
         <div className="roster-settings-grid">
           <label>
@@ -962,87 +961,6 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
               step="1"
               value={settingsForm.earlyStartPenalty}
               onChange={(event) => updateSetting('earlyStartPenalty', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-        </div>
-        <div className="roster-settings-subheading">
-          <div>
-            <span className="eyebrow">Genetic algorithm</span>
-            <h4>Optimization parameters</h4>
-          </div>
-          <p>Higher population, generation, and search limits can improve difficult schedules but may take longer.</p>
-        </div>
-        <div className="roster-settings-grid roster-algorithm-grid">
-          <label>
-            Population size
-            <input
-              type="number"
-              min="4"
-              max="200"
-              step="1"
-              value={settingsForm.populationSize}
-              onChange={(event) => updateSetting('populationSize', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Generations
-            <input
-              type="number"
-              min="1"
-              max="5000"
-              step="1"
-              value={settingsForm.generationCount}
-              onChange={(event) => updateSetting('generationCount', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Mutation rate
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.01"
-              value={settingsForm.mutationRate}
-              onChange={(event) => updateSetting('mutationRate', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Elite count
-            <input
-              type="number"
-              min="1"
-              max={settingsForm.populationSize}
-              step="1"
-              value={settingsForm.eliteCount}
-              onChange={(event) => updateSetting('eliteCount', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Tournament size
-            <input
-              type="number"
-              min="2"
-              max={settingsForm.populationSize}
-              step="1"
-              value={settingsForm.tournamentSize}
-              onChange={(event) => updateSetting('tournamentSize', event.target.value)}
-              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
-            />
-          </label>
-          <label>
-            Exact-search limit
-            <input
-              type="number"
-              min="1000"
-              max="5000000"
-              step="1000"
-              value={settingsForm.exactSearchNodeLimit}
-              onChange={(event) => updateSetting('exactSearchNodeLimit', event.target.value)}
               disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
             />
           </label>

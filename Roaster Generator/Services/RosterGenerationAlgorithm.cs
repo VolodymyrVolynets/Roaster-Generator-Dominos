@@ -1,3 +1,4 @@
+using Google.OrTools.Sat;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Roaster_Generator.Configuration;
@@ -113,10 +114,10 @@ public sealed class RosterGenerationAlgorithm(
 
         var parameters = await rosterSettings.GetParametersAsync(cancellationToken);
         await ReportAsync(
-            "genetic-optimization",
+            "constraint-optimization",
             38,
-            $"Starting genetic optimization with population {parameters.PopulationSize} and {parameters.GenerationCount} generations.");
-        var solver = new GeneticRosterSolver(candidates, demand, employees, parameters, cancellationToken);
+            "Starting CP-SAT constraint optimization using the configured roster weights.");
+        var solver = new CpSatRosterSolver(candidates, demand, employees, parameters);
         var selectedCandidates = await solver.SolveAsync(cancellationToken, async (stage, progress, message) =>
             await ReportAsync(stage, progress, message));
 
@@ -152,6 +153,7 @@ public sealed class RosterGenerationAlgorithm(
         else
         {
             db.RosterShifts.RemoveRange(rosterPlan.Shifts);
+            rosterPlan.Shifts.Clear();
             rosterPlan.UpdatedAtUtc = DateTimeOffset.UtcNow;
         }
 
@@ -514,6 +516,291 @@ public sealed class RosterGenerationAlgorithm(
         int StartAbsoluteMinutes,
         int EndAbsoluteMinutes,
         int[] CoveredSlots);
+
+    private sealed class CpSatRosterSolver(
+        IReadOnlyList<CandidateShift> candidates,
+        IReadOnlyList<int> demand,
+        IReadOnlyList<Employee> employees,
+        RosterGenerationParameters parameters)
+    {
+        private readonly List<int>[] candidatesBySlot = BuildCandidatesBySlot(candidates);
+        private readonly List<int>[] candidatesByEmployee = BuildCandidatesByEmployee(candidates, employees.Count);
+
+        public IReadOnlyList<int> FailureSlots { get; private set; } = [];
+
+        public async Task<IReadOnlyList<CandidateShift>?> SolveAsync(
+            CancellationToken cancellationToken,
+            Func<string, int, string, Task>? reportProgress)
+        {
+            var model = new CpModel();
+            var selected = candidates
+                .Select((_, index) => model.NewBoolVar($"shift_{index}"))
+                .ToArray();
+
+            await ReportAsync(
+                reportProgress,
+                "constraint-optimization",
+                40,
+                $"Built {selected.Length} binary shift decisions and {demand.Count} hourly demand slots.");
+
+            AddDemandConstraints(model, selected);
+            AddEmployeeConstraints(model, selected);
+            AddConflictConstraints(model, selected);
+            AddObjective(model, selected);
+
+            var solver = new CpSolver
+            {
+                StringParameters = $"num_search_workers: {Math.Clamp(Environment.ProcessorCount, 1, 8)} log_search_progress: false"
+            };
+            using var cancellationRegistration = cancellationToken.Register(solver.StopSearch);
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var solveTask = Task.Run(() => solver.Solve(model), CancellationToken.None);
+
+            try
+            {
+                while (!solveTask.IsCompleted)
+                {
+                    var delayTask = Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+                    var completedTask = await Task.WhenAny(solveTask, delayTask);
+
+                    if (completedTask == solveTask)
+                    {
+                        break;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await ReportAsync(
+                        reportProgress,
+                        "constraint-optimization",
+                        Math.Min(85, 45 + (int)Math.Min(40, stopwatch.Elapsed.TotalSeconds)),
+                        $"CP-SAT is searching for an exact roster ({stopwatch.Elapsed.TotalSeconds:0.0}s elapsed).");
+                }
+
+                var status = await solveTask;
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (status is CpSolverStatus.Optimal or CpSolverStatus.Feasible)
+                {
+                    await ReportAsync(
+                        reportProgress,
+                        "constraint-optimization",
+                        88,
+                        $"CP-SAT found a roster in {stopwatch.Elapsed.TotalSeconds:0.0}s.");
+
+                    return Enumerable
+                        .Range(0, candidates.Count)
+                        .Where(index => solver.BooleanValue(selected[index]))
+                        .Select(index => candidates[index])
+                        .ToList();
+                }
+
+                if (status == CpSolverStatus.Infeasible)
+                {
+                    FailureSlots = Enumerable
+                        .Range(0, demand.Count)
+                        .Where(slot => demand[slot] > 0 && candidatesBySlot[slot].Count < demand[slot])
+                        .ToArray();
+
+                    await ReportAsync(
+                        reportProgress,
+                        "constraint-optimization",
+                        88,
+                        "CP-SAT proved that the current hard constraints cannot all be satisfied.");
+                    return null;
+                }
+
+                throw new RosterGenerationException(
+                    $"The constraint solver stopped with status {status} before finding a valid roster.");
+            }
+            catch
+            {
+                solver.StopSearch();
+                await solveTask;
+                throw;
+            }
+        }
+
+        private void AddDemandConstraints(CpModel model, IReadOnlyList<IntVar> selected)
+        {
+            for (var slot = 0; slot < demand.Count; slot++)
+            {
+                var slotCandidates = candidatesBySlot[slot];
+
+                if (slotCandidates.Count == 0)
+                {
+                    if (demand[slot] > 0)
+                    {
+                        FailureSlots = [slot];
+                        model.Add(LinearExpr.Constant(0) == demand[slot]);
+                    }
+
+                    continue;
+                }
+
+                model.Add(
+                    LinearExpr.Sum(slotCandidates.Select(index => (LinearExpr)selected[index])) ==
+                    demand[slot]);
+            }
+        }
+
+        private void AddEmployeeConstraints(CpModel model, IReadOnlyList<IntVar> selected)
+        {
+            for (var employeeIndex = 0; employeeIndex < employees.Count; employeeIndex++)
+            {
+                var employeeCandidates = candidatesByEmployee[employeeIndex];
+                var hours = model.NewIntVar(0, 168, $"employee_{employeeIndex}_hours");
+                var hourTerms = employeeCandidates
+                    .Select(index => LinearExpr.Term(selected[index], candidates[index].DurationHours))
+                    .ToArray();
+
+                model.Add(hours == LinearExpr.Sum(hourTerms));
+                model.Add(hours >= MinimumShiftHours);
+            }
+        }
+
+        private void AddConflictConstraints(CpModel model, IReadOnlyList<IntVar> selected)
+        {
+            for (var employeeIndex = 0; employeeIndex < candidatesByEmployee.Length; employeeIndex++)
+            {
+                var employeeCandidates = candidatesByEmployee[employeeIndex];
+
+                for (var first = 0; first < employeeCandidates.Count; first++)
+                {
+                    for (var second = first + 1; second < employeeCandidates.Count; second++)
+                    {
+                        var firstIndex = employeeCandidates[first];
+                        var secondIndex = employeeCandidates[second];
+
+                        if (Conflicts(candidates[firstIndex], candidates[secondIndex]))
+                        {
+                            model.Add(selected[firstIndex] + selected[secondIndex] <= 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void AddObjective(CpModel model, IReadOnlyList<IntVar> selected)
+        {
+            var objectiveVariables = new List<LinearExpr>();
+            var objectiveCoefficients = new List<long>();
+
+            for (var index = 0; index < candidates.Count; index++)
+            {
+                var candidate = candidates[index];
+                var coefficient = GetShiftPenalty(candidate);
+
+                if (coefficient != 0)
+                {
+                    objectiveVariables.Add(selected[index]);
+                    objectiveCoefficients.Add(coefficient);
+                }
+            }
+
+            for (var employeeIndex = 0; employeeIndex < employees.Count; employeeIndex++)
+            {
+                var employee = employees[employeeIndex];
+                var employeeCandidates = candidatesByEmployee[employeeIndex];
+                var hours = model.NewIntVar(0, 168, $"employee_{employeeIndex}_objective_hours");
+                var deviation = model.NewIntVar(0, 168, $"employee_{employeeIndex}_target_deviation");
+                var hourTerms = employeeCandidates
+                    .Select(index => LinearExpr.Term(selected[index], candidates[index].DurationHours))
+                    .ToArray();
+
+                model.Add(hours == LinearExpr.Sum(hourTerms));
+                model.AddAbsEquality(deviation, hours - employee.TargetHours);
+
+                if (parameters.TargetHoursWeight != 0)
+                {
+                    objectiveVariables.Add(deviation);
+                    objectiveCoefficients.Add(parameters.TargetHoursWeight);
+                }
+            }
+
+            if (objectiveVariables.Count > 0)
+            {
+                model.Minimize(LinearExpr.WeightedSum(objectiveVariables, objectiveCoefficients));
+            }
+        }
+
+        private long GetShiftPenalty(CandidateShift candidate)
+        {
+            var penalty = candidate.DurationHours < PreferredMinimumShiftHours
+                ? parameters.ShortShiftPenalty
+                : 0;
+            var bonus = candidate.DurationHours >= PreferredMinimumShiftHours
+                ? parameters.LongShiftBonus
+                : 0;
+
+            return penalty - bonus + GetUnpleasantHoursPenalty(candidate);
+        }
+
+        private int GetUnpleasantHoursPenalty(CandidateShift candidate)
+        {
+            var startHour = candidate.StartTime.Hour;
+            var finishHour = candidate.FinishTime.Hour;
+            var lateFinish = finishHour <= 6
+                ? Math.Max(0, finishHour + 24 - 22)
+                : Math.Max(0, finishHour - 22);
+            var earlyStart = Math.Max(0, 8 - startHour);
+
+            return lateFinish * parameters.LateFinishPenalty +
+                   earlyStart * parameters.EarlyStartPenalty;
+        }
+
+        private static bool Conflicts(CandidateShift first, CandidateShift second)
+        {
+            var gap = first.StartAbsoluteMinutes >= second.EndAbsoluteMinutes
+                ? first.StartAbsoluteMinutes - second.EndAbsoluteMinutes
+                : second.StartAbsoluteMinutes - first.EndAbsoluteMinutes;
+
+            return gap < 0 || gap < MinimumBreakMinutes;
+        }
+
+        private static List<int>[] BuildCandidatesBySlot(IReadOnlyList<CandidateShift> candidates)
+        {
+            var result = Enumerable
+                .Range(0, HoursInWeek)
+                .Select(_ => new List<int>())
+                .ToArray();
+
+            for (var index = 0; index < candidates.Count; index++)
+            {
+                foreach (var slot in candidates[index].CoveredSlots)
+                {
+                    result[slot].Add(index);
+                }
+            }
+
+            return result;
+        }
+
+        private static List<int>[] BuildCandidatesByEmployee(
+            IReadOnlyList<CandidateShift> candidates,
+            int employeeCount)
+        {
+            var result = Enumerable
+                .Range(0, employeeCount)
+                .Select(_ => new List<int>())
+                .ToArray();
+
+            for (var index = 0; index < candidates.Count; index++)
+            {
+                result[candidates[index].EmployeeIndex].Add(index);
+            }
+
+            return result;
+        }
+
+        private static Task ReportAsync(
+            Func<string, int, string, Task>? reportProgress,
+            string stage,
+            int progress,
+            string message) =>
+            reportProgress is null
+                ? Task.CompletedTask
+                : reportProgress(stage, progress, message);
+    }
 
     private sealed class GeneticRosterSolver(
         IReadOnlyList<CandidateShift> candidates,
