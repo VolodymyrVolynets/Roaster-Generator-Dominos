@@ -322,6 +322,14 @@ function DemandManager({ setErrorPopup }) {
     }
   }
 
+  const selectedDemandColumn = plan?.columns.find(
+    (column) => column.position === selectedDemandDayPosition,
+  )
+  const weeklyTotalHours = plan?.columns.reduce(
+    (total, column) => total + (column.totalHours ?? 0),
+    0,
+  ) ?? 0
+
   return (
     <section className="admin-tools demand-tools">
       <div className="section-heading">
@@ -347,7 +355,9 @@ function DemandManager({ setErrorPopup }) {
 
       <p className="demand-help">
         Import an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
-        and read-only, while demand is calculated from deliveries and can be edited below.
+        and read-only, while demand is calculated from deliveries and can be edited below. Open hours always
+        require at least one driver, and demand can rise to one peak and then fall only once. Hours are shown
+        as 06–23, followed by next-day 00–05.
       </p>
 
       <div className="demand-import-form">
@@ -391,6 +401,10 @@ function DemandManager({ setErrorPopup }) {
 
       {plan && (
         <form onSubmit={savePlan}>
+          <p className="demand-total-summary">
+            Weekly total driver-hours: <strong>{weeklyTotalHours}</strong>
+          </p>
+
           <div className="demand-mobile-controls">
             <label>
               Day
@@ -413,7 +427,12 @@ function DemandManager({ setErrorPopup }) {
                 <tr>
                   <th rowSpan="2">Hour</th>
                   {plan.columns.map((column) => (
-                    <th key={column.position} colSpan="2">{column.label}</th>
+                    <th key={column.position} colSpan="2">
+                      <span className="demand-day-label">{column.label}</span>
+                      <small className="demand-day-hours">
+                        {column.totalHours ?? 0} driver-hours
+                      </small>
+                    </th>
                   ))}
                 </tr>
                 <tr>
@@ -458,6 +477,14 @@ function DemandManager({ setErrorPopup }) {
             <div className="demand-table-wrapper">
               <table className="demand-table demand-mobile-table">
                 <thead>
+                  <tr>
+                    <th colSpan="3">
+                      <span className="demand-day-label">{selectedDemandColumn?.label ?? 'Day'}</span>
+                      <small className="demand-day-hours">
+                        {selectedDemandColumn?.totalHours ?? 0} driver-hours
+                      </small>
+                    </th>
+                  </tr>
                   <tr>
                     <th>Hour</th>
                     <th>Deliveries</th>

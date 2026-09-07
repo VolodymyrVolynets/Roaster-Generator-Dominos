@@ -1,6 +1,8 @@
 using System.Globalization;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Demand;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
@@ -9,9 +11,12 @@ namespace Roaster_Generator.Services;
 
 public sealed class DemandValidationException(string message) : Exception(message);
 
-public sealed class DemandService(AppDbContext db)
+public sealed class DemandService(
+    AppDbContext db,
+    IOptions<ShopHoursOptions> shopHoursOptions)
 {
     private const decimal DeliveriesPerEmployee = 2.7m;
+    private readonly ShopHoursOptions shopHours = shopHoursOptions.Value;
     private static readonly string[] DayLabels =
     [
         "Monday",
@@ -179,6 +184,7 @@ public sealed class DemandService(AppDbContext db)
                     }).ToList()))
                 .ToList());
 
+        parsed = NormalizeAndValidateDemand(parsed, request.WeekStart);
         await ReplacePlanContentsAsync(plan, request.Name.Trim(), request.WeekStart, parsed, cancellationToken);
         return ToResponse(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan);
     }
@@ -198,6 +204,8 @@ public sealed class DemandService(AppDbContext db)
         ParsedDemand parsed,
         CancellationToken cancellationToken)
     {
+        parsed = NormalizeAndValidateDemand(parsed, weekStart);
+
         var existingPlan = await db.DemandPlans
             .Include(plan => plan.Columns)
             .Include(plan => plan.Rows)
@@ -312,14 +320,15 @@ public sealed class DemandService(AppDbContext db)
             .SingleOrDefaultAsync(plan => plan.Id == planId, cancellationToken);
     }
 
-    private static DemandPlanResponse ToResponse(DemandPlan plan)
+    private DemandPlanResponse ToResponse(DemandPlan plan)
     {
         var columns = plan.Columns
             .OrderBy(column => column.Position)
             .Select(column => new DemandColumnResponse
             {
                 Position = column.Position,
-                Label = GetColumnLabel(column.Position)
+                Label = GetColumnLabel(column.Position),
+                TotalHours = CalculateTotalHours(plan, column)
             })
             .ToList();
         var columnsById = plan.Columns.ToDictionary(column => column.Id);
@@ -536,6 +545,111 @@ public sealed class DemandService(AppDbContext db)
             : (int)Math.Round(deliveries.Value / DeliveriesPerEmployee, MidpointRounding.AwayFromZero);
     }
 
+    private ParsedDemand NormalizeAndValidateDemand(ParsedDemand parsed, DateOnly weekStart)
+    {
+        if (parsed.Columns.Count != DayLabels.Length)
+        {
+            throw new DemandValidationException(
+                "The imported table must contain exactly seven day pairs: Monday through Sunday.");
+        }
+
+        var normalizedRows = parsed.Rows
+            .Select(row => new ParsedDemandRow(
+                row.Hour,
+                row.Values
+                    .Select(value => new ParsedDemandValue(
+                        value.Position,
+                        value.Deliveries,
+                        IsShopOpen(weekStart, value.Position, row.Hour)
+                            ? Math.Max(1, value.Demand ?? 0)
+                            : value.Demand))
+                    .ToList()))
+            .ToList();
+        var normalized = new ParsedDemand(parsed.Columns, normalizedRows);
+
+        ValidateSinglePeakPerDay(normalized, weekStart);
+        return normalized;
+    }
+
+    private void ValidateSinglePeakPerDay(ParsedDemand parsed, DateOnly weekStart)
+    {
+        for (var position = 0; position < DayLabels.Length; position++)
+        {
+            var previousDemand = (int?)null;
+            var hasStartedDecreasing = false;
+
+            foreach (var row in parsed.Rows.OrderBy(row => GetDisplayHourOrder(row.Hour)))
+            {
+                if (!IsShopOpen(weekStart, position, row.Hour))
+                {
+                    continue;
+                }
+
+                var demand = row.Values
+                    .FirstOrDefault(value => value.Position == position)
+                    ?.Demand;
+
+                if (demand is null)
+                {
+                    continue;
+                }
+
+                if (previousDemand is not null)
+                {
+                    if (demand < previousDemand)
+                    {
+                        hasStartedDecreasing = true;
+                    }
+                    else if (hasStartedDecreasing && demand > previousDemand)
+                    {
+                        throw new DemandValidationException(
+                            $"{GetColumnLabel(position)} demand must rise to one peak and then decrease without rising again.");
+                    }
+                }
+
+                previousDemand = demand;
+            }
+        }
+    }
+
+    private int CalculateTotalHours(DemandPlan plan, DemandColumn column)
+    {
+        return plan.Rows
+            .Where(row => IsShopOpen(plan.WeekStart, column.Position, row.Hour))
+            .Select(row => row.Values
+                .FirstOrDefault(value => value.DemandColumnId == column.Id)
+                ?.Demand ?? 0)
+            .Sum();
+    }
+
+    private bool IsShopOpen(DateOnly weekStart, int columnPosition, int hour)
+    {
+        if (columnPosition < 0 || columnPosition >= DayLabels.Length)
+        {
+            return false;
+        }
+
+        var dayOfWeek = weekStart.AddDays(columnPosition).DayOfWeek;
+        var hours = shopHours.For(dayOfWeek);
+        var openingMinutes = ToMinutes(hours.OpeningTime);
+        var closingMinutes = ToMinutes(hours.ClosingTime);
+        var hourMinutes = hour * 60;
+
+        if (closingMinutes <= openingMinutes)
+        {
+            closingMinutes += 24 * 60;
+        }
+
+        if (hourMinutes < openingMinutes)
+        {
+            hourMinutes += 24 * 60;
+        }
+
+        return hourMinutes >= openingMinutes && hourMinutes < closingMinutes;
+    }
+
+    private static int ToMinutes(TimeOnly time) => time.Hour * 60 + time.Minute;
+
     private static string GetColumnLabel(int position)
     {
         return position >= 0 && position < DayLabels.Length
@@ -545,7 +659,7 @@ public sealed class DemandService(AppDbContext db)
 
     private static int GetDisplayHourOrder(int hour)
     {
-        return hour < 12 ? hour + 24 : hour;
+        return hour < 6 ? hour + 24 : hour;
     }
 
     private sealed record ParsedDemand(

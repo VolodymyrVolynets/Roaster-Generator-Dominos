@@ -76,6 +76,8 @@ public sealed class DemandColumnResponse
     public int Position { get; init; }
 
     public string Label { get; init; } = string.Empty;
+
+    public int TotalHours { get; init; }
 }
 
 public sealed class DemandRowResponse

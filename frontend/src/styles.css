@@ -241,6 +241,17 @@ input:focus {
   line-height: 1.5;
 }
 
+.demand-total-summary {
+  margin: 0 0 14px;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+}
+
+.demand-total-summary strong {
+  color: #6ee7b7;
+  font-variant-numeric: tabular-nums;
+}
+
 .demand-import-form {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
@@ -396,6 +407,23 @@ input:focus {
   background: rgba(30, 41, 59, 0.82);
   font-size: 0.72rem;
   text-transform: uppercase;
+}
+
+.demand-day-label,
+.demand-day-hours {
+  display: block;
+}
+
+.demand-day-label {
+  color: #f8fafc;
+}
+
+.demand-day-hours {
+  margin-top: 4px;
+  color: #6ee7b7;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: none;
 }
 
 .demand-table thead th input {
