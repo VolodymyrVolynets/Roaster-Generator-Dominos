@@ -3,5 +3,25 @@ services:
     image: ghcr.io/volodymyrvolynets/roaster-generator-dominos:latest
     container_name: roaster-generator
     restart: unless-stopped
-    ports:
-      - "80:8080"
+    expose:
+      - "8080"
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=roaster-generator_default"
+      - "traefik.http.routers.roaster.rule=Host(`dominos-roaster.online`)"
+      - "traefik.http.routers.roaster.entrypoints=websecure"
+      - "traefik.http.routers.roaster.tls=true"
+      - "traefik.http.routers.roaster.tls.certresolver=letsencrypt"
+      - "traefik.http.services.roaster.loadbalancer.server.port=8080"
+      - "traefik.http.routers.roaster-http.rule=Host(`dominos-roaster.online`)"
+      - "traefik.http.routers.roaster-http.entrypoints=web"
+      - "traefik.http.routers.roaster-http.middlewares=roaster-redirect"
+      - "traefik.http.routers.roaster-http.service=roaster"
+      - "traefik.http.middlewares.roaster-redirect.redirectscheme.scheme=https"
+
+networks:
+  traefik-public:
+    external: true
+    name: roaster-generator_default
