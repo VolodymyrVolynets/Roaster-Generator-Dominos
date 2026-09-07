@@ -596,7 +596,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
 
   useEffect(() => {
     setRoster(null)
-    fetchJson(`/api/admin/roster?weekOffset=${weekOffset}`)
+    fetchJson(`/api/admin/roster?weekOffset=${weekOffset}`, { cache: 'no-store' })
       .then(setRoster)
       .catch((error) => {
         if (error.status !== 404) {
@@ -607,7 +607,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
 
   useEffect(() => {
     setWeekSummary(null)
-    fetchJson(`/api/admin/roster/summary?weekOffset=${weekOffset}`)
+    fetchJson(`/api/admin/roster/summary?weekOffset=${weekOffset}`, { cache: 'no-store' })
       .then(setWeekSummary)
       .catch((error) => setErrorPopup(error.message))
   }, [setErrorPopup, weekOffset])
@@ -702,10 +702,22 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
       })
 
       if (payload.status === 'completed') {
-        fetchJson(`/api/admin/roster?weekOffset=${payload.weekOffset}`)
+        fetchJson(`/api/admin/roster?weekOffset=${payload.weekOffset}`, { cache: 'no-store' })
           .then((plan) => {
             if (isMounted) {
               setRoster(plan)
+            }
+          })
+          .catch((error) => {
+            if (isMounted) {
+              setErrorPopup(error.message)
+            }
+          })
+
+        fetchJson(`/api/admin/roster/summary?weekOffset=${payload.weekOffset}`, { cache: 'no-store' })
+          .then((summary) => {
+            if (isMounted) {
+              setWeekSummary(summary)
             }
           })
           .catch((error) => {
@@ -805,6 +817,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
       message: 'Starting roster generation…',
     })
     setGenerationLogs([])
+    setRoster(null)
 
     try {
       const payload = await fetchJson('/api/admin/roster/generate', {
