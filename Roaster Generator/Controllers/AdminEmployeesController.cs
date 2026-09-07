@@ -68,6 +68,7 @@ public sealed class AdminEmployeesController(
             LastName = lastName,
             PhoneNumber = phoneNumber,
             TargetHours = request.TargetHours,
+            CanWorkAlone = request.CanWorkAlone,
             IsActive = true
         };
 
@@ -174,6 +175,7 @@ public sealed class AdminEmployeesController(
         employee.LastName = lastName;
         employee.PhoneNumber = phoneNumber;
         employee.TargetHours = request.TargetHours;
+        employee.CanWorkAlone = request.CanWorkAlone;
         await db.SaveChangesAsync(cancellationToken);
 
         return Ok(ToEmployeeResponse(employee));
@@ -288,6 +290,7 @@ public sealed class AdminEmployeesController(
         LastName = employee.LastName,
         PhoneNumber = employee.PhoneNumber,
         IsActive = employee.IsActive,
-        TargetHours = employee.TargetHours
+        TargetHours = employee.TargetHours,
+        CanWorkAlone = employee.CanWorkAlone
     };
 }

@@ -16,6 +16,8 @@ public sealed class Employee
 
     public int TargetHours { get; set; } = 20;
 
+    public bool CanWorkAlone { get; set; } = true;
+
     public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
 
     public ICollection<RosterShift> RosterShifts { get; set; } = new List<RosterShift>();

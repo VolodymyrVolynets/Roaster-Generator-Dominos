@@ -573,6 +573,22 @@ input:focus {
   min-height: 42px;
 }
 
+.employee-form .checkbox-label {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 10px;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.employee-form .checkbox-label input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: #7dd3fc;
+}
+
 .employee-form-actions,
 .employee-form .save-message {
   grid-column: 1 / -1;

@@ -20,6 +20,7 @@ const emptyEmployeeForm = {
   lastName: '',
   phoneNumber: '',
   targetHours: 20,
+  canWorkAlone: true,
 }
 
 function parseDate(dateValue) {
@@ -856,6 +857,7 @@ function AdminConsole({
     updateEmployeeForm('lastName', '')
     updateEmployeeForm('phoneNumber', '')
     updateEmployeeForm('targetHours', 20)
+    updateEmployeeForm('canWorkAlone', true)
   }
 
   function closeEmployeeEditor() {
@@ -955,6 +957,7 @@ function AdminConsole({
                     <span>Employee number: {employee.employeeNumber}</span>
                     <span>Phone: {employee.phoneNumber || 'Not set'}</span>
                     <span>Target hours: {employee.targetHours}</span>
+                    <span>Can work alone: {employee.canWorkAlone ? 'Yes' : 'No'}</span>
                     <span className="employee-card-status">
                       {employee.isActive ? 'Active' : 'Inactive'}
                     </span>
@@ -1017,6 +1020,15 @@ function AdminConsole({
                       onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
                       required
                     />
+                    <label className="checkbox-label" htmlFor="admin-employee-can-work-alone">
+                      <input
+                        id="admin-employee-can-work-alone"
+                        type="checkbox"
+                        checked={employeeForm.canWorkAlone}
+                        onChange={(event) => updateEmployeeForm('canWorkAlone', event.target.checked)}
+                      />
+                      Can work alone
+                    </label>
 
                     <div className="employee-form-actions">
                       <button type="submit" disabled={employeeSaveState.status === 'saving'}>
@@ -1354,6 +1366,7 @@ function App() {
         lastName: employee.lastName,
         phoneNumber: employee.phoneNumber,
         targetHours: employee.targetHours,
+        canWorkAlone: employee.canWorkAlone,
       })
     }
   }, [employees, selectedEmployeeId, isCreatingEmployee])

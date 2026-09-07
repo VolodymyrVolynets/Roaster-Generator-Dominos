@@ -83,7 +83,7 @@ public sealed class RosterGenerationAlgorithm(
         if (selectedCandidates is null)
         {
             throw new RosterGenerationException(
-                "No exact roster could be generated. Check that every active employee has availability and that the demand can be covered with 3–10 hour shifts and 7 hours between shifts.");
+                "No exact roster could be generated. Check that every active employee has availability, that non-solo drivers overlap another driver, and that the demand can be covered with 3–10 hour shifts and 7 hours between shifts.");
         }
 
         var rosterPlan = await db.RosterPlans
@@ -230,6 +230,12 @@ public sealed class RosterGenerationAlgorithm(
                     }
 
                     if (!isValid)
+                    {
+                        continue;
+                    }
+
+                    if (!employees[employeeIndex].CanWorkAlone &&
+                        coveredSlots.Any(slot => demand[slot] < 2))
                     {
                         continue;
                     }
@@ -383,6 +389,7 @@ public sealed class RosterGenerationAlgorithm(
             var selected = BuildGreedySelection(priorities, remaining, out var employeeHours);
             var uncoveredHours = remaining.Sum();
             var minimumHoursMissing = employeeHours.Sum(hours => Math.Max(0, MinimumShiftHours - hours));
+            var soloHours = GetSoloHours(selected);
             var targetDeviation = employeeHours
                 .Select((hours, index) => Math.Abs(hours - employees[index].TargetHours))
                 .Sum();
@@ -391,6 +398,7 @@ public sealed class RosterGenerationAlgorithm(
                 .Count(candidate => candidate.DurationHours < PreferredMinimumShiftHours);
 
             var score = uncoveredHours * 1_000_000L
+                + soloHours * 500_000L
                 + minimumHoursMissing * 100_000L
                 + targetDeviation * 100L
                 + shortShiftPenalty * 10L
@@ -400,7 +408,35 @@ public sealed class RosterGenerationAlgorithm(
                 priorities,
                 selected,
                 score,
-                uncoveredHours == 0 && minimumHoursMissing == 0);
+                uncoveredHours == 0 && minimumHoursMissing == 0 && soloHours == 0);
+        }
+
+        private int GetSoloHours(IReadOnlyList<int> selected)
+        {
+            var employeeIndexesBySlot = new Dictionary<int, HashSet<int>>();
+
+            foreach (var selectedIndex in selected)
+            {
+                var candidate = candidates[selectedIndex];
+
+                foreach (var slot in candidate.CoveredSlots)
+                {
+                    if (!employeeIndexesBySlot.TryGetValue(slot, out var employeeIndexes))
+                    {
+                        employeeIndexes = [];
+                        employeeIndexesBySlot[slot] = employeeIndexes;
+                    }
+
+                    employeeIndexes.Add(candidate.EmployeeIndex);
+                }
+            }
+
+            return selected
+                .Select(index => candidates[index])
+                .Where(candidate => !employees[candidate.EmployeeIndex].CanWorkAlone)
+                .Sum(candidate => candidate.CoveredSlots.Count(slot =>
+                    employeeIndexesBySlot[slot].Any(employeeIndex =>
+                        employeeIndex != candidate.EmployeeIndex)));
         }
 
         private List<int> BuildGreedySelection(
@@ -482,7 +518,8 @@ public sealed class RosterGenerationAlgorithm(
 
                 if (nextSlot < 0)
                 {
-                    return employeeHours.All(hours => hours >= MinimumShiftHours);
+                    return employeeHours.All(hours => hours >= MinimumShiftHours) &&
+                        GetSoloHours(selected) == 0;
                 }
 
                 var options = candidatesBySlot[nextSlot]

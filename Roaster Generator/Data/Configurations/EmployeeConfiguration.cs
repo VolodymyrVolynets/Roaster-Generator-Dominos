@@ -48,6 +48,11 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasDefaultValue(20)
             .IsRequired();
 
+        builder.Property(employee => employee.CanWorkAlone)
+            .HasColumnName("can_work_alone")
+            .HasDefaultValue(true)
+            .IsRequired();
+
         builder.HasIndex(employee => employee.EmployeeNumber)
             .IsUnique();
 

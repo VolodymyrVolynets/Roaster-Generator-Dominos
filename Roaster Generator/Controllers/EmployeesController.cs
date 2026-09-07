@@ -157,6 +157,7 @@ public sealed class EmployeesController(
         LastName = employee.LastName,
         PhoneNumber = employee.PhoneNumber,
         IsActive = employee.IsActive,
-        TargetHours = employee.TargetHours
+        TargetHours = employee.TargetHours,
+        CanWorkAlone = employee.CanWorkAlone
     };
 }

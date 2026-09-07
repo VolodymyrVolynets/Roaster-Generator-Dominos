@@ -11,6 +11,8 @@ public sealed class EmployeeRequest
     public string PhoneNumber { get; set; } = string.Empty;
 
     public int TargetHours { get; set; } = 20;
+
+    public bool CanWorkAlone { get; set; } = true;
 }
 
 public sealed class EmployeeResponse
@@ -28,4 +30,6 @@ public sealed class EmployeeResponse
     public bool IsActive { get; init; }
 
     public int TargetHours { get; init; }
+
+    public bool CanWorkAlone { get; init; }
 }
