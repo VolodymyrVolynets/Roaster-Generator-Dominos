@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   HubConnectionBuilder,
   HttpTransportType,
@@ -560,7 +560,7 @@ function WeekSelector({ weekOffset, onChange, disabled = false }) {
   )
 }
 
-function RosterGenerationPanel({ setErrorPopup }) {
+function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
   const [weekOffset, setWeekOffset] = useState(minWeekOffset)
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
@@ -581,10 +581,17 @@ function RosterGenerationPanel({ setErrorPopup }) {
     exactSearchNodeLimit: 500000,
   })
   const [settingsState, setSettingsState] = useState({ status: 'loading', message: '' })
+  const generationRef = useRef(null)
+  const generationRequestedRef = useRef(false)
+
+  useEffect(() => {
+    generationRef.current = generation
+  }, [generation])
 
   useEffect(() => {
     setGeneration(null)
     setGenerationLogs([])
+    generationRequestedRef.current = false
   }, [weekOffset])
 
   useEffect(() => {
@@ -636,6 +643,16 @@ function RosterGenerationPanel({ setErrorPopup }) {
 
       if (payload.weekOffset !== weekOffset) {
         return
+      }
+
+      if (payload.status === 'starting' ||
+          payload.status === 'started' ||
+          payload.status === 'running') {
+        generationRequestedRef.current = true
+      } else if (payload.status === 'completed' ||
+                 payload.status === 'failed' ||
+                 payload.status === 'cancelled') {
+        generationRequestedRef.current = false
       }
 
       setGenerationLogs((current) => {
@@ -720,6 +737,39 @@ function RosterGenerationPanel({ setErrorPopup }) {
       }
     })
 
+    const cancelOnPageHide = () => {
+      if (!generationRequestedRef.current) {
+        return
+      }
+
+      const currentGeneration = generationRef.current
+      const body = new Blob([
+        JSON.stringify({
+          weekOffset,
+          jobId: currentGeneration?.jobId || null,
+        }),
+      ], { type: 'application/json' })
+      const endpoint = '/api/admin/roster/generate/cancel'
+
+      try {
+        if (navigator.sendBeacon?.(endpoint, body)) {
+          return
+        }
+      } catch {
+        // Fall back to a keepalive request when sendBeacon is unavailable.
+      }
+
+      void fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        credentials: 'include',
+        keepalive: true,
+      }).catch(() => {})
+    }
+
+    window.addEventListener('pagehide', cancelOnPageHide)
+
     connection
       .start()
       .then(() => {
@@ -737,6 +787,7 @@ function RosterGenerationPanel({ setErrorPopup }) {
     return () => {
       isMounted = false
       connection.off('rosterGenerationProgress', handleProgress)
+      window.removeEventListener('pagehide', cancelOnPageHide)
       connection.stop()
     }
   }, [setErrorPopup, weekOffset])
@@ -747,6 +798,7 @@ function RosterGenerationPanel({ setErrorPopup }) {
 
   async function generateRoster() {
     setRoster(null)
+    generationRequestedRef.current = true
     setGeneration({
       status: 'starting',
       stage: 'starting',
@@ -770,7 +822,9 @@ function RosterGenerationPanel({ setErrorPopup }) {
         return payload
       })
     } catch (error) {
-      if (error.status !== 409) {
+      if (error.status === 409) {
+        generationRequestedRef.current = false
+      } else {
         setGeneration(null)
       }
       setErrorPopup(error.message)
@@ -801,7 +855,11 @@ function RosterGenerationPanel({ setErrorPopup }) {
   }
 
   return (
-    <section className="admin-tools roster-generation-tools">
+    <section
+      className="admin-tools roster-generation-tools"
+      hidden={!isVisible}
+      aria-hidden={!isVisible}
+    >
       <div className="section-heading">
         <div>
           <span className="eyebrow">Administration</span>
@@ -1508,9 +1566,10 @@ function AdminConsole({
 
           {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} />}
 
-          {activeTab === 'generate-roster' && (
-            <RosterGenerationPanel setErrorPopup={setErrorPopup} />
-          )}
+          <RosterGenerationPanel
+            setErrorPopup={setErrorPopup}
+            isVisible={activeTab === 'generate-roster'}
+          />
         </section>
       </main>
     </>

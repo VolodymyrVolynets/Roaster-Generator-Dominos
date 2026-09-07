@@ -17,6 +17,13 @@ public sealed class RosterGenerationStartResponse
     public string Message { get; init; } = string.Empty;
 }
 
+public sealed class RosterGenerationCancelRequest
+{
+    public int WeekOffset { get; init; }
+
+    public Guid? JobId { get; init; }
+}
+
 public sealed class RosterGenerationSettingsRequest
 {
     public int TargetHoursWeight { get; set; }

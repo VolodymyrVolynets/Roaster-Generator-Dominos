@@ -49,7 +49,7 @@ public sealed class RosterGenerationService(
             throw new RosterGenerationAlreadyRunningException();
         }
 
-        _ = RunAsync(jobId, weekOffset, weekStart);
+        _ = RunAsync(activeJob);
 
         return new RosterGenerationStartResponse
         {
@@ -63,10 +63,38 @@ public sealed class RosterGenerationService(
         };
     }
 
-    private async Task RunAsync(Guid jobId, int weekOffset, DateOnly weekStart)
+    public bool Cancel(int weekOffset, Guid? jobId = null)
     {
+        var weekStart = WeeklyScheduleService.GetWeekMonday(weekOffset);
+
+        if (!activeJobs.TryGetValue(weekStart, out var activeJob) ||
+            (jobId.HasValue && activeJob.JobId != jobId.Value))
+        {
+            return false;
+        }
+
         try
         {
+            activeJob.CancellationTokenSource.Cancel();
+            return true;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    private async Task RunAsync(ActiveJob activeJob)
+    {
+        var jobId = activeJob.JobId;
+        var weekOffset = activeJob.WeekOffset;
+        var weekStart = activeJob.WeekStart;
+        var cancellationToken = activeJob.CancellationTokenSource.Token;
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
             await PublishAsync(
                 jobId,
                 weekOffset,
@@ -90,7 +118,7 @@ public sealed class RosterGenerationService(
 
             var plan = await algorithm.GenerateAsync(
                 weekStart,
-                CancellationToken.None,
+                cancellationToken,
                 (stage, progress, message) => PublishAsync(
                     jobId,
                     weekOffset,
@@ -99,6 +127,7 @@ public sealed class RosterGenerationService(
                     stage,
                     progress,
                     message));
+            cancellationToken.ThrowIfCancellationRequested();
             var totalScheduledHours = plan.Shifts.Sum(GetDurationHours);
 
             await PublishAsync(
@@ -111,6 +140,19 @@ public sealed class RosterGenerationService(
                 $"Roster generated with {totalScheduledHours} driver-hours.",
                 plan.Id,
                 totalScheduledHours);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Roster generation job {JobId} was cancelled.", jobId);
+
+            await PublishAsync(
+                jobId,
+                weekOffset,
+                weekStart,
+                "cancelled",
+                "cancelled",
+                0,
+                "Roster generation was cancelled because the generation page was closed.");
         }
         catch (Exception exception)
         {
@@ -130,6 +172,7 @@ public sealed class RosterGenerationService(
         finally
         {
             activeJobs.TryRemove(weekStart, out _);
+            activeJob.CancellationTokenSource.Dispose();
         }
     }
 
@@ -184,5 +227,7 @@ public sealed class RosterGenerationService(
         public DateOnly WeekStart { get; } = weekStart;
 
         public ConcurrentQueue<RosterGenerationProgressResponse> Logs { get; } = new();
+
+        public CancellationTokenSource CancellationTokenSource { get; } = new();
     }
 }

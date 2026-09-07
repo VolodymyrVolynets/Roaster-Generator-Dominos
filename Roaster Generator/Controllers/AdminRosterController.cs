@@ -118,4 +118,31 @@ public sealed class AdminRosterController(
             return Conflict(new { message = exception.Message });
         }
     }
+
+    [HttpPost("generate/cancel")]
+    public async Task<IActionResult> Cancel(
+        [FromBody] RosterGenerationCancelRequest request,
+        CancellationToken cancellationToken)
+    {
+        var selection = new WeekSelectionRequest
+        {
+            WeekOffset = request.WeekOffset
+        };
+        var validationResult = await weekValidator.ValidateAsync(selection, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            var errors = validationResult.Errors
+                .GroupBy(error => error.PropertyName)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(error => error.ErrorMessage).ToArray());
+
+            return ValidationError(errors, "The selected week is invalid.");
+        }
+
+        return rosterGeneration.Cancel(selection.WeekOffset, request.JobId)
+            ? Accepted(new { message = "Roster generation cancellation requested." })
+            : NotFound(new { message = "No active roster generation was found for the selected week." });
+    }
 }

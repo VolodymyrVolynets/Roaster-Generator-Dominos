@@ -69,6 +69,7 @@ public sealed class RosterGenerationAlgorithm(
             .ToListAsync(cancellationToken);
 
         await ReportAsync("preparing", 20, "Converting demand into hourly driver requirements.");
+        cancellationToken.ThrowIfCancellationRequested();
         var demand = BuildDemand(demandPlan);
         var totalDemandHours = demand.Sum();
 
@@ -82,12 +83,14 @@ public sealed class RosterGenerationAlgorithm(
             weekStart,
             employees,
             availability,
-            demand);
+            demand,
+            cancellationToken);
         var unrestrictedCandidates = GenerateCandidates(
             weekStart,
             employees,
             availability,
             demand,
+            cancellationToken,
             enforceCanWorkAlone: false);
 
         await ReportAsync(
@@ -113,8 +116,8 @@ public sealed class RosterGenerationAlgorithm(
             "genetic-optimization",
             38,
             $"Starting genetic optimization with population {parameters.PopulationSize} and {parameters.GenerationCount} generations.");
-        var solver = new GeneticRosterSolver(candidates, demand, employees, parameters);
-        var selectedCandidates = await solver.SolveAsync(async (stage, progress, message) =>
+        var solver = new GeneticRosterSolver(candidates, demand, employees, parameters, cancellationToken);
+        var selectedCandidates = await solver.SolveAsync(cancellationToken, async (stage, progress, message) =>
             await ReportAsync(stage, progress, message));
 
         if (selectedCandidates is null)
@@ -212,6 +215,7 @@ public sealed class RosterGenerationAlgorithm(
         IReadOnlyList<Employee> employees,
         IReadOnlyList<Shift> availability,
         IReadOnlyList<int> demand,
+        CancellationToken cancellationToken,
         bool enforceCanWorkAlone = true)
     {
         var employeeIndexes = employees
@@ -221,6 +225,8 @@ public sealed class RosterGenerationAlgorithm(
 
         foreach (var availabilityShift in availability)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!employeeIndexes.TryGetValue(availabilityShift.EmployeeId, out var employeeIndex) ||
                 availabilityShift.StartTime.Minute != 0 ||
                 availabilityShift.FinishTime.Minute != 0)
@@ -249,8 +255,12 @@ public sealed class RosterGenerationAlgorithm(
                  start <= availabilityEnd - MinimumShiftHours;
                  start++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 for (var duration = MinimumShiftHours; duration <= MaximumShiftHours; duration++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     var end = start + duration;
 
                     if (end > availabilityEnd)
@@ -509,15 +519,18 @@ public sealed class RosterGenerationAlgorithm(
         IReadOnlyList<CandidateShift> candidates,
         IReadOnlyList<int> demand,
         IReadOnlyList<Employee> employees,
-        RosterGenerationParameters parameters)
+        RosterGenerationParameters parameters,
+        CancellationToken cancellationToken)
     {
         private readonly Random random = new(20260907);
-        private readonly List<int>[] candidatesBySlot = BuildCandidatesBySlot(candidates);
+        private readonly CancellationToken jobCancellationToken = cancellationToken;
+        private readonly List<int>[] candidatesBySlot = BuildCandidatesBySlot(candidates, cancellationToken);
         private readonly HashSet<int> failureSlots = [];
 
         public IReadOnlyList<int> FailureSlots => failureSlots.ToArray();
 
         public async Task<IReadOnlyList<CandidateShift>?> SolveAsync(
+            CancellationToken cancellationToken,
             Func<string, int, string, Task>? reportProgress)
         {
             var population = Enumerable.Range(0, parameters.PopulationSize)
@@ -528,6 +541,8 @@ public sealed class RosterGenerationAlgorithm(
 
             for (var generation = 0; generation < parameters.GenerationCount; generation++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (generation % progressInterval == 0)
                 {
                     await ReportAsync(
@@ -550,6 +565,7 @@ public sealed class RosterGenerationAlgorithm(
 
                 while (nextPopulation.Count < parameters.PopulationSize)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var first = Tournament(population);
                     var second = Tournament(population);
                     var childPriorities = Crossover(first.Priorities, second.Priorities);
@@ -574,7 +590,7 @@ public sealed class RosterGenerationAlgorithm(
                 "exact-search",
                 78,
                 "Genetic optimization did not find a complete roster; starting exact constraint search.");
-            var exactSelection = await TryExactSearchAsync(best.Priorities, reportProgress);
+            var exactSelection = await TryExactSearchAsync(best.Priorities, cancellationToken, reportProgress);
             return exactSelection?.Select(index => candidates[index]).ToList();
         }
 
@@ -589,12 +605,14 @@ public sealed class RosterGenerationAlgorithm(
 
         private Individual CreateIndividual()
         {
+            jobCancellationToken.ThrowIfCancellationRequested();
             var priorities = candidates.Select(_ => random.NextDouble()).ToArray();
             return Evaluate(priorities);
         }
 
         private Individual Evaluate(double[] priorities)
         {
+            jobCancellationToken.ThrowIfCancellationRequested();
             var remaining = demand.ToArray();
             var selected = BuildGreedySelection(priorities, remaining, out var employeeHours);
             var uncoveredHours = remaining.Sum();
@@ -627,6 +645,7 @@ public sealed class RosterGenerationAlgorithm(
 
             foreach (var selectedIndex in selected)
             {
+                jobCancellationToken.ThrowIfCancellationRequested();
                 var candidate = candidates[selectedIndex];
 
                 foreach (var slot in candidate.CoveredSlots)
@@ -659,11 +678,13 @@ public sealed class RosterGenerationAlgorithm(
 
             while (remaining.Sum() > 0)
             {
+                jobCancellationToken.ThrowIfCancellationRequested();
                 var bestIndex = -1;
                 var bestScore = double.MinValue;
 
                 for (var index = 0; index < candidates.Count; index++)
                 {
+                    jobCancellationToken.ThrowIfCancellationRequested();
                     var candidate = candidates[index];
 
                     if (!CanAdd(candidate, selected) ||
@@ -712,6 +733,7 @@ public sealed class RosterGenerationAlgorithm(
 
         private async Task<IReadOnlyList<int>?> TryExactSearchAsync(
             IReadOnlyList<double> priorities,
+            CancellationToken cancellationToken,
             Func<string, int, string, Task>? reportProgress)
         {
             var remaining = demand.ToArray();
@@ -724,6 +746,7 @@ public sealed class RosterGenerationAlgorithm(
 
             async Task<bool> SearchAsync()
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 nodes++;
 
                 if (nodes > parameters.ExactSearchNodeLimit)
@@ -855,7 +878,9 @@ public sealed class RosterGenerationAlgorithm(
             return true;
         }
 
-        private static List<int>[] BuildCandidatesBySlot(IReadOnlyList<CandidateShift> candidates)
+        private static List<int>[] BuildCandidatesBySlot(
+            IReadOnlyList<CandidateShift> candidates,
+            CancellationToken cancellationToken)
         {
             var result = Enumerable.Range(0, HoursInWeek)
                 .Select(_ => new List<int>())
@@ -863,6 +888,7 @@ public sealed class RosterGenerationAlgorithm(
 
             for (var index = 0; index < candidates.Count; index++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 foreach (var slot in candidates[index].CoveredSlots)
                 {
                     result[slot].Add(index);
@@ -895,6 +921,7 @@ public sealed class RosterGenerationAlgorithm(
 
             for (var index = 0; index < child.Length; index++)
             {
+                jobCancellationToken.ThrowIfCancellationRequested();
                 child[index] = random.NextDouble() < 0.5 ? first[index] : second[index];
             }
 
@@ -905,6 +932,7 @@ public sealed class RosterGenerationAlgorithm(
         {
             for (var index = 0; index < priorities.Length; index++)
             {
+                jobCancellationToken.ThrowIfCancellationRequested();
                 if (random.NextDouble() < (double)parameters.MutationRate)
                 {
                     priorities[index] = random.NextDouble();
