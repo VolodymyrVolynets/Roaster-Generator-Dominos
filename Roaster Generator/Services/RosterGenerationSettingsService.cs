@@ -9,8 +9,8 @@ public sealed record RosterGenerationParameters(
     int TargetHoursWeight,
     int LongShiftBonus,
     int ShortShiftPenalty,
-    int LateFinishPenalty,
-    int EarlyStartPenalty,
+    int DailyShiftCountPenalty,
+    int ShortBreakPenalty,
     int PopulationSize,
     int GenerationCount,
     decimal MutationRate,
@@ -28,8 +28,8 @@ public sealed class RosterGenerationSettingsService(AppDbContext db)
         TargetHoursWeight = 100,
         LongShiftBonus = 25,
         ShortShiftPenalty = 10,
-        LateFinishPenalty = 2,
-        EarlyStartPenalty = 1,
+        DailyShiftCountPenalty = 25,
+        ShortBreakPenalty = 100,
         PopulationSize = 24,
         GenerationCount = 150,
         MutationRate = 0.03m,
@@ -76,8 +76,8 @@ public sealed class RosterGenerationSettingsService(AppDbContext db)
         settings.TargetHoursWeight = request.TargetHoursWeight;
         settings.LongShiftBonus = request.LongShiftBonus;
         settings.ShortShiftPenalty = request.ShortShiftPenalty;
-        settings.LateFinishPenalty = request.LateFinishPenalty;
-        settings.EarlyStartPenalty = request.EarlyStartPenalty;
+        settings.DailyShiftCountPenalty = request.DailyShiftCountPenalty;
+        settings.ShortBreakPenalty = request.ShortBreakPenalty;
         settings.PopulationSize = request.PopulationSize;
         settings.GenerationCount = request.GenerationCount;
         settings.MutationRate = request.MutationRate;
@@ -96,8 +96,8 @@ public sealed class RosterGenerationSettingsService(AppDbContext db)
             (Name: "Target hours weight", Value: request.TargetHoursWeight),
             (Name: "Long shift bonus", Value: request.LongShiftBonus),
             (Name: "Short shift penalty", Value: request.ShortShiftPenalty),
-            (Name: "Late finish penalty", Value: request.LateFinishPenalty),
-            (Name: "Early start penalty", Value: request.EarlyStartPenalty)
+            (Name: "Daily shift-count penalty", Value: request.DailyShiftCountPenalty),
+            (Name: "Short-break penalty", Value: request.ShortBreakPenalty),
         }.FirstOrDefault(item => item.Value is < 0 or > 1000);
 
         if (invalid != default)
@@ -147,8 +147,8 @@ public sealed class RosterGenerationSettingsService(AppDbContext db)
         settings.TargetHoursWeight,
         settings.LongShiftBonus,
         settings.ShortShiftPenalty,
-        settings.LateFinishPenalty,
-        settings.EarlyStartPenalty,
+        settings.DailyShiftCountPenalty,
+        settings.ShortBreakPenalty,
         settings.PopulationSize,
         settings.GenerationCount,
         settings.MutationRate,
@@ -161,8 +161,8 @@ public sealed class RosterGenerationSettingsService(AppDbContext db)
         TargetHoursWeight = settings.TargetHoursWeight,
         LongShiftBonus = settings.LongShiftBonus,
         ShortShiftPenalty = settings.ShortShiftPenalty,
-        LateFinishPenalty = settings.LateFinishPenalty,
-        EarlyStartPenalty = settings.EarlyStartPenalty,
+        DailyShiftCountPenalty = settings.DailyShiftCountPenalty,
+        ShortBreakPenalty = settings.ShortBreakPenalty,
         PopulationSize = settings.PopulationSize,
         GenerationCount = settings.GenerationCount,
         MutationRate = settings.MutationRate,

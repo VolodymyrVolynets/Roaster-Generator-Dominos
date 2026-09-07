@@ -571,8 +571,8 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
     targetHoursWeight: 100,
     longShiftBonus: 25,
     shortShiftPenalty: 10,
-    lateFinishPenalty: 2,
-    earlyStartPenalty: 1,
+    dailyShiftCountPenalty: 25,
+    shortBreakPenalty: 100,
     populationSize: 24,
     generationCount: 150,
     mutationRate: 0.03,
@@ -901,7 +901,7 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
             <span className="eyebrow">Admin settings</span>
             <h3>Roster optimization weights</h3>
           </div>
-          <p>These values tune the CP-SAT objective. Demand coverage and scheduling safety rules remain mandatory.</p>
+          <p>These values tune the evolutionary algorithm. Demand coverage and scheduling safety rules remain mandatory.</p>
         </div>
         <div className="roster-settings-grid">
           <label>
@@ -941,26 +941,26 @@ function RosterGenerationPanel({ setErrorPopup, isVisible = true }) {
             />
           </label>
           <label>
-            Late-finish penalty
+            Daily shift-count penalty
             <input
               type="number"
               min="0"
               max="1000"
               step="1"
-              value={settingsForm.lateFinishPenalty}
-              onChange={(event) => updateSetting('lateFinishPenalty', event.target.value)}
+              value={settingsForm.dailyShiftCountPenalty}
+              onChange={(event) => updateSetting('dailyShiftCountPenalty', event.target.value)}
               disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
             />
           </label>
           <label>
-            Early-start penalty
+            Short-break penalty
             <input
               type="number"
               min="0"
               max="1000"
               step="1"
-              value={settingsForm.earlyStartPenalty}
-              onChange={(event) => updateSetting('earlyStartPenalty', event.target.value)}
+              value={settingsForm.shortBreakPenalty}
+              onChange={(event) => updateSetting('shortBreakPenalty', event.target.value)}
               disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
             />
           </label>

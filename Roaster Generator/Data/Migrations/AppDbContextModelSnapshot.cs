@@ -633,11 +633,11 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<int>("EarlyStartPenalty")
+                    b.Property<int>("DailyShiftCountPenalty")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
-                        .HasDefaultValue(1)
-                        .HasColumnName("early_start_penalty");
+                        .HasDefaultValue(25)
+                        .HasColumnName("daily_shift_count_penalty");
 
                     b.Property<int>("EliteCount")
                         .ValueGeneratedOnAdd()
@@ -657,12 +657,6 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(150)
                         .HasColumnName("generation_count");
 
-                    b.Property<int>("LateFinishPenalty")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(2)
-                        .HasColumnName("late_finish_penalty");
-
                     b.Property<int>("LongShiftBonus")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -680,6 +674,12 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(24)
                         .HasColumnName("population_size");
+
+                    b.Property<int>("ShortBreakPenalty")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(100)
+                        .HasColumnName("short_break_penalty");
 
                     b.Property<int>("ShortShiftPenalty")
                         .ValueGeneratedOnAdd()
@@ -707,14 +707,14 @@ namespace Roaster_Generator.Data.Migrations
                         new
                         {
                             Id = new Guid("8f0a9c55-9d8a-4c1c-9a30-1d7e83e8c0f5"),
-                            EarlyStartPenalty = 1,
+                            DailyShiftCountPenalty = 25,
                             EliteCount = 2,
                             ExactSearchNodeLimit = 500000,
                             GenerationCount = 150,
-                            LateFinishPenalty = 2,
                             LongShiftBonus = 25,
                             MutationRate = 0.03m,
                             PopulationSize = 24,
+                            ShortBreakPenalty = 100,
                             ShortShiftPenalty = 10,
                             TargetHoursWeight = 100,
                             TournamentSize = 2

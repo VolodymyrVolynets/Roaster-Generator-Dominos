@@ -32,9 +32,9 @@ public sealed class RosterGenerationSettingsRequest
 
     public int ShortShiftPenalty { get; set; }
 
-    public int LateFinishPenalty { get; set; }
+    public int DailyShiftCountPenalty { get; set; }
 
-    public int EarlyStartPenalty { get; set; }
+    public int ShortBreakPenalty { get; set; }
 
     public int PopulationSize { get; set; }
 
@@ -57,9 +57,9 @@ public sealed class RosterGenerationSettingsResponse
 
     public int ShortShiftPenalty { get; init; }
 
-    public int LateFinishPenalty { get; init; }
+    public int DailyShiftCountPenalty { get; init; }
 
-    public int EarlyStartPenalty { get; init; }
+    public int ShortBreakPenalty { get; init; }
 
     public int PopulationSize { get; init; }
 

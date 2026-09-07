@@ -13,9 +13,9 @@ public sealed class RosterGenerationSettings
 
     public int ShortShiftPenalty { get; set; } = 10;
 
-    public int LateFinishPenalty { get; set; } = 2;
+    public int DailyShiftCountPenalty { get; set; } = 25;
 
-    public int EarlyStartPenalty { get; set; } = 1;
+    public int ShortBreakPenalty { get; set; } = 100;
 
     public int PopulationSize { get; set; } = 24;
 

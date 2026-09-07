@@ -1,4 +1,3 @@
-using Google.OrTools.Sat;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Roaster_Generator.Configuration;
@@ -18,7 +17,10 @@ public sealed class RosterGenerationAlgorithm(
     private const int PreferredMinimumShiftHours = 6;
     private const int MaximumShiftHours = 10;
     private const int MinimumBreakMinutes = 7 * 60;
-    private const int HoursInWeek = 7 * 24;
+    private const int HoursInDay = 24;
+    private const int DaysInWeek = 7;
+    private const int HoursInWeek = DaysInWeek * HoursInDay;
+    private const long HardConstraintPenalty = 1_000_000_000L;
     private readonly ShopHoursOptions shopHours = shopHoursOptions.Value;
 
     public async Task<RosterPlan> GenerateAsync(
@@ -66,7 +68,7 @@ public sealed class RosterGenerationAlgorithm(
         var availability = await db.Shifts
             .AsNoTracking()
             .Where(shift => employeeIds.Contains(shift.EmployeeId))
-            .Where(shift => shift.Date >= weekStart && shift.Date < weekStart.AddDays(7))
+            .Where(shift => shift.Date >= weekStart && shift.Date < weekStart.AddDays(DaysInWeek))
             .ToListAsync(cancellationToken);
 
         await ReportAsync("preparing", 20, "Converting demand into hourly driver requirements.");
@@ -97,7 +99,7 @@ public sealed class RosterGenerationAlgorithm(
         await ReportAsync(
             "candidate-shifts",
             32,
-            $"Generated {candidates.Count} valid candidate shifts from {availability.Count} availability entries.");
+            $"Generated all {candidates.Count} valid candidate shifts from {availability.Count} availability entries.");
 
         if (candidates.Count == 0)
         {
@@ -114,12 +116,20 @@ public sealed class RosterGenerationAlgorithm(
 
         var parameters = await rosterSettings.GetParametersAsync(cancellationToken);
         await ReportAsync(
-            "constraint-optimization",
-            38,
-            "Starting CP-SAT constraint optimization using the configured roster weights.");
-        var solver = new CpSatRosterSolver(candidates, demand, employees, parameters);
-        var selectedCandidates = await solver.SolveAsync(cancellationToken, async (stage, progress, message) =>
-            await ReportAsync(stage, progress, message));
+            "daily-options",
+            35,
+            "Building complete daily schedules from the full candidate-shift set.");
+
+        var solver = new EvolutionaryRosterSolver(
+            weekStart,
+            candidates,
+            demand,
+            employees,
+            parameters,
+            cancellationToken);
+        var selectedCandidates = await solver.SolveAsync(
+            cancellationToken,
+            async (stage, progress, message) => await ReportAsync(stage, progress, message));
 
         if (selectedCandidates is null)
         {
@@ -134,7 +144,7 @@ public sealed class RosterGenerationAlgorithm(
                     solver.FailureSlots));
         }
 
-        await ReportAsync("validation", 90, "Validating demand coverage and employee constraints.");
+        await ReportAsync("validation", 92, "Validating demand coverage and employee constraints.");
         var rosterPlan = await db.RosterPlans
             .Include(plan => plan.Shifts)
             .SingleOrDefaultAsync(plan => plan.WeekStart == weekStart, cancellationToken);
@@ -180,7 +190,7 @@ public sealed class RosterGenerationAlgorithm(
         var demand = new int[HoursInWeek];
         var columns = demandPlan.Columns.ToDictionary(column => column.Position);
 
-        for (var position = 0; position < 7; position++)
+        for (var position = 0; position < DaysInWeek; position++)
         {
             if (!columns.ContainsKey(position))
             {
@@ -196,7 +206,7 @@ public sealed class RosterGenerationAlgorithm(
                 throw new RosterGenerationException("Demand contains an invalid hour.");
             }
 
-            foreach (var column in columns.Values.Where(column => column.Position is >= 0 and < 7))
+            foreach (var column in columns.Values.Where(column => column.Position is >= 0 and < DaysInWeek))
             {
                 var value = row.Values.FirstOrDefault(item => item.DemandColumnId == column.Id)?.Demand ?? 0;
 
@@ -238,20 +248,20 @@ public sealed class RosterGenerationAlgorithm(
 
             var dayIndex = availabilityShift.Date.DayNumber - weekStart.DayNumber;
 
-            if (dayIndex is < 0 or >= 7)
+            if (dayIndex is < 0 or >= DaysInWeek)
             {
                 continue;
             }
 
-            var availabilityStart = dayIndex * 24 + availabilityShift.StartTime.Hour;
+            var availabilityStart = dayIndex * HoursInDay + availabilityShift.StartTime.Hour;
             var availabilityFinishHour = availabilityShift.FinishTime.Hour;
 
             if (availabilityFinishHour <= availabilityShift.StartTime.Hour)
             {
-                availabilityFinishHour += 24;
+                availabilityFinishHour += HoursInDay;
             }
 
-            var availabilityEnd = dayIndex * 24 + availabilityFinishHour;
+            var availabilityEnd = dayIndex * HoursInDay + availabilityFinishHour;
 
             for (var start = availabilityStart;
                  start <= availabilityEnd - MinimumShiftHours;
@@ -262,7 +272,6 @@ public sealed class RosterGenerationAlgorithm(
                 for (var duration = MinimumShiftHours; duration <= MaximumShiftHours; duration++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-
                     var end = start + duration;
 
                     if (end > availabilityEnd)
@@ -303,9 +312,9 @@ public sealed class RosterGenerationAlgorithm(
                     candidates.Add(new CandidateShift(
                         employees[employeeIndex].Id,
                         employeeIndex,
-                        weekStart.AddDays(start / 24),
-                        TimeOnly.FromTimeSpan(TimeSpan.FromHours(start % 24)),
-                        TimeOnly.FromTimeSpan(TimeSpan.FromHours(end % 24)),
+                        weekStart.AddDays(start / HoursInDay),
+                        TimeOnly.FromTimeSpan(TimeSpan.FromHours(start % HoursInDay)),
+                        TimeOnly.FromTimeSpan(TimeSpan.FromHours(end % HoursInDay)),
                         duration,
                         start * 60,
                         end * 60,
@@ -370,7 +379,7 @@ public sealed class RosterGenerationAlgorithm(
                     ? "only non-solo or otherwise restricted driver shifts are available"
                     : "no valid continuous 3–10 hour shift is available from the submitted availability and shop hours"
                 : isBlockedByCombination
-                    ? "all candidate shifts conflict with another required shift or the 7-hour employee break"
+                    ? "the daily/weekly shift combinations conflict with another required period or the 7-hour employee break"
                     : $"requires {requiredDrivers} drivers, but only {distinctEmployees} different employees can cover it";
             var examples = FormatCandidateExamples(
                 possibleCandidates.Count > 0 ? possibleCandidates : possibleUnrestrictedCandidates,
@@ -407,7 +416,7 @@ public sealed class RosterGenerationAlgorithm(
             }
 
             diagnostics.Add(
-                "CP-SAT found enough individual candidates at some periods, but no complete combination satisfies all demand, shift-overlap, 7-hour-break, minimum-hours, and solo-driver constraints.");
+                "Evolutionary search found complete daily demand coverage, but no weekly combination satisfies shift-overlap and minimum-hours constraints. Short breaks are scored as a penalty, so review the break deficit shown in the generation log.");
 
             var detailedSlots = slotsToExplain
                 .Select(slot =>
@@ -502,8 +511,8 @@ public sealed class RosterGenerationAlgorithm(
 
     private static (DateOnly Date, int Hour) GetBusinessDateAndHour(DateOnly weekStart, int slot)
     {
-        var businessDayIndex = slot / 24;
-        var slotHour = slot % 24;
+        var businessDayIndex = slot / HoursInDay;
+        var slotHour = slot % HoursInDay;
         var hour = slotHour < 18 ? slotHour + 6 : slotHour - 18;
         return (weekStart.AddDays(businessDayIndex), hour);
     }
@@ -511,10 +520,8 @@ public sealed class RosterGenerationAlgorithm(
     private static string GetEmployeeName(Employee employee) =>
         $"{employee.FirstName} {employee.LastName}".Trim();
 
-    private static int GetDemandSlot(int columnPosition, int hour)
-    {
-        return columnPosition * 24 + (hour >= 6 ? hour - 6 : 18 + hour);
-    }
+    private static int GetDemandSlot(int columnPosition, int hour) =>
+        columnPosition * HoursInDay + (hour >= 6 ? hour - 6 : 18 + hour);
 
     private static int? GetDemandSlotForActualHour(int actualHour)
     {
@@ -523,11 +530,11 @@ public sealed class RosterGenerationAlgorithm(
             return null;
         }
 
-        var dayIndex = actualHour / 24;
-        var hour = actualHour % 24;
+        var dayIndex = actualHour / HoursInDay;
+        var hour = actualHour % HoursInDay;
         var businessDayIndex = hour >= 6 ? dayIndex : dayIndex - 1;
 
-        if (businessDayIndex is < 0 or >= 7)
+        if (businessDayIndex is < 0 or >= DaysInWeek)
         {
             return null;
         }
@@ -537,8 +544,8 @@ public sealed class RosterGenerationAlgorithm(
 
     private bool IsShopOpen(DateOnly weekStart, int slot)
     {
-        var businessDayIndex = slot / 24;
-        var slotHour = slot % 24;
+        var businessDayIndex = slot / HoursInDay;
+        var slotHour = slot % HoursInDay;
         var hour = slotHour < 18 ? slotHour + 6 : slotHour - 18;
         var date = weekStart.AddDays(businessDayIndex);
         var hours = shopHours.For(date.DayOfWeek);
@@ -548,12 +555,12 @@ public sealed class RosterGenerationAlgorithm(
 
         if (closingMinutes <= openingMinutes)
         {
-            closingMinutes += 24 * 60;
+            closingMinutes += HoursInDay * 60;
         }
 
         if (currentMinutes < openingMinutes)
         {
-            currentMinutes += 24 * 60;
+            currentMinutes += HoursInDay * 60;
         }
 
         return currentMinutes >= openingMinutes && currentMinutes < closingMinutes;
@@ -572,301 +579,18 @@ public sealed class RosterGenerationAlgorithm(
         int EndAbsoluteMinutes,
         int[] CoveredSlots);
 
-    private sealed class CpSatRosterSolver(
-        IReadOnlyList<CandidateShift> candidates,
-        IReadOnlyList<int> demand,
-        IReadOnlyList<Employee> employees,
-        RosterGenerationParameters parameters)
-    {
-        private readonly List<int>[] candidatesBySlot = BuildCandidatesBySlot(candidates);
-        private readonly List<int>[] candidatesByEmployee = BuildCandidatesByEmployee(candidates, employees.Count);
+    private sealed record DailySchedule(IReadOnlyList<int> CandidateIndexes);
 
-        public IReadOnlyList<int> FailureSlots { get; private set; } = [];
-
-        public async Task<IReadOnlyList<CandidateShift>?> SolveAsync(
-            CancellationToken cancellationToken,
-            Func<string, int, string, Task>? reportProgress)
-        {
-            var model = new CpModel();
-            var selected = candidates
-                .Select((_, index) => model.NewBoolVar($"shift_{index}"))
-                .ToArray();
-
-            await ReportAsync(
-                reportProgress,
-                "constraint-optimization",
-                40,
-                $"Built {selected.Length} binary shift decisions and {demand.Count} hourly demand slots.");
-
-            AddDemandConstraints(model, selected);
-            AddEmployeeConstraints(model, selected);
-            AddConflictConstraints(model, selected);
-            AddObjective(model, selected);
-
-            var solver = new CpSolver
-            {
-                StringParameters = $"num_search_workers: {Math.Clamp(Environment.ProcessorCount, 1, 8)} log_search_progress: false"
-            };
-            using var cancellationRegistration = cancellationToken.Register(solver.StopSearch);
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var solveTask = Task.Run(() => solver.Solve(model), CancellationToken.None);
-
-            try
-            {
-                while (!solveTask.IsCompleted)
-                {
-                    var delayTask = Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
-                    var completedTask = await Task.WhenAny(solveTask, delayTask);
-
-                    if (completedTask == solveTask)
-                    {
-                        break;
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await ReportAsync(
-                        reportProgress,
-                        "constraint-optimization",
-                        Math.Min(85, 45 + (int)Math.Min(40, stopwatch.Elapsed.TotalSeconds)),
-                        $"CP-SAT is searching for an exact roster ({stopwatch.Elapsed.TotalSeconds:0.0}s elapsed).");
-                }
-
-                var status = await solveTask;
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (status is CpSolverStatus.Optimal or CpSolverStatus.Feasible)
-                {
-                    await ReportAsync(
-                        reportProgress,
-                        "constraint-optimization",
-                        88,
-                        $"CP-SAT found a roster in {stopwatch.Elapsed.TotalSeconds:0.0}s.");
-
-                    return Enumerable
-                        .Range(0, candidates.Count)
-                        .Where(index => solver.BooleanValue(selected[index]))
-                        .Select(index => candidates[index])
-                        .ToList();
-                }
-
-                if (status == CpSolverStatus.Infeasible)
-                {
-                    FailureSlots = Enumerable
-                        .Range(0, demand.Count)
-                        .Where(slot => demand[slot] > 0 && candidatesBySlot[slot].Count < demand[slot])
-                        .ToArray();
-
-                    await ReportAsync(
-                        reportProgress,
-                        "constraint-optimization",
-                        88,
-                        "CP-SAT proved that the current hard constraints cannot all be satisfied.");
-                    return null;
-                }
-
-                throw new RosterGenerationException(
-                    $"The constraint solver stopped with status {status} before finding a valid roster.");
-            }
-            catch
-            {
-                solver.StopSearch();
-                await solveTask;
-                throw;
-            }
-        }
-
-        private void AddDemandConstraints(CpModel model, IReadOnlyList<IntVar> selected)
-        {
-            for (var slot = 0; slot < demand.Count; slot++)
-            {
-                var slotCandidates = candidatesBySlot[slot];
-
-                if (slotCandidates.Count == 0)
-                {
-                    if (demand[slot] > 0)
-                    {
-                        FailureSlots = [slot];
-                        model.Add(LinearExpr.Constant(0) == demand[slot]);
-                    }
-
-                    continue;
-                }
-
-                model.Add(
-                    LinearExpr.Sum(slotCandidates.Select(index => (LinearExpr)selected[index])) ==
-                    demand[slot]);
-            }
-        }
-
-        private void AddEmployeeConstraints(CpModel model, IReadOnlyList<IntVar> selected)
-        {
-            for (var employeeIndex = 0; employeeIndex < employees.Count; employeeIndex++)
-            {
-                var employeeCandidates = candidatesByEmployee[employeeIndex];
-                var hours = model.NewIntVar(0, 168, $"employee_{employeeIndex}_hours");
-                var hourTerms = employeeCandidates
-                    .Select(index => LinearExpr.Term(selected[index], candidates[index].DurationHours))
-                    .ToArray();
-
-                model.Add(hours == LinearExpr.Sum(hourTerms));
-                model.Add(hours >= MinimumShiftHours);
-            }
-        }
-
-        private void AddConflictConstraints(CpModel model, IReadOnlyList<IntVar> selected)
-        {
-            for (var employeeIndex = 0; employeeIndex < candidatesByEmployee.Length; employeeIndex++)
-            {
-                var employeeCandidates = candidatesByEmployee[employeeIndex];
-
-                for (var first = 0; first < employeeCandidates.Count; first++)
-                {
-                    for (var second = first + 1; second < employeeCandidates.Count; second++)
-                    {
-                        var firstIndex = employeeCandidates[first];
-                        var secondIndex = employeeCandidates[second];
-
-                        if (Conflicts(candidates[firstIndex], candidates[secondIndex]))
-                        {
-                            model.Add(selected[firstIndex] + selected[secondIndex] <= 1);
-                        }
-                    }
-                }
-            }
-        }
-
-        private void AddObjective(CpModel model, IReadOnlyList<IntVar> selected)
-        {
-            var objectiveVariables = new List<LinearExpr>();
-            var objectiveCoefficients = new List<long>();
-
-            for (var index = 0; index < candidates.Count; index++)
-            {
-                var candidate = candidates[index];
-                var coefficient = GetShiftPenalty(candidate);
-
-                if (coefficient != 0)
-                {
-                    objectiveVariables.Add(selected[index]);
-                    objectiveCoefficients.Add(coefficient);
-                }
-            }
-
-            for (var employeeIndex = 0; employeeIndex < employees.Count; employeeIndex++)
-            {
-                var employee = employees[employeeIndex];
-                var employeeCandidates = candidatesByEmployee[employeeIndex];
-                var hours = model.NewIntVar(0, 168, $"employee_{employeeIndex}_objective_hours");
-                var deviation = model.NewIntVar(0, 168, $"employee_{employeeIndex}_target_deviation");
-                var hourTerms = employeeCandidates
-                    .Select(index => LinearExpr.Term(selected[index], candidates[index].DurationHours))
-                    .ToArray();
-
-                model.Add(hours == LinearExpr.Sum(hourTerms));
-                model.AddAbsEquality(deviation, hours - employee.TargetHours);
-
-                if (parameters.TargetHoursWeight != 0)
-                {
-                    objectiveVariables.Add(deviation);
-                    objectiveCoefficients.Add(parameters.TargetHoursWeight);
-                }
-            }
-
-            if (objectiveVariables.Count > 0)
-            {
-                model.Minimize(LinearExpr.WeightedSum(objectiveVariables, objectiveCoefficients));
-            }
-        }
-
-        private long GetShiftPenalty(CandidateShift candidate)
-        {
-            var penalty = candidate.DurationHours < PreferredMinimumShiftHours
-                ? parameters.ShortShiftPenalty
-                : 0;
-            var bonus = candidate.DurationHours >= PreferredMinimumShiftHours
-                ? parameters.LongShiftBonus
-                : 0;
-
-            return penalty - bonus + GetUnpleasantHoursPenalty(candidate);
-        }
-
-        private int GetUnpleasantHoursPenalty(CandidateShift candidate)
-        {
-            var startHour = candidate.StartTime.Hour;
-            var finishHour = candidate.FinishTime.Hour;
-            var lateFinish = finishHour <= 6
-                ? Math.Max(0, finishHour + 24 - 22)
-                : Math.Max(0, finishHour - 22);
-            var earlyStart = Math.Max(0, 8 - startHour);
-
-            return lateFinish * parameters.LateFinishPenalty +
-                   earlyStart * parameters.EarlyStartPenalty;
-        }
-
-        private static bool Conflicts(CandidateShift first, CandidateShift second)
-        {
-            var gap = first.StartAbsoluteMinutes >= second.EndAbsoluteMinutes
-                ? first.StartAbsoluteMinutes - second.EndAbsoluteMinutes
-                : second.StartAbsoluteMinutes - first.EndAbsoluteMinutes;
-
-            return gap < 0 || gap < MinimumBreakMinutes;
-        }
-
-        private static List<int>[] BuildCandidatesBySlot(IReadOnlyList<CandidateShift> candidates)
-        {
-            var result = Enumerable
-                .Range(0, HoursInWeek)
-                .Select(_ => new List<int>())
-                .ToArray();
-
-            for (var index = 0; index < candidates.Count; index++)
-            {
-                foreach (var slot in candidates[index].CoveredSlots)
-                {
-                    result[slot].Add(index);
-                }
-            }
-
-            return result;
-        }
-
-        private static List<int>[] BuildCandidatesByEmployee(
-            IReadOnlyList<CandidateShift> candidates,
-            int employeeCount)
-        {
-            var result = Enumerable
-                .Range(0, employeeCount)
-                .Select(_ => new List<int>())
-                .ToArray();
-
-            for (var index = 0; index < candidates.Count; index++)
-            {
-                result[candidates[index].EmployeeIndex].Add(index);
-            }
-
-            return result;
-        }
-
-        private static Task ReportAsync(
-            Func<string, int, string, Task>? reportProgress,
-            string stage,
-            int progress,
-            string message) =>
-            reportProgress is null
-                ? Task.CompletedTask
-                : reportProgress(stage, progress, message);
-    }
-
-    private sealed class GeneticRosterSolver(
+    private sealed class EvolutionaryRosterSolver(
+        DateOnly weekStart,
         IReadOnlyList<CandidateShift> candidates,
         IReadOnlyList<int> demand,
         IReadOnlyList<Employee> employees,
         RosterGenerationParameters parameters,
-        CancellationToken cancellationToken)
+        CancellationToken jobCancellationToken)
     {
-        private readonly Random random = new(20260907);
-        private readonly CancellationToken jobCancellationToken = cancellationToken;
-        private readonly List<int>[] candidatesBySlot = BuildCandidatesBySlot(candidates, cancellationToken);
+        private readonly Random random = new(unchecked(20260907 + weekStart.DayNumber));
+        private readonly List<DailySchedule>[] dailyOptions = new List<DailySchedule>[DaysInWeek];
         private readonly HashSet<int> failureSlots = [];
 
         public IReadOnlyList<int> FailureSlots => failureSlots.ToArray();
@@ -875,295 +599,204 @@ public sealed class RosterGenerationAlgorithm(
             CancellationToken cancellationToken,
             Func<string, int, string, Task>? reportProgress)
         {
-            var population = Enumerable.Range(0, parameters.PopulationSize)
-                .Select(_ => CreateIndividual())
-                .ToList();
-            // Report every generation so every admin sees a detailed live trace.
-            var progressInterval = 1;
+            for (var dayIndex = 0; dayIndex < DaysInWeek; dayIndex++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var date = weekStart.AddDays(dayIndex);
+                var dayCandidateIndexes = candidates
+                    .Select((candidate, index) => (candidate, index))
+                    .Where(item => item.candidate.Date == date)
+                    .Where(item => item.candidate.CoveredSlots.All(slot => slot / HoursInDay == dayIndex))
+                    .Select(item => item.index)
+                    .ToList();
+
+                dailyOptions[dayIndex] = BuildDailyOptions(
+                    dayIndex,
+                    dayCandidateIndexes,
+                    cancellationToken);
+
+                await ReportAsync(
+                    reportProgress,
+                    "daily-options",
+                    36 + ((dayIndex + 1) * 8 / DaysInWeek),
+                    $"{date:dddd}: generated {dayCandidateIndexes.Count} candidate shifts and {dailyOptions[dayIndex].Count} complete daily schedule option(s).");
+
+                if (dailyOptions[dayIndex].Count == 0)
+                {
+                    for (var slot = dayIndex * HoursInDay; slot < (dayIndex + 1) * HoursInDay; slot++)
+                    {
+                        if (demand[slot] > 0)
+                        {
+                            failureSlots.Add(slot);
+                        }
+                    }
+
+                    await ReportAsync(
+                        reportProgress,
+                        "daily-options",
+                        44,
+                        $"{date:dddd} has no complete daily schedule that exactly covers its demand.");
+                    return null;
+                }
+            }
+
+            await ReportAsync(
+                reportProgress,
+                "evolutionary-optimization",
+                45,
+                $"Starting day-preserving evolution with {parameters.PopulationSize} individual(s) and {parameters.GenerationCount} generation(s).");
+
+            var population = CreateInitialPopulation(cancellationToken);
 
             for (var generation = 0; generation < parameters.GenerationCount; generation++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                population = population
+                    .OrderBy(individual => individual.Fitness.Score)
+                    .ToList();
 
-                if (generation % progressInterval == 0)
+                var best = population[0];
+                var progress = 45 + ((generation + 1) * 43 / Math.Max(1, parameters.GenerationCount));
+                await ReportAsync(
+                    reportProgress,
+                    "evolutionary-optimization",
+                    Math.Min(88, progress),
+                    $"Evolutionary optimization: generation {generation + 1} of {parameters.GenerationCount}; " +
+                    $"best score {best.Fitness.Score:n0}, break deficit {best.Fitness.BreakViolationMinutes} minute(s), " +
+                    $"minimum-hours deficit {best.Fitness.MinimumHoursMissing} hour(s), " +
+                    $"{best.Fitness.TotalShiftCount} shift(s) across the week.");
+
+                if (best.Fitness.IsComplete)
                 {
                     await ReportAsync(
                         reportProgress,
-                        "genetic-optimization",
-                        40 + (generation * 35 / parameters.GenerationCount),
-                        $"Genetic optimization: generation {generation + 1} of {parameters.GenerationCount}.");
+                        "evolutionary-optimization",
+                        90,
+                        $"Evolutionary optimization found a complete roster in generation {generation + 1}.");
+                    return SelectCandidates(best);
                 }
 
-                population = population
-                    .OrderBy(individual => individual.Score)
+                var nextPopulation = population
+                    .Take(Math.Min(parameters.EliteCount, population.Count))
                     .ToList();
-
-                if (population[0].IsComplete)
-                {
-                    return population[0].Selected.Select(index => candidates[index]).ToList();
-                }
-
-                var nextPopulation = population.Take(parameters.EliteCount).ToList();
 
                 while (nextPopulation.Count < parameters.PopulationSize)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var first = Tournament(population);
                     var second = Tournament(population);
-                    var childPriorities = Crossover(first.Priorities, second.Priorities);
-                    Mutate(childPriorities);
-                    nextPopulation.Add(Evaluate(childPriorities));
+                    var childGenes = Crossover(first.DayOptionIndexes, second.DayOptionIndexes);
+                    Mutate(childGenes);
+                    nextPopulation.Add(Evaluate(childGenes));
                 }
 
                 population = nextPopulation;
             }
 
-            var best = population
-                .OrderBy(individual => individual.Score)
+            var finalBest = population
+                .OrderBy(individual => individual.Fitness.Score)
                 .First();
-
-            if (best.IsComplete)
-            {
-                return best.Selected.Select(index => candidates[index]).ToList();
-            }
+            AddFailureSlotsForBest(finalBest);
 
             await ReportAsync(
                 reportProgress,
-                "exact-search",
-                78,
-                "Genetic optimization did not find a complete roster; starting exact constraint search.");
-            var exactSelection = await TryExactSearchAsync(best.Priorities, cancellationToken, reportProgress);
-            return exactSelection?.Select(index => candidates[index]).ToList();
+                "evolutionary-optimization",
+                90,
+                $"Evolutionary optimization finished without a complete roster. Best score {finalBest.Fitness.Score:n0}; " +
+                $"break deficit {finalBest.Fitness.BreakViolationMinutes} minute(s), " +
+                $"minimum-hours deficit {finalBest.Fitness.MinimumHoursMissing} hour(s).");
+            return null;
         }
 
-        private static Task ReportAsync(
-            Func<string, int, string, Task>? reportProgress,
-            string stage,
-            int progress,
-            string message) =>
-            reportProgress is null
-                ? Task.CompletedTask
-                : reportProgress(stage, progress, message);
-
-        private Individual CreateIndividual()
+        private List<DailySchedule> BuildDailyOptions(
+            int dayIndex,
+            IReadOnlyList<int> dayCandidateIndexes,
+            CancellationToken cancellationToken)
         {
-            jobCancellationToken.ThrowIfCancellationRequested();
-            var priorities = candidates.Select(_ => random.NextDouble()).ToArray();
-            return Evaluate(priorities);
-        }
+            var dayStartSlot = dayIndex * HoursInDay;
+            var remaining = demand
+                .Skip(dayStartSlot)
+                .Take(HoursInDay)
+                .ToArray();
+            var options = new List<DailySchedule>();
 
-        private Individual Evaluate(double[] priorities)
-        {
-            jobCancellationToken.ThrowIfCancellationRequested();
-            var remaining = demand.ToArray();
-            var selected = BuildGreedySelection(priorities, remaining, out var employeeHours);
-            var uncoveredHours = remaining.Sum();
-            var minimumHoursMissing = employeeHours.Sum(hours => Math.Max(0, MinimumShiftHours - hours));
-            var soloHours = GetSoloHours(selected);
-            var targetDeviation = employeeHours
-                .Select((hours, index) => Math.Abs(hours - employees[index].TargetHours))
-                .Sum();
-            var shortShiftPenalty = selected
-                .Select(index => candidates[index])
-                .Count(candidate => candidate.DurationHours < PreferredMinimumShiftHours);
-
-            var score = uncoveredHours * 1_000_000L
-                + soloHours * 500_000L
-                + minimumHoursMissing * 100_000L
-                + targetDeviation * parameters.TargetHoursWeight
-                + shortShiftPenalty * parameters.ShortShiftPenalty
-                + selected.Sum(index => GetUnpleasantHoursPenalty(candidates[index]));
-
-            return new Individual(
-                priorities,
-                selected,
-                score,
-                uncoveredHours == 0 && minimumHoursMissing == 0 && soloHours == 0);
-        }
-
-        private int GetSoloHours(IReadOnlyList<int> selected)
-        {
-            var employeeIndexesBySlot = new Dictionary<int, HashSet<int>>();
-
-            foreach (var selectedIndex in selected)
+            if (remaining.Sum() == 0)
             {
-                jobCancellationToken.ThrowIfCancellationRequested();
-                var candidate = candidates[selectedIndex];
-
-                foreach (var slot in candidate.CoveredSlots)
-                {
-                    if (!employeeIndexesBySlot.TryGetValue(slot, out var employeeIndexes))
-                    {
-                        employeeIndexes = [];
-                        employeeIndexesBySlot[slot] = employeeIndexes;
-                    }
-
-                    employeeIndexes.Add(candidate.EmployeeIndex);
-                }
+                return [new DailySchedule([])];
             }
 
-            return selected
-                .Select(index => candidates[index])
-                .Where(candidate => !employees[candidate.EmployeeIndex].CanWorkAlone)
-                .Sum(candidate => candidate.CoveredSlots.Count(slot =>
-                    employeeIndexesBySlot[slot].Any(employeeIndex =>
-                        employeeIndex != candidate.EmployeeIndex)));
-        }
+            var candidatesByLocalSlot = Enumerable
+                .Range(0, HoursInDay)
+                .Select(_ => new List<int>())
+                .ToArray();
 
-        private List<int> BuildGreedySelection(
-            IReadOnlyList<double> priorities,
-            int[] remaining,
-            out int[] employeeHours)
-        {
-            employeeHours = new int[employees.Count];
-            var selected = new List<int>();
-
-            while (remaining.Sum() > 0)
-            {
-                jobCancellationToken.ThrowIfCancellationRequested();
-                var bestIndex = -1;
-                var bestScore = double.MinValue;
-
-                for (var index = 0; index < candidates.Count; index++)
-                {
-                    jobCancellationToken.ThrowIfCancellationRequested();
-                    var candidate = candidates[index];
-
-                    if (!CanAdd(candidate, selected) ||
-                        candidate.CoveredSlots.Any(slot => remaining[slot] <= 0))
-                    {
-                        continue;
-                    }
-
-                    var gain = candidate.CoveredSlots.Length;
-                    var targetDifference = Math.Abs(
-                        employeeHours[candidate.EmployeeIndex] + candidate.DurationHours -
-                        employees[candidate.EmployeeIndex].TargetHours);
-                    var longShiftBonus = candidate.DurationHours >= PreferredMinimumShiftHours
-                        ? parameters.LongShiftBonus
-                        : 0;
-                    var score = gain * 10_000D
-                        + longShiftBonus
-                        - targetDifference * parameters.TargetHoursWeight
-                        - GetUnpleasantHoursPenalty(candidate)
-                        + priorities[index];
-
-                    if (score > bestScore)
-                    {
-                        bestIndex = index;
-                        bestScore = score;
-                    }
-                }
-
-                if (bestIndex < 0)
-                {
-                    break;
-                }
-
-                var selectedCandidate = candidates[bestIndex];
-                selected.Add(bestIndex);
-                employeeHours[selectedCandidate.EmployeeIndex] += selectedCandidate.DurationHours;
-
-                foreach (var slot in selectedCandidate.CoveredSlots)
-                {
-                    remaining[slot]--;
-                }
-            }
-
-            return selected;
-        }
-
-        private async Task<IReadOnlyList<int>?> TryExactSearchAsync(
-            IReadOnlyList<double> priorities,
-            CancellationToken cancellationToken,
-            Func<string, int, string, Task>? reportProgress)
-        {
-            var remaining = demand.ToArray();
-            var employeeHours = new int[employees.Count];
-            var selected = new List<int>();
-            var nodes = 0;
-            var progressInterval = Math.Max(1, parameters.ExactSearchNodeLimit / 20);
-
-            return await SearchAsync() ? selected.ToList() : null;
-
-            async Task<bool> SearchAsync()
+            foreach (var candidateIndex in dayCandidateIndexes)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                nodes++;
-
-                if (nodes > parameters.ExactSearchNodeLimit)
+                foreach (var slot in candidates[candidateIndex].CoveredSlots)
                 {
-                    return false;
-                }
+                    var localSlot = slot - dayStartSlot;
 
-                if (nodes % progressInterval == 0)
-                {
-                    await ReportAsync(
-                        reportProgress,
-                        "exact-search",
-                        78 + Math.Min(12, nodes * 12 / parameters.ExactSearchNodeLimit),
-                        $"Exact constraint search: checked {nodes:n0} combinations.");
+                    if (localSlot is >= 0 and < HoursInDay)
+                    {
+                        candidatesByLocalSlot[localSlot].Add(candidateIndex);
+                    }
                 }
+            }
 
+            var selected = new List<int>();
+            var selectedSet = new HashSet<int>();
+            var seenOptions = new HashSet<string>(StringComparer.Ordinal);
+
+            Search();
+            return options;
+
+            void Search()
+            {
+                cancellationToken.ThrowIfCancellationRequested();
                 var nextSlot = FindMostConstrainedSlot();
 
                 if (nextSlot < 0)
                 {
-                    return employeeHours.All(hours => hours >= MinimumShiftHours) &&
-                        GetSoloHours(selected) == 0;
+                    var indexes = selected.Order().ToArray();
+                    var key = string.Join(',', indexes);
+
+                    if (seenOptions.Add(key))
+                    {
+                        options.Add(new DailySchedule(indexes));
+                    }
+
+                    return;
                 }
 
-                var options = candidatesBySlot[nextSlot]
-                    .Where(index =>
-                    {
-                        var candidate = candidates[index];
-                        return CanAdd(candidate, selected) &&
-                            candidate.CoveredSlots.All(slot => remaining[slot] > 0);
-                    })
-                    .OrderByDescending(index => candidates[index].DurationHours >= PreferredMinimumShiftHours
-                        ? parameters.LongShiftBonus
-                        : 0)
-                    .ThenBy(index => Math.Abs(
-                        employeeHours[candidates[index].EmployeeIndex] + candidates[index].DurationHours -
-                        employees[candidates[index].EmployeeIndex].TargetHours) * parameters.TargetHoursWeight
-                        + (candidates[index].DurationHours < PreferredMinimumShiftHours
-                            ? parameters.ShortShiftPenalty
-                            : 0)
-                        + GetUnpleasantHoursPenalty(candidates[index]))
-                    .ThenByDescending(index => priorities[index])
+                var candidateIndexes = candidatesByLocalSlot[nextSlot]
+                    .Where(index => CanPlace(index, selected, selectedSet, remaining, dayStartSlot))
+                    .OrderByDescending(index => candidates[index].DurationHours)
+                    .ThenBy(index => index)
                     .ToList();
 
-                if (options.Count == 0)
+                foreach (var candidateIndex in candidateIndexes)
                 {
-                    failureSlots.Add(nextSlot);
-                }
-
-                foreach (var index in options)
-                {
-                    var candidate = candidates[index];
-                    selected.Add(index);
-                    employeeHours[candidate.EmployeeIndex] += candidate.DurationHours;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var candidate = candidates[candidateIndex];
+                    selected.Add(candidateIndex);
+                    selectedSet.Add(candidateIndex);
 
                     foreach (var slot in candidate.CoveredSlots)
                     {
-                        remaining[slot]--;
+                        remaining[slot - dayStartSlot]--;
                     }
 
-                    if (await SearchAsync())
-                    {
-                        return true;
-                    }
+                    Search();
 
                     foreach (var slot in candidate.CoveredSlots)
                     {
-                        remaining[slot]++;
+                        remaining[slot - dayStartSlot]++;
                     }
 
-                    employeeHours[candidate.EmployeeIndex] -= candidate.DurationHours;
+                    selectedSet.Remove(candidateIndex);
                     selected.RemoveAt(selected.Count - 1);
                 }
-
-                return false;
             }
 
             int FindMostConstrainedSlot()
@@ -1171,23 +804,19 @@ public sealed class RosterGenerationAlgorithm(
                 var bestSlot = -1;
                 var bestOptionCount = int.MaxValue;
 
-                for (var slot = 0; slot < remaining.Length; slot++)
+                for (var localSlot = 0; localSlot < remaining.Length; localSlot++)
                 {
-                    if (remaining[slot] <= 0)
+                    if (remaining[localSlot] <= 0)
                     {
                         continue;
                     }
 
-                    var optionCount = candidatesBySlot[slot].Count(index =>
-                    {
-                        var candidate = candidates[index];
-                        return CanAdd(candidate, selected) &&
-                            candidate.CoveredSlots.All(coveredSlot => remaining[coveredSlot] > 0);
-                    });
+                    var optionCount = candidatesByLocalSlot[localSlot]
+                        .Count(index => CanPlace(index, selected, selectedSet, remaining, dayStartSlot));
 
                     if (optionCount < bestOptionCount)
                     {
-                        bestSlot = slot;
+                        bestSlot = localSlot;
                         bestOptionCount = optionCount;
                     }
                 }
@@ -1196,48 +825,198 @@ public sealed class RosterGenerationAlgorithm(
             }
         }
 
-        private bool CanAdd(CandidateShift candidate, IReadOnlyList<int> selected)
+        private bool CanPlace(
+            int candidateIndex,
+            IReadOnlyList<int> selected,
+            IReadOnlySet<int> selectedSet,
+            IReadOnlyList<int> remaining,
+            int dayStartSlot)
         {
-            foreach (var selectedIndex in selected)
+            if (selectedSet.Contains(candidateIndex))
             {
-                var other = candidates[selectedIndex];
-
-                if (other.EmployeeIndex != candidate.EmployeeIndex)
-                {
-                    continue;
-                }
-
-                var gap = candidate.StartAbsoluteMinutes >= other.EndAbsoluteMinutes
-                    ? candidate.StartAbsoluteMinutes - other.EndAbsoluteMinutes
-                    : other.StartAbsoluteMinutes - candidate.EndAbsoluteMinutes;
-
-                if (gap < 0 || gap < MinimumBreakMinutes)
-                {
-                    return false;
-                }
+                return false;
             }
 
-            return true;
+            var candidate = candidates[candidateIndex];
+
+            if (candidate.CoveredSlots.Any(slot =>
+                    slot / HoursInDay != dayStartSlot / HoursInDay ||
+                    remaining[slot - dayStartSlot] <= 0))
+            {
+                return false;
+            }
+
+            return selected
+                .Select(index => candidates[index])
+                .Where(other => other.EmployeeIndex == candidate.EmployeeIndex)
+                .All(other => !Overlaps(candidate, other));
         }
 
-        private static List<int>[] BuildCandidatesBySlot(
-            IReadOnlyList<CandidateShift> candidates,
-            CancellationToken cancellationToken)
+        private List<Individual> CreateInitialPopulation(CancellationToken cancellationToken)
         {
-            var result = Enumerable.Range(0, HoursInWeek)
-                .Select(_ => new List<int>())
-                .ToArray();
+            var population = new List<Individual>(parameters.PopulationSize);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var attempts = 0;
+            var maxAttempts = Math.Max(parameters.PopulationSize * 10, 100);
 
-            for (var index = 0; index < candidates.Count; index++)
+            while (population.Count < parameters.PopulationSize && attempts++ < maxAttempts)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                foreach (var slot in candidates[index].CoveredSlots)
+                var genes = new int[DaysInWeek];
+
+                for (var day = 0; day < DaysInWeek; day++)
                 {
-                    result[slot].Add(index);
+                    var optionCount = dailyOptions[day].Count;
+                    genes[day] = population.Count < optionCount
+                        ? (population.Count + day) % optionCount
+                        : random.Next(optionCount);
+                }
+
+                var key = string.Join(',', genes);
+
+                if (seen.Add(key) || population.Count == 0)
+                {
+                    population.Add(Evaluate(genes));
                 }
             }
 
-            return result;
+            while (population.Count < parameters.PopulationSize)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                population.Add(Evaluate(CreateRandomGenome()));
+            }
+
+            return population;
+        }
+
+        private int[] CreateRandomGenome()
+        {
+            var genes = new int[DaysInWeek];
+
+            for (var day = 0; day < DaysInWeek; day++)
+            {
+                jobCancellationToken.ThrowIfCancellationRequested();
+                genes[day] = random.Next(dailyOptions[day].Count);
+            }
+
+            return genes;
+        }
+
+        private Individual Evaluate(IReadOnlyList<int> dayOptionIndexes)
+        {
+            jobCancellationToken.ThrowIfCancellationRequested();
+            var selected = new List<CandidateShift>();
+            var employeeHours = new int[employees.Count];
+            var totalShiftCount = 0;
+            var longShiftCount = 0;
+            var shortShiftCount = 0;
+
+            for (var day = 0; day < DaysInWeek; day++)
+            {
+                var schedule = dailyOptions[day][dayOptionIndexes[day]];
+                totalShiftCount += schedule.CandidateIndexes.Count;
+
+                foreach (var candidateIndex in schedule.CandidateIndexes)
+                {
+                    var candidate = candidates[candidateIndex];
+                    selected.Add(candidate);
+                    employeeHours[candidate.EmployeeIndex] += candidate.DurationHours;
+
+                    if (candidate.DurationHours >= PreferredMinimumShiftHours)
+                    {
+                        longShiftCount++;
+                    }
+                    else
+                    {
+                        shortShiftCount++;
+                    }
+                }
+            }
+
+            var overlapCount = 0;
+            var breakViolationMinutes = 0;
+
+            foreach (var employeeShifts in selected
+                         .GroupBy(candidate => candidate.EmployeeIndex)
+                         .Select(group => group.OrderBy(candidate => candidate.StartAbsoluteMinutes).ToList()))
+            {
+                for (var index = 1; index < employeeShifts.Count; index++)
+                {
+                    var previous = employeeShifts[index - 1];
+                    var current = employeeShifts[index];
+                    var gap = current.StartAbsoluteMinutes - previous.EndAbsoluteMinutes;
+
+                    if (gap < 0)
+                    {
+                        overlapCount++;
+                    }
+                    else if (gap < MinimumBreakMinutes)
+                    {
+                        breakViolationMinutes += MinimumBreakMinutes - gap;
+                    }
+                }
+            }
+
+            var minimumHoursMissing = employeeHours
+                .Sum(hours => Math.Max(0, MinimumShiftHours - hours));
+            var targetDeviation = employeeHours
+                .Select((hours, index) => Math.Abs(hours - employees[index].TargetHours))
+                .Sum();
+            var dailyShiftCountPenalty = totalShiftCount * parameters.DailyShiftCountPenalty;
+            var score = overlapCount * HardConstraintPenalty +
+                        minimumHoursMissing * HardConstraintPenalty +
+                        breakViolationMinutes * parameters.ShortBreakPenalty +
+                        targetDeviation * parameters.TargetHoursWeight +
+                        dailyShiftCountPenalty +
+                        shortShiftCount * parameters.ShortShiftPenalty -
+                        longShiftCount * parameters.LongShiftBonus;
+
+            return new Individual(
+                dayOptionIndexes.ToArray(),
+                new Fitness(
+                    score,
+                    overlapCount,
+                    breakViolationMinutes,
+                    minimumHoursMissing,
+                    totalShiftCount,
+                    overlapCount == 0 &&
+                    minimumHoursMissing == 0));
+        }
+
+        private IReadOnlyList<CandidateShift> SelectCandidates(Individual individual)
+        {
+            return Enumerable
+                .Range(0, DaysInWeek)
+                .SelectMany(day => dailyOptions[day][individual.DayOptionIndexes[day]].CandidateIndexes)
+                .Select(index => candidates[index])
+                .ToList();
+        }
+
+        private void AddFailureSlotsForBest(Individual individual)
+        {
+            for (var day = 0; day < DaysInWeek; day++)
+            {
+                var schedule = dailyOptions[day][individual.DayOptionIndexes[day]];
+
+                foreach (var candidateIndex in schedule.CandidateIndexes)
+                {
+                    foreach (var slot in candidates[candidateIndex].CoveredSlots)
+                    {
+                        failureSlots.Add(slot);
+                    }
+                }
+            }
+
+            if (failureSlots.Count == 0)
+            {
+                for (var slot = 0; slot < demand.Count; slot++)
+                {
+                    if (demand[slot] > 0)
+                    {
+                        failureSlots.Add(slot);
+                    }
+                }
+            }
         }
 
         private Individual Tournament(IReadOnlyList<Individual> population)
@@ -1248,7 +1027,7 @@ public sealed class RosterGenerationAlgorithm(
             {
                 var contender = population[random.Next(population.Count)];
 
-                if (contender.Score < best.Score)
+                if (contender.Fitness.Score < best.Fitness.Score)
                 {
                     best = contender;
                 }
@@ -1257,47 +1036,72 @@ public sealed class RosterGenerationAlgorithm(
             return best;
         }
 
-        private double[] Crossover(IReadOnlyList<double> first, IReadOnlyList<double> second)
+        private int[] Crossover(IReadOnlyList<int> first, IReadOnlyList<int> second)
         {
-            var child = new double[first.Count];
+            var child = new int[DaysInWeek];
 
-            for (var index = 0; index < child.Length; index++)
+            for (var day = 0; day < DaysInWeek; day++)
             {
                 jobCancellationToken.ThrowIfCancellationRequested();
-                child[index] = random.NextDouble() < 0.5 ? first[index] : second[index];
+                child[day] = random.NextDouble() < 0.5 ? first[day] : second[day];
             }
 
             return child;
         }
 
-        private void Mutate(double[] priorities)
+        private void Mutate(int[] dayOptionIndexes)
         {
-            for (var index = 0; index < priorities.Length; index++)
+            var mutated = false;
+
+            for (var day = 0; day < DaysInWeek; day++)
             {
                 jobCancellationToken.ThrowIfCancellationRequested();
-                if (random.NextDouble() < (double)parameters.MutationRate)
+
+                if (random.NextDouble() >= (double)parameters.MutationRate || dailyOptions[day].Count <= 1)
                 {
-                    priorities[index] = random.NextDouble();
+                    continue;
+                }
+
+                var current = dayOptionIndexes[day];
+                var next = random.Next(dailyOptions[day].Count - 1);
+                dayOptionIndexes[day] = next >= current ? next + 1 : next;
+                mutated = true;
+            }
+
+            if (!mutated && random.NextDouble() < (double)parameters.MutationRate)
+            {
+                var day = random.Next(DaysInWeek);
+
+                if (dailyOptions[day].Count > 1)
+                {
+                    var current = dayOptionIndexes[day];
+                    var next = random.Next(dailyOptions[day].Count - 1);
+                    dayOptionIndexes[day] = next >= current ? next + 1 : next;
                 }
             }
         }
 
-        private int GetUnpleasantHoursPenalty(CandidateShift candidate)
-        {
-            var startHour = candidate.StartTime.Hour;
-            var finishHour = candidate.FinishTime.Hour;
-            var lateFinish = finishHour <= 6
-                ? Math.Max(0, finishHour + 24 - 22)
-                : Math.Max(0, finishHour - 22);
-            var earlyStart = Math.Max(0, 8 - startHour);
+        private static bool Overlaps(CandidateShift first, CandidateShift second) =>
+            first.StartAbsoluteMinutes < second.EndAbsoluteMinutes &&
+            second.StartAbsoluteMinutes < first.EndAbsoluteMinutes;
 
-            return lateFinish * parameters.LateFinishPenalty + earlyStart * parameters.EarlyStartPenalty;
-        }
+        private static Task ReportAsync(
+            Func<string, int, string, Task>? reportProgress,
+            string stage,
+            int progress,
+            string message) =>
+            reportProgress is null
+                ? Task.CompletedTask
+                : reportProgress(stage, progress, message);
 
-        private sealed record Individual(
-            double[] Priorities,
-            IReadOnlyList<int> Selected,
+        private sealed record Individual(int[] DayOptionIndexes, Fitness Fitness);
+
+        private sealed record Fitness(
             long Score,
+            int OverlapCount,
+            int BreakViolationMinutes,
+            int MinimumHoursMissing,
+            int TotalShiftCount,
             bool IsComplete);
     }
 }

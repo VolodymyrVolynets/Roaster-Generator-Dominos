@@ -32,14 +32,14 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             .HasDefaultValue(10)
             .IsRequired();
 
-        builder.Property(settings => settings.LateFinishPenalty)
-            .HasColumnName("late_finish_penalty")
-            .HasDefaultValue(2)
+        builder.Property(settings => settings.DailyShiftCountPenalty)
+            .HasColumnName("daily_shift_count_penalty")
+            .HasDefaultValue(25)
             .IsRequired();
 
-        builder.Property(settings => settings.EarlyStartPenalty)
-            .HasColumnName("early_start_penalty")
-            .HasDefaultValue(1)
+        builder.Property(settings => settings.ShortBreakPenalty)
+            .HasColumnName("short_break_penalty")
+            .HasDefaultValue(100)
             .IsRequired();
 
         builder.Property(settings => settings.PopulationSize)
@@ -79,8 +79,8 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             TargetHoursWeight = 100,
             LongShiftBonus = 25,
             ShortShiftPenalty = 10,
-            LateFinishPenalty = 2,
-            EarlyStartPenalty = 1,
+            DailyShiftCountPenalty = 25,
+            ShortBreakPenalty = 100,
             PopulationSize = 24,
             GenerationCount = 150,
             MutationRate = 0.03m,
