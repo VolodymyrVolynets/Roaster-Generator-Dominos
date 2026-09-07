@@ -1,13 +1,20 @@
 using FluentValidation;
+using Microsoft.Extensions.Options;
+using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Services;
+using System.Globalization;
 
 namespace Roaster_Generator.Validation;
 
 public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklyScheduleRequest>
 {
-    public WeeklyScheduleRequestValidator()
+    private readonly ShopHoursOptions shopHours;
+
+    public WeeklyScheduleRequestValidator(IOptions<ShopHoursOptions> shopHoursOptions)
     {
+        shopHours = shopHoursOptions.Value;
+
         RuleFor(request => request.WeekOffset)
             .InclusiveBetween(
                 WeeklyScheduleService.MinWeekOffset,
@@ -51,9 +58,60 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
                             $"Days[{index}].Date",
                             $"Date must be {expectedDate:yyyy-MM-dd} for the selected week.");
                     }
+
+                    ValidateShopHours(days[index], index, context);
                 }
             });
     }
+
+    private void ValidateShopHours(
+        ScheduleDayRequest day,
+        int dayIndex,
+        ValidationContext<WeeklyScheduleRequest> context)
+    {
+        if (day.StartTime is null || day.FinishTime is null ||
+            day.StartTime.Value.Minute != 0 || day.FinishTime.Value.Minute != 0)
+        {
+            return;
+        }
+
+        if (day.StartTime == day.FinishTime)
+        {
+            return;
+        }
+
+        var hours = shopHours.For(day.Date.DayOfWeek);
+        var startMinutes = ToMinutes(day.StartTime.Value);
+        var finishMinutes = ToMinutes(day.FinishTime.Value);
+        var openingMinutes = ToMinutes(hours.OpeningTime);
+        var closingMinutes = ToMinutes(hours.ClosingTime);
+
+        if (startMinutes < openingMinutes)
+        {
+            context.AddFailure(
+                $"Days[{dayIndex}].StartTime",
+                $"Start time cannot be earlier than the shop opening time ({FormatTime(hours.OpeningTime)}).");
+        }
+
+        var finishOnTimeline = finishMinutes <= startMinutes
+            ? finishMinutes + 24 * 60
+            : finishMinutes;
+        var closingOnTimeline = closingMinutes <= openingMinutes
+            ? closingMinutes + 24 * 60
+            : closingMinutes;
+
+        if (finishOnTimeline > closingOnTimeline)
+        {
+            context.AddFailure(
+                $"Days[{dayIndex}].FinishTime",
+                $"Finish time cannot be after the shop closing time ({FormatTime(hours.ClosingTime)}).");
+        }
+    }
+
+    private static int ToMinutes(TimeOnly time) => time.Hour * 60 + time.Minute;
+
+    private static string FormatTime(TimeOnly time) =>
+        time.ToString("HH:mm", CultureInfo.InvariantCulture);
 }
 
 public sealed class WeekSelectionRequestValidator : AbstractValidator<WeekSelectionRequest>

@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Data;
 using Roaster_Generator.Services;
@@ -14,6 +15,9 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
+builder.Services.AddOptions<ShopHoursOptions>()
+    .Bind(builder.Configuration.GetSection(ShopHoursOptions.SectionName))
+    .ValidateOnStart();
 builder.Services.AddScoped<WeeklyScheduleService>();
 builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
 builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();
