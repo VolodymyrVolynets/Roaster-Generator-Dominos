@@ -53,8 +53,6 @@ public sealed class DemandValue
 
     public Guid DemandColumnId { get; set; }
 
-    public decimal? Pizzas { get; set; }
-
     public decimal? Deliveries { get; set; }
 
     public int? Demand { get; set; }

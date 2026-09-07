@@ -149,6 +149,7 @@ function DemandManager({ setErrorPopup }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [plan, setPlan] = useState(null)
+  const [selectedDemandDayPosition, setSelectedDemandDayPosition] = useState(0)
   const [name, setName] = useState('Next week demand')
   const [weekStart, setWeekStart] = useState(getNextMondayValue())
   const [pasteContent, setPasteContent] = useState('')
@@ -174,6 +175,7 @@ function DemandManager({ setErrorPopup }) {
     fetchJson(`/api/admin/demand/${selectedPlanId}`)
       .then((payload) => {
         setPlan(payload)
+        setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
         setName(payload.name)
         setWeekStart(payload.weekStart)
         setStatus({ status: 'idle', message: '' })
@@ -181,15 +183,8 @@ function DemandManager({ setErrorPopup }) {
       .catch((error) => setErrorPopup(error.message))
   }, [selectedPlanId, setErrorPopup])
 
-  function updateDemandValue(hour, position, field, rawValue) {
-    const value = rawValue === '' ? null : Number(rawValue)
-    const deliveries = field === 'deliveries'
-      ? value
-      : plan.rows.find((row) => row.hour === hour)?.values.find((item) => item.position === position)?.deliveries ?? null
-    const demand = deliveries === null || Number.isNaN(deliveries)
-      ? null
-      : Math.round(deliveries / 2.7)
-
+  function updateDemandValue(hour, position, rawValue) {
+    const demand = rawValue === '' ? null : Number(rawValue)
     setPlan((current) => ({
       ...current,
       rows: current.rows.map((row) => {
@@ -200,10 +195,7 @@ function DemandManager({ setErrorPopup }) {
         const existing = row.values.find((item) => item.position === position)
         const nextValue = {
           position,
-          pizzas: existing?.pizzas ?? null,
           deliveries: existing?.deliveries ?? null,
-          demand: existing?.demand ?? null,
-          [field]: value,
           demand,
         }
 
@@ -229,6 +221,7 @@ function DemandManager({ setErrorPopup }) {
         body: JSON.stringify({ name, weekStart, content: pasteContent }),
       })
       setPlan(payload)
+      setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setSelectedPlanId(String(payload.id))
       setPasteContent('')
       setStatus({ status: 'success', message: 'Demand imported.' })
@@ -259,6 +252,7 @@ function DemandManager({ setErrorPopup }) {
         body: formData,
       })
       setPlan(payload)
+      setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setSelectedPlanId(String(payload.id))
       setStatus({ status: 'success', message: 'Excel demand imported.' })
       await refreshPlans()
@@ -284,13 +278,15 @@ function DemandManager({ setErrorPopup }) {
         body: JSON.stringify({
           name,
           weekStart,
-          columns: plan.columns,
+          columns: plan.columns.map((column) => ({
+            position: column.position,
+            label: column.label,
+          })),
           rows: plan.rows.map((row) => ({
             hour: row.hour,
             values: row.values.map((value) => ({
               position: value.position,
-              pizzas: value.pizzas,
-              deliveries: value.deliveries,
+              demand: value.demand,
             })),
           })),
         }),
@@ -321,16 +317,6 @@ function DemandManager({ setErrorPopup }) {
     }
   }
 
-  function updateColumnLabel(position, label) {
-    setPlan((current) => ({
-      ...current,
-      columns: current.columns.map((column) =>
-        column.position === position ? { ...column, label } : column,
-      ),
-    }))
-    setStatus({ status: 'idle', message: '' })
-  }
-
   return (
     <section className="admin-tools demand-tools">
       <div className="section-heading">
@@ -355,8 +341,8 @@ function DemandManager({ setErrorPopup }) {
       </div>
 
       <p className="demand-help">
-        Import an Excel/CSV/table paste. Every two non-empty columns are treated as pizzas and deliveries;
-        demand is calculated as deliveries ÷ 2.7 and rounded.
+        Import an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
+        and read-only, while demand is calculated from deliveries and can be edited below.
       </p>
 
       <div className="demand-import-form">
@@ -400,24 +386,33 @@ function DemandManager({ setErrorPopup }) {
 
       {plan && (
         <form onSubmit={savePlan}>
-          <div className="demand-table-wrapper">
-            <table className="demand-table">
+          <div className="demand-mobile-controls">
+            <label>
+              Day
+              <select
+                value={selectedDemandDayPosition}
+                onChange={(event) => setSelectedDemandDayPosition(Number(event.target.value))}
+              >
+                {plan.columns.map((column) => (
+                  <option key={column.position} value={column.position}>
+                    {column.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="demand-table-wrapper demand-desktop-view">
+            <table className="demand-table demand-desktop-table">
               <thead>
                 <tr>
                   <th rowSpan="2">Hour</th>
                   {plan.columns.map((column) => (
-                    <th key={column.position} colSpan="3">
-                      <input
-                        value={column.label}
-                        onChange={(event) => updateColumnLabel(column.position, event.target.value)}
-                        aria-label={`Column ${column.position + 1} label`}
-                      />
-                    </th>
+                    <th key={column.position} colSpan="2">{column.label}</th>
                   ))}
                 </tr>
                 <tr>
                   {plan.columns.flatMap((column) => [
-                    <th key={`${column.position}-pizzas`}>Pizzas</th>,
                     <th key={`${column.position}-deliveries`}>Deliveries</th>,
                     <th key={`${column.position}-demand`}>Demand</th>,
                   ])}
@@ -430,34 +425,21 @@ function DemandManager({ setErrorPopup }) {
                     {plan.columns.flatMap((column) => {
                       const value = row.values.find((item) => item.position === column.position) || {}
                       return [
-                        <td key={`${row.hour}-${column.position}-pizzas`}>
+                        <td key={`${row.hour}-${column.position}-deliveries`} className="demand-readonly">
+                          {value.deliveries ?? '—'}
+                        </td>,
+                        <td key={`${row.hour}-${column.position}-demand`}>
                           <input
                             type="number"
-                            step="0.1"
-                            value={value.pizzas ?? ''}
+                            min="0"
+                            step="1"
+                            value={value.demand ?? ''}
                             onChange={(event) => updateDemandValue(
                               row.hour,
                               column.position,
-                              'pizzas',
                               event.target.value,
                             )}
                           />
-                        </td>,
-                        <td key={`${row.hour}-${column.position}-deliveries`}>
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={value.deliveries ?? ''}
-                            onChange={(event) => updateDemandValue(
-                              row.hour,
-                              column.position,
-                              'deliveries',
-                              event.target.value,
-                            )}
-                          />
-                        </td>,
-                        <td key={`${row.hour}-${column.position}-demand`} className="demand-result">
-                          {value.demand ?? '—'}
                         </td>,
                       ]
                     })}
@@ -466,6 +448,48 @@ function DemandManager({ setErrorPopup }) {
               </tbody>
             </table>
           </div>
+
+          <div className="demand-mobile-view">
+            <div className="demand-table-wrapper">
+              <table className="demand-table demand-mobile-table">
+                <thead>
+                  <tr>
+                    <th>Hour</th>
+                    <th>Deliveries</th>
+                    <th>Demand</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.rows.map((row) => {
+                    const value = row.values.find(
+                      (item) => item.position === selectedDemandDayPosition,
+                    ) || {}
+
+                    return (
+                      <tr key={row.hour}>
+                        <th>{String(row.hour).padStart(2, '0')}</th>
+                        <td className="demand-readonly">{value.deliveries ?? '—'}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={value.demand ?? ''}
+                            onChange={(event) => updateDemandValue(
+                              row.hour,
+                              selectedDemandDayPosition,
+                              event.target.value,
+                            )}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="demand-actions">
             <button type="submit" disabled={status.status === 'saving'}>Save demand changes</button>
             <button type="button" className="secondary-button" onClick={deletePlan}>Delete plan</button>

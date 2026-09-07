@@ -12,6 +12,16 @@ public sealed class DemandValidationException(string message) : Exception(messag
 public sealed class DemandService(AppDbContext db)
 {
     private const decimal DeliveriesPerEmployee = 2.7m;
+    private static readonly string[] DayLabels =
+    [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday"
+    ];
 
     public async Task<IReadOnlyList<DemandPlanSummaryResponse>> GetPlansAsync(
         CancellationToken cancellationToken)
@@ -97,9 +107,37 @@ public sealed class DemandService(AppDbContext db)
             throw new DemandValidationException("Demand column positions must be unique.");
         }
 
+        var existingPositions = plan.Columns.Select(column => column.Position).ToHashSet();
+        var requestedPositions = request.Columns.Select(column => column.Position).ToHashSet();
+
+        if (!existingPositions.SetEquals(requestedPositions))
+        {
+            throw new DemandValidationException("Demand columns can only be changed by importing a new table.");
+        }
+
         if (request.Rows.GroupBy(row => row.Hour).Any(group => group.Count() > 1))
         {
             throw new DemandValidationException("Demand hours must be unique.");
+        }
+
+        var existingHours = plan.Rows.Select(row => row.Hour).ToHashSet();
+        var requestedHours = request.Rows.Select(row => row.Hour).ToHashSet();
+
+        if (!existingHours.SetEquals(requestedHours))
+        {
+            throw new DemandValidationException("Demand hours can only be changed by importing a new table.");
+        }
+
+        if (request.Rows.Any(row =>
+                row.Values.GroupBy(value => value.Position).Any(group => group.Count() > 1) ||
+                !requestedPositions.SetEquals(row.Values.Select(value => value.Position))))
+        {
+            throw new DemandValidationException("Every demand row must contain each imported day exactly once.");
+        }
+
+        if (request.Rows.SelectMany(row => row.Values).Any(value => value.Demand is < 0))
+        {
+            throw new DemandValidationException("Demand cannot be negative.");
         }
 
         var otherPlan = await db.DemandPlans
@@ -114,20 +152,31 @@ public sealed class DemandService(AppDbContext db)
                 "A demand plan already exists for this week. Edit that plan instead.");
         }
 
+        var positionsByColumnId = plan.Columns.ToDictionary(column => column.Id, column => column.Position);
+        var existingDeliveries = plan.Rows
+            .SelectMany(row => row.Values.Select(value =>
+                (row.Hour, Position: positionsByColumnId[value.DemandColumnId], value.Deliveries)))
+            .ToDictionary(value => (value.Hour, value.Position), value => value.Deliveries);
+
         var parsed = new ParsedDemand(
             request.Columns
                 .OrderBy(column => column.Position)
-                .Select(column => new ParsedDemandColumn(column.Position, column.Label.Trim()))
+                .Select(column => new ParsedDemandColumn(column.Position, GetColumnLabel(column.Position)))
                 .ToList(),
             request.Rows
-                .OrderBy(row => row.Hour)
+                .OrderBy(row => GetDisplayHourOrder(row.Hour))
                 .Select(row => new ParsedDemandRow(
                     row.Hour,
-                    row.Values.Select(value => new ParsedDemandValue(
-                        value.Position,
-                        value.Pizzas,
-                        value.Deliveries,
-                        CalculateDemand(value.Deliveries))).ToList()))
+                    row.Values.Select(value =>
+                    {
+                        if (!existingDeliveries.TryGetValue((row.Hour, value.Position), out var deliveries))
+                        {
+                            throw new DemandValidationException(
+                                $"The demand value for hour {row.Hour:00} and position {value.Position} does not exist.");
+                        }
+
+                        return new ParsedDemandValue(value.Position, deliveries, value.Demand);
+                    }).ToList()))
                 .ToList());
 
         await ReplacePlanContentsAsync(plan, request.Name.Trim(), request.WeekStart, parsed, cancellationToken);
@@ -214,9 +263,7 @@ public sealed class DemandService(AppDbContext db)
                 Id = Guid.NewGuid(),
                 DemandPlanId = plan.Id,
                 Position = parsedColumn.Position,
-                Label = string.IsNullOrWhiteSpace(parsedColumn.Label)
-                    ? $"Column {parsedColumn.Position + 1}"
-                    : parsedColumn.Label
+                Label = GetColumnLabel(parsedColumn.Position)
             };
 
             plan.Columns.Add(column);
@@ -246,7 +293,6 @@ public sealed class DemandService(AppDbContext db)
                     Id = Guid.NewGuid(),
                     DemandRowId = row.Id,
                     DemandColumnId = column.Id,
-                    Pizzas = parsedValue.Pizzas,
                     Deliveries = parsedValue.Deliveries,
                     Demand = parsedValue.Demand
                 };
@@ -273,7 +319,7 @@ public sealed class DemandService(AppDbContext db)
             .Select(column => new DemandColumnResponse
             {
                 Position = column.Position,
-                Label = column.Label
+                Label = GetColumnLabel(column.Position)
             })
             .ToList();
         var columnsById = plan.Columns.ToDictionary(column => column.Id);
@@ -286,7 +332,7 @@ public sealed class DemandService(AppDbContext db)
             UpdatedAtUtc = plan.UpdatedAtUtc,
             Columns = columns,
             Rows = plan.Rows
-                .OrderBy(row => row.Hour)
+                .OrderBy(row => GetDisplayHourOrder(row.Hour))
                 .Select(row => new DemandRowResponse
                 {
                     Hour = row.Hour,
@@ -296,7 +342,6 @@ public sealed class DemandService(AppDbContext db)
                         .Select(value => new DemandValueResponse
                         {
                             Position = columnsById[value.DemandColumnId].Position,
-                            Pizzas = value.Pizzas,
                             Deliveries = value.Deliveries,
                             Demand = value.Demand
                         })
@@ -395,9 +440,15 @@ public sealed class DemandService(AppDbContext db)
             throw new DemandValidationException("No demand values were found after the hour column.");
         }
 
-        var columns = Enumerable.Range(0, (activeIndexes.Count + 1) / 2)
-            .Select(position => new ParsedDemandColumn(position, $"Column {position + 1}"))
+        var columns = Enumerable.Range(0, activeIndexes.Count / 2)
+            .Select(position => new ParsedDemandColumn(position, GetColumnLabel(position)))
             .ToList();
+
+        if (activeIndexes.Count % 2 != 0)
+        {
+            throw new DemandValidationException(
+                "Each day must have a pizzas column and a deliveries column. Check the imported table.");
+        }
 
         var parsedRows = new List<ParsedDemandRow>();
         var duplicateHours = dataRows.GroupBy(item => item.Hour).FirstOrDefault(group => group.Count() > 1);
@@ -408,18 +459,16 @@ public sealed class DemandService(AppDbContext db)
                 $"The hour {duplicateHours.Key:00} appears more than once.");
         }
 
-        foreach (var dataRow in dataRows.OrderBy(item => item.Hour))
+        foreach (var dataRow in dataRows.OrderBy(item => GetDisplayHourOrder(item.Hour)))
         {
             var values = new List<ParsedDemandValue>();
 
             for (var position = 0; position < columns.Count; position++)
             {
-                var pizzas = ParseDecimal(GetCell(dataRow.Cells, activeIndexes, position * 2));
                 var deliveries = ParseDecimal(GetCell(dataRow.Cells, activeIndexes, position * 2 + 1));
 
                 values.Add(new ParsedDemandValue(
                     position,
-                    pizzas,
                     deliveries,
                     CalculateDemand(deliveries)));
             }
@@ -487,6 +536,18 @@ public sealed class DemandService(AppDbContext db)
             : (int)Math.Round(deliveries.Value / DeliveriesPerEmployee, MidpointRounding.AwayFromZero);
     }
 
+    private static string GetColumnLabel(int position)
+    {
+        return position >= 0 && position < DayLabels.Length
+            ? DayLabels[position]
+            : $"Other {position - DayLabels.Length + 1}";
+    }
+
+    private static int GetDisplayHourOrder(int hour)
+    {
+        return hour < 12 ? hour + 24 : hour;
+    }
+
     private sealed record ParsedDemand(
         List<ParsedDemandColumn> Columns,
         List<ParsedDemandRow> Rows);
@@ -497,7 +558,6 @@ public sealed class DemandService(AppDbContext db)
 
     private sealed record ParsedDemandValue(
         int Position,
-        decimal? Pizzas,
         decimal? Deliveries,
         int? Demand);
 }

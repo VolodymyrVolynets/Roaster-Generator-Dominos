@@ -37,7 +37,7 @@ select {
 }
 
 .app-card {
-  width: min(100%, 920px);
+  width: min(100%, 1600px);
   margin: 0 auto;
   padding: clamp(24px, 5vw, 56px);
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -303,7 +303,8 @@ input:focus {
 }
 
 .demand-table {
-  min-width: 900px;
+  width: 100%;
+  min-width: 980px;
   border-collapse: collapse;
   color: #cbd5e1;
   font-size: 0.8rem;
@@ -311,7 +312,7 @@ input:focus {
 
 .demand-table th,
 .demand-table td {
-  min-width: 76px;
+  min-width: 0;
   padding: 8px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   text-align: center;
@@ -342,7 +343,7 @@ input:focus {
 
 .demand-table td input {
   min-height: 34px;
-  min-width: 66px;
+  min-width: 0;
   padding: 0 6px;
   font-size: 0.8rem;
   text-align: right;
@@ -351,6 +352,16 @@ input:focus {
 .demand-result {
   color: #6ee7b7;
   font-weight: 800;
+}
+
+.demand-readonly {
+  color: #cbd5e1;
+  font-variant-numeric: tabular-nums;
+}
+
+.demand-mobile-controls,
+.demand-mobile-view {
+  display: none;
 }
 
 .section-heading {
@@ -792,5 +803,42 @@ select:disabled {
 
   button {
     width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .demand-mobile-controls {
+    display: grid;
+    gap: 7px;
+    margin-top: 20px;
+    color: #cbd5e1;
+    font-size: 0.88rem;
+    font-weight: 700;
+  }
+
+  .demand-mobile-controls select {
+    width: 100%;
+  }
+
+  .demand-desktop-view {
+    display: none;
+  }
+
+  .demand-mobile-view {
+    display: block;
+  }
+
+  .demand-mobile-view .demand-table-wrapper {
+    overflow-x: hidden;
+  }
+
+  .demand-mobile-table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .demand-mobile-table th,
+  .demand-mobile-table td {
+    width: 33.333%;
   }
 }

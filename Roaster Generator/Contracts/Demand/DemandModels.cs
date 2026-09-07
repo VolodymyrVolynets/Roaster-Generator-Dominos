@@ -38,9 +38,7 @@ public sealed class DemandValueRequest
 {
     public int Position { get; set; }
 
-    public decimal? Pizzas { get; set; }
-
-    public decimal? Deliveries { get; set; }
+    public int? Demand { get; set; }
 }
 
 public sealed class DemandPlanSummaryResponse
@@ -90,8 +88,6 @@ public sealed class DemandRowResponse
 public sealed class DemandValueResponse
 {
     public int Position { get; init; }
-
-    public decimal? Pizzas { get; init; }
 
     public decimal? Deliveries { get; init; }
 

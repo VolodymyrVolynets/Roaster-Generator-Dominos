@@ -28,10 +28,6 @@ public sealed class DemandValueConfiguration : IEntityTypeConfiguration<DemandVa
             .HasColumnType("uuid")
             .IsRequired();
 
-        builder.Property(value => value.Pizzas)
-            .HasColumnName("pizzas")
-            .HasColumnType("numeric(10,2)");
-
         builder.Property(value => value.Deliveries)
             .HasColumnName("deliveries")
             .HasColumnType("numeric(10,2)");
