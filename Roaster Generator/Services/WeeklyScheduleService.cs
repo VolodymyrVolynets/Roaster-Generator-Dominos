@@ -8,8 +8,8 @@ namespace Roaster_Generator.Services;
 
 public sealed class WeeklyScheduleService(AppDbContext db)
 {
-    public const int MinWeekOffset = 0;
-    public const int MaxWeekOffset = 2;
+    public const int MinWeekOffset = 1;
+    public const int MaxWeekOffset = 3;
 
     public async Task<WeeklyScheduleResponse?> GetWeekAsync(
         Guid employeeId,

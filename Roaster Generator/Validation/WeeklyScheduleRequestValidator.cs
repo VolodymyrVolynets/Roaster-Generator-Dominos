@@ -12,7 +12,7 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
             .InclusiveBetween(
                 WeeklyScheduleService.MinWeekOffset,
                 WeeklyScheduleService.MaxWeekOffset)
-            .WithMessage("Only the current week and the next two weeks can be edited.");
+            .WithMessage("Only weeks from next week through three weeks ahead can be edited.");
 
         RuleFor(request => request.Days)
             .NotNull()
@@ -64,7 +64,7 @@ public sealed class WeekSelectionRequestValidator : AbstractValidator<WeekSelect
             .InclusiveBetween(
                 WeeklyScheduleService.MinWeekOffset,
                 WeeklyScheduleService.MaxWeekOffset)
-            .WithMessage("Only the current week and the next two weeks can be viewed.");
+            .WithMessage("Only weeks from next week through three weeks ahead can be viewed.");
     }
 }
 

@@ -6,9 +6,9 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
-const minWeekOffset = 0
-const maxWeekOffset = 2
-const weekLabels = ['Current week', 'Next week', 'Week after next']
+const minWeekOffset = 1
+const maxWeekOffset = 3
+const weekLabels = ['Current week', 'Next week', 'Week after next', 'Three weeks ahead']
 
 function parseDate(dateValue) {
   const [year, month, day] = dateValue.split('-').map(Number)
