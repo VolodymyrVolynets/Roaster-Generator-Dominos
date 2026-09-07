@@ -46,6 +46,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Deploy over SSH
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -62,6 +65,14 @@ jobs:
           chmod 600 "$HOME/.ssh/deploy_key"
 
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+          scp \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/deploy_key" \
+            compose.prod.yaml \
+            "$VPS_USER@$VPS_HOST:/opt/roaster-generator/compose.prod.yaml"
 
           ssh \
             -o BatchMode=yes \
