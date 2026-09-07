@@ -6,7 +6,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
-const minutes = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))
 
 function parseDate(dateValue) {
   const [year, month, day] = dateValue.split('-').map(Number)
@@ -26,38 +25,21 @@ async function fetchJson(url, options) {
 }
 
 function TimeSelector({ id, label, value, onChange }) {
-  const [selectedHour = '', selectedMinute = ''] = value ? value.split(':') : []
-
-  function updateTime(part, nextValue) {
-    const hour = part === 'hour' ? nextValue : selectedHour
-    const minute = part === 'minute' ? nextValue : selectedMinute
-    onChange(hour && minute ? `${hour}:${minute}` : '')
-  }
+  const selectedHour = value ? value.split(':')[0] : ''
 
   return (
     <div className="time-selector" id={id} aria-label={label}>
       <select
-        aria-label={`${label} hour`}
+        aria-label={`${label} (24-hour format)`}
         value={selectedHour}
-        onChange={(event) => updateTime('hour', event.target.value)}
+        onChange={(event) =>
+          onChange(event.target.value ? `${event.target.value}:00` : '')
+        }
       >
         <option value="">HH</option>
         {hours.map((hour) => (
           <option key={hour} value={hour}>
             {hour}
-          </option>
-        ))}
-      </select>
-      <span aria-hidden="true">:</span>
-      <select
-        aria-label={`${label} minute`}
-        value={selectedMinute}
-        onChange={(event) => updateTime('minute', event.target.value)}
-      >
-        <option value="">MM</option>
-        {minutes.map((minute) => (
-          <option key={minute} value={minute}>
-            {minute}
           </option>
         ))}
       </select>

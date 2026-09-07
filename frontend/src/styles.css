@@ -117,20 +117,13 @@ input[type="time"] {
 }
 
 .time-selector {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  display: block;
 }
 
 .time-selector select {
+  width: 100%;
   min-width: 0;
-  padding: 0 8px;
-  text-align: center;
-}
-
-.time-selector span {
-  color: #cbd5e1;
-  font-weight: 800;
+  padding: 0 10px;
 }
 
 select:focus,
