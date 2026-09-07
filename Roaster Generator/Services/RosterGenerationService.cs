@@ -20,14 +20,31 @@ public sealed class RosterGenerationService(
     ILogger<RosterGenerationService> logger,
     IServiceScopeFactory scopeFactory)
 {
-    private readonly ConcurrentDictionary<DateOnly, Guid> activeJobs = new();
+    private readonly ConcurrentDictionary<DateOnly, ActiveJob> activeJobs = new();
+
+    public async Task SendActiveLogsAsync(string connectionId)
+    {
+        var logs = activeJobs.Values
+            .SelectMany(job => job.Logs.ToArray())
+            .OrderBy(log => log.TimestampUtc)
+            .ToList();
+
+        foreach (var log in logs)
+        {
+            await hub.Clients.Client(connectionId).SendAsync(
+                "rosterGenerationProgress",
+                log);
+        }
+    }
 
     public RosterGenerationStartResponse Start(int weekOffset)
     {
         var weekStart = WeeklyScheduleService.GetWeekMonday(weekOffset);
         var jobId = Guid.NewGuid();
 
-        if (!activeJobs.TryAdd(weekStart, jobId))
+        var activeJob = new ActiveJob(jobId, weekOffset, weekStart);
+
+        if (!activeJobs.TryAdd(weekStart, activeJob))
         {
             throw new RosterGenerationAlreadyRunningException();
         }
@@ -40,6 +57,7 @@ public sealed class RosterGenerationService(
             WeekOffset = weekOffset,
             WeekStart = weekStart,
             Status = "started",
+            Stage = "queued",
             Progress = 0,
             Message = "Roster generation started."
         };
@@ -54,6 +72,7 @@ public sealed class RosterGenerationService(
                 weekOffset,
                 weekStart,
                 "started",
+                "initializing",
                 0,
                 "Roster generation started.");
 
@@ -62,35 +81,31 @@ public sealed class RosterGenerationService(
                 weekOffset,
                 weekStart,
                 "running",
-                10,
-                "Loading demand and employee availability.");
+                "initializing",
+                2,
+                "Initializing roster generation.");
 
             await using var scope = scopeFactory.CreateAsyncScope();
             var algorithm = scope.ServiceProvider.GetRequiredService<RosterGenerationAlgorithm>();
 
-            await PublishAsync(
-                jobId,
-                weekOffset,
+            var plan = await algorithm.GenerateAsync(
                 weekStart,
-                "running",
-                35,
-                "Generating valid shifts and optimizing the roster.");
-
-            var plan = await algorithm.GenerateAsync(weekStart, CancellationToken.None);
+                CancellationToken.None,
+                (stage, progress, message) => PublishAsync(
+                    jobId,
+                    weekOffset,
+                    weekStart,
+                    "running",
+                    stage,
+                    progress,
+                    message));
             var totalScheduledHours = plan.Shifts.Sum(GetDurationHours);
 
             await PublishAsync(
                 jobId,
                 weekOffset,
                 weekStart,
-                "running",
-                90,
-                "Saving the optimized roster.");
-
-            await PublishAsync(
-                jobId,
-                weekOffset,
-                weekStart,
+                "completed",
                 "completed",
                 100,
                 $"Roster generated with {totalScheduledHours} driver-hours.",
@@ -105,6 +120,7 @@ public sealed class RosterGenerationService(
                 jobId,
                 weekOffset,
                 weekStart,
+                "failed",
                 "failed",
                 0,
                 exception is RosterGenerationException
@@ -122,28 +138,51 @@ public sealed class RosterGenerationService(
         int weekOffset,
         DateOnly weekStart,
         string status,
+        string stage,
         int progress,
         string message,
         Guid? rosterPlanId = null,
-        int? totalScheduledHours = null) =>
-        hub.Clients.All.SendAsync(
+        int? totalScheduledHours = null)
+    {
+        var payload = new RosterGenerationProgressResponse
+        {
+            JobId = jobId,
+            WeekOffset = weekOffset,
+            WeekStart = weekStart,
+            Status = status,
+            Stage = stage,
+            Progress = progress,
+            Message = message,
+            TimestampUtc = DateTimeOffset.UtcNow,
+            RosterPlanId = rosterPlanId,
+            TotalScheduledHours = totalScheduledHours
+        };
+
+        if (activeJobs.TryGetValue(weekStart, out var activeJob) && activeJob.JobId == jobId)
+        {
+            activeJob.Logs.Enqueue(payload);
+        }
+
+        return hub.Clients.All.SendAsync(
             "rosterGenerationProgress",
-            new RosterGenerationProgressResponse
-            {
-                JobId = jobId,
-                WeekOffset = weekOffset,
-                WeekStart = weekStart,
-                Status = status,
-                Progress = progress,
-                Message = message,
-                RosterPlanId = rosterPlanId,
-                TotalScheduledHours = totalScheduledHours
-            });
+            payload);
+    }
 
     private static int GetDurationHours(RosterShift shift)
     {
         var start = shift.StartTime.Hour;
         var finish = shift.FinishTime.Hour;
         return finish > start ? finish - start : 24 - start + finish;
+    }
+
+    private sealed class ActiveJob(Guid jobId, int weekOffset, DateOnly weekStart)
+    {
+        public Guid JobId { get; } = jobId;
+
+        public int WeekOffset { get; } = weekOffset;
+
+        public DateOnly WeekStart { get; } = weekStart;
+
+        public ConcurrentQueue<RosterGenerationProgressResponse> Logs { get; } = new();
     }
 }

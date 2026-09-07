@@ -1,8 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Roaster_Generator.Security;
+using Roaster_Generator.Services;
 
 namespace Roaster_Generator.Hubs;
 
 [Authorize(Roles = RoleNames.Admin)]
-public sealed class RosterGenerationHub : Hub;
+public sealed class RosterGenerationHub(RosterGenerationService rosterGeneration) : Hub
+{
+    public override async Task OnConnectedAsync()
+    {
+        await base.OnConnectedAsync();
+        await rosterGeneration.SendActiveLogsAsync(Context.ConnectionId);
+    }
+}

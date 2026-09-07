@@ -16,4 +16,16 @@ public sealed class RosterGenerationSettings
     public int LateFinishPenalty { get; set; } = 2;
 
     public int EarlyStartPenalty { get; set; } = 1;
+
+    public int PopulationSize { get; set; } = 24;
+
+    public int GenerationCount { get; set; } = 150;
+
+    public decimal MutationRate { get; set; } = 0.03m;
+
+    public int EliteCount { get; set; } = 2;
+
+    public int TournamentSize { get; set; } = 2;
+
+    public int ExactSearchNodeLimit { get; set; } = 500_000;
 }

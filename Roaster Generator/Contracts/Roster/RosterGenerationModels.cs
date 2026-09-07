@@ -10,6 +10,8 @@ public sealed class RosterGenerationStartResponse
 
     public string Status { get; init; } = string.Empty;
 
+    public string Stage { get; init; } = string.Empty;
+
     public int Progress { get; init; }
 
     public string Message { get; init; } = string.Empty;
@@ -26,6 +28,18 @@ public sealed class RosterGenerationSettingsRequest
     public int LateFinishPenalty { get; set; }
 
     public int EarlyStartPenalty { get; set; }
+
+    public int PopulationSize { get; set; }
+
+    public int GenerationCount { get; set; }
+
+    public decimal MutationRate { get; set; }
+
+    public int EliteCount { get; set; }
+
+    public int TournamentSize { get; set; }
+
+    public int ExactSearchNodeLimit { get; set; }
 }
 
 public sealed class RosterGenerationSettingsResponse
@@ -39,6 +53,18 @@ public sealed class RosterGenerationSettingsResponse
     public int LateFinishPenalty { get; init; }
 
     public int EarlyStartPenalty { get; init; }
+
+    public int PopulationSize { get; init; }
+
+    public int GenerationCount { get; init; }
+
+    public decimal MutationRate { get; init; }
+
+    public int EliteCount { get; init; }
+
+    public int TournamentSize { get; init; }
+
+    public int ExactSearchNodeLimit { get; init; }
 }
 
 public sealed class RosterPlanResponse
@@ -103,9 +129,13 @@ public sealed class RosterGenerationProgressResponse
 
     public string Status { get; init; } = string.Empty;
 
+    public string Stage { get; init; } = string.Empty;
+
     public int Progress { get; init; }
 
     public string Message { get; init; } = string.Empty;
+
+    public DateTimeOffset TimestampUtc { get; init; }
 
     public Guid? RosterPlanId { get; init; }
 

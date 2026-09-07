@@ -54,6 +54,28 @@ function getShiftDuration(startTime, finishTime) {
   return `${duration} ${duration === 1 ? 'hour' : 'hours'}`
 }
 
+function formatGenerationStage(stage) {
+  if (!stage) {
+    return 'starting'
+  }
+
+  return stage
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function formatGenerationLogTime(timestampUtc) {
+  if (!timestampUtc) {
+    return ''
+  }
+
+  return new Date(timestampUtc).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
 async function fetchJson(url, options) {
   const response = await fetch(url, { ...options, credentials: 'include' })
   const body = await response.text()
@@ -542,6 +564,7 @@ function RosterGenerationPanel({ setErrorPopup }) {
   const [weekOffset, setWeekOffset] = useState(minWeekOffset)
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
+  const [generationLogs, setGenerationLogs] = useState([])
   const [roster, setRoster] = useState(null)
   const [weekSummary, setWeekSummary] = useState(null)
   const [settingsForm, setSettingsForm] = useState({
@@ -550,8 +573,19 @@ function RosterGenerationPanel({ setErrorPopup }) {
     shortShiftPenalty: 10,
     lateFinishPenalty: 2,
     earlyStartPenalty: 1,
+    populationSize: 24,
+    generationCount: 150,
+    mutationRate: 0.03,
+    eliteCount: 2,
+    tournamentSize: 2,
+    exactSearchNodeLimit: 500000,
   })
   const [settingsState, setSettingsState] = useState({ status: 'loading', message: '' })
+
+  useEffect(() => {
+    setGeneration(null)
+    setGenerationLogs([])
+  }, [weekOffset])
 
   useEffect(() => {
     setRoster(null)
@@ -600,8 +634,50 @@ function RosterGenerationPanel({ setErrorPopup }) {
         return
       }
 
+      if (payload.weekOffset !== weekOffset) {
+        return
+      }
+
+      setGenerationLogs((current) => {
+        const alreadyHasJob = current.some((entry) => entry.jobId === payload.jobId)
+        const hasDifferentJob = current.some((entry) => entry.jobId !== payload.jobId)
+        const alreadyAdded = current.some((entry) =>
+          entry.jobId === payload.jobId &&
+          entry.timestampUtc === payload.timestampUtc &&
+          entry.message === payload.message,
+        )
+
+        if (alreadyAdded) {
+          return current
+        }
+
+        const previousLogs = !alreadyHasJob && hasDifferentJob ? [] : current
+
+        return [...previousLogs, payload].sort((first, second) =>
+          new Date(first.timestampUtc).getTime() - new Date(second.timestampUtc).getTime(),
+        )
+      })
+
       setGeneration((current) => {
-        if (!current || current.jobId === payload.jobId) {
+        if (current?.jobId === payload.jobId) {
+          const currentTimestamp = current.timestampUtc
+            ? new Date(current.timestampUtc).getTime()
+            : 0
+          const payloadTimestamp = payload.timestampUtc
+            ? new Date(payload.timestampUtc).getTime()
+            : 0
+
+          if (current.progress > payload.progress ||
+              (current.progress === payload.progress && currentTimestamp >= payloadTimestamp)) {
+            return current
+          }
+        }
+
+        if (!current ||
+            !current.jobId ||
+            current.jobId === payload.jobId ||
+            current.status === 'completed' ||
+            current.status === 'failed') {
           return payload
         }
 
@@ -663,7 +739,7 @@ function RosterGenerationPanel({ setErrorPopup }) {
       connection.off('rosterGenerationProgress', handleProgress)
       connection.stop()
     }
-  }, [setErrorPopup])
+  }, [setErrorPopup, weekOffset])
 
   const isRunning = generation?.status === 'starting'
     || generation?.status === 'started'
@@ -673,9 +749,11 @@ function RosterGenerationPanel({ setErrorPopup }) {
     setRoster(null)
     setGeneration({
       status: 'starting',
+      stage: 'starting',
       progress: 0,
       message: 'Starting roster generation…',
     })
+    setGenerationLogs([])
 
     try {
       const payload = await fetchJson('/api/admin/roster/generate', {
@@ -684,11 +762,17 @@ function RosterGenerationPanel({ setErrorPopup }) {
         body: JSON.stringify({ weekOffset }),
       })
 
-      setGeneration((current) => current?.jobId === payload.jobId && current.progress > payload.progress
-        ? current
-        : payload)
+      setGeneration((current) => {
+        if (current?.jobId === payload.jobId && current.progress > payload.progress) {
+          return current
+        }
+
+        return payload
+      })
     } catch (error) {
-      setGeneration(null)
+      if (error.status !== 409) {
+        setGeneration(null)
+      }
       setErrorPopup(error.message)
     }
   }
@@ -726,7 +810,6 @@ function RosterGenerationPanel({ setErrorPopup }) {
         <WeekSelector
           weekOffset={weekOffset}
           onChange={setWeekOffset}
-          disabled={isRunning}
         />
       </div>
 
@@ -759,7 +842,7 @@ function RosterGenerationPanel({ setErrorPopup }) {
         <div className="roster-settings-header">
           <div>
             <span className="eyebrow">Admin settings</span>
-            <h3>Generator weights</h3>
+            <h3>Generator weights and parameters</h3>
           </div>
           <p>These values tune the optimizer. Demand coverage and scheduling safety rules remain mandatory.</p>
         </div>
@@ -825,12 +908,93 @@ function RosterGenerationPanel({ setErrorPopup }) {
             />
           </label>
         </div>
+        <div className="roster-settings-subheading">
+          <div>
+            <span className="eyebrow">Genetic algorithm</span>
+            <h4>Optimization parameters</h4>
+          </div>
+          <p>Higher population, generation, and search limits can improve difficult schedules but may take longer.</p>
+        </div>
+        <div className="roster-settings-grid roster-algorithm-grid">
+          <label>
+            Population size
+            <input
+              type="number"
+              min="4"
+              max="200"
+              step="1"
+              value={settingsForm.populationSize}
+              onChange={(event) => updateSetting('populationSize', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Generations
+            <input
+              type="number"
+              min="1"
+              max="5000"
+              step="1"
+              value={settingsForm.generationCount}
+              onChange={(event) => updateSetting('generationCount', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Mutation rate
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={settingsForm.mutationRate}
+              onChange={(event) => updateSetting('mutationRate', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Elite count
+            <input
+              type="number"
+              min="1"
+              max={settingsForm.populationSize}
+              step="1"
+              value={settingsForm.eliteCount}
+              onChange={(event) => updateSetting('eliteCount', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Tournament size
+            <input
+              type="number"
+              min="2"
+              max={settingsForm.populationSize}
+              step="1"
+              value={settingsForm.tournamentSize}
+              onChange={(event) => updateSetting('tournamentSize', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Exact-search limit
+            <input
+              type="number"
+              min="1000"
+              max="5000000"
+              step="1000"
+              value={settingsForm.exactSearchNodeLimit}
+              onChange={(event) => updateSetting('exactSearchNodeLimit', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+        </div>
         <div className="roster-settings-actions">
           <button
             type="submit"
             disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
           >
-            {settingsState.status === 'saving' ? 'Saving…' : 'Save weights'}
+            {settingsState.status === 'saving' ? 'Saving…' : 'Save generator settings'}
           </button>
           {settingsState.message && (
             <span className={`save-message ${settingsState.status}`} aria-live="polite">
@@ -856,15 +1020,42 @@ function RosterGenerationPanel({ setErrorPopup }) {
       {generation && (
         <div className={`roster-generation-status ${generation.status}`}>
           <div className="roster-generation-status-heading">
-            <strong>{generation.message}</strong>
+            <div className="roster-generation-stage">
+              <span className="eyebrow">Stage</span>
+              <strong>{formatGenerationStage(generation.stage)}</strong>
+            </div>
             <span>{generation.progress}%</span>
           </div>
+          <p className="roster-generation-message">{generation.message}</p>
           <div className="roster-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={generation.progress}>
             <span style={{ width: `${generation.progress}%` }} />
           </div>
           {generation.weekStart && (
             <small>Week starting {generation.weekStart}</small>
           )}
+        </div>
+      )}
+
+      {generationLogs.length > 0 && (
+        <div className="roster-generation-log" aria-label="Roster generation log">
+          <div className="roster-generation-log-heading">
+            <div>
+              <span className="eyebrow">Live activity</span>
+              <h3>Generation log</h3>
+            </div>
+            <span>{generationLogs.length} events</span>
+          </div>
+          <ol>
+            {generationLogs.map((log, index) => (
+              <li key={`${log.jobId}-${log.timestampUtc}-${index}`}>
+                <time dateTime={log.timestampUtc}>
+                  {formatGenerationLogTime(log.timestampUtc)}
+                </time>
+                <strong>{formatGenerationStage(log.stage)}</strong>
+                <span>{log.message}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 

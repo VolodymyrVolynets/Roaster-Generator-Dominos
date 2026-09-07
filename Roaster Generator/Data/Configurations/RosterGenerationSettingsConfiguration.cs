@@ -42,6 +42,37 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             .HasDefaultValue(1)
             .IsRequired();
 
+        builder.Property(settings => settings.PopulationSize)
+            .HasColumnName("population_size")
+            .HasDefaultValue(24)
+            .IsRequired();
+
+        builder.Property(settings => settings.GenerationCount)
+            .HasColumnName("generation_count")
+            .HasDefaultValue(150)
+            .IsRequired();
+
+        builder.Property(settings => settings.MutationRate)
+            .HasColumnName("mutation_rate")
+            .HasColumnType("numeric(5,4)")
+            .HasDefaultValue(0.03m)
+            .IsRequired();
+
+        builder.Property(settings => settings.EliteCount)
+            .HasColumnName("elite_count")
+            .HasDefaultValue(2)
+            .IsRequired();
+
+        builder.Property(settings => settings.TournamentSize)
+            .HasColumnName("tournament_size")
+            .HasDefaultValue(2)
+            .IsRequired();
+
+        builder.Property(settings => settings.ExactSearchNodeLimit)
+            .HasColumnName("exact_search_node_limit")
+            .HasDefaultValue(500_000)
+            .IsRequired();
+
         builder.HasData(new RosterGenerationSettings
         {
             Id = RosterGenerationSettings.SingletonId,
@@ -49,7 +80,13 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             LongShiftBonus = 25,
             ShortShiftPenalty = 10,
             LateFinishPenalty = 2,
-            EarlyStartPenalty = 1
+            EarlyStartPenalty = 1,
+            PopulationSize = 24,
+            GenerationCount = 150,
+            MutationRate = 0.03m,
+            EliteCount = 2,
+            TournamentSize = 2,
+            ExactSearchNodeLimit = 500_000
         });
     }
 }

@@ -18,14 +18,22 @@ public sealed class RosterGenerationAlgorithm(
     private const int MaximumShiftHours = 10;
     private const int MinimumBreakMinutes = 7 * 60;
     private const int HoursInWeek = 7 * 24;
-    private const int PopulationSize = 24;
-    private const int GenerationCount = 150;
     private readonly ShopHoursOptions shopHours = shopHoursOptions.Value;
 
     public async Task<RosterPlan> GenerateAsync(
         DateOnly weekStart,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, int, string, Task>? reportProgress = null)
     {
+        async Task ReportAsync(string stage, int progress, string message)
+        {
+            if (reportProgress is not null)
+            {
+                await reportProgress(stage, progress, message);
+            }
+        }
+
+        await ReportAsync("loading", 5, "Loading the demand plan.");
         var demandPlan = await db.DemandPlans
             .Include(plan => plan.Columns)
             .Include(plan => plan.Rows)
@@ -40,6 +48,7 @@ public sealed class RosterGenerationAlgorithm(
                 "Import the weekly demand before generating a roster.");
         }
 
+        await ReportAsync("loading", 12, "Loading active employees and availability.");
         var employees = await db.Employees
             .AsNoTracking()
             .Where(employee => employee.IsActive)
@@ -59,6 +68,7 @@ public sealed class RosterGenerationAlgorithm(
             .Where(shift => shift.Date >= weekStart && shift.Date < weekStart.AddDays(7))
             .ToListAsync(cancellationToken);
 
+        await ReportAsync("preparing", 20, "Converting demand into hourly driver requirements.");
         var demand = BuildDemand(demandPlan);
         var totalDemandHours = demand.Sum();
 
@@ -80,6 +90,11 @@ public sealed class RosterGenerationAlgorithm(
             demand,
             enforceCanWorkAlone: false);
 
+        await ReportAsync(
+            "candidate-shifts",
+            32,
+            $"Generated {candidates.Count} valid candidate shifts from {availability.Count} availability entries.");
+
         if (candidates.Count == 0)
         {
             throw new RosterGenerationException(
@@ -93,9 +108,14 @@ public sealed class RosterGenerationAlgorithm(
                     []));
         }
 
-        var weights = await rosterSettings.GetWeightsAsync(cancellationToken);
-        var solver = new GeneticRosterSolver(candidates, demand, employees, weights);
-        var selectedCandidates = solver.Solve();
+        var parameters = await rosterSettings.GetParametersAsync(cancellationToken);
+        await ReportAsync(
+            "genetic-optimization",
+            38,
+            $"Starting genetic optimization with population {parameters.PopulationSize} and {parameters.GenerationCount} generations.");
+        var solver = new GeneticRosterSolver(candidates, demand, employees, parameters);
+        var selectedCandidates = await solver.SolveAsync(async (stage, progress, message) =>
+            await ReportAsync(stage, progress, message));
 
         if (selectedCandidates is null)
         {
@@ -110,6 +130,7 @@ public sealed class RosterGenerationAlgorithm(
                     solver.FailureSlots));
         }
 
+        await ReportAsync("validation", 90, "Validating demand coverage and employee constraints.");
         var rosterPlan = await db.RosterPlans
             .Include(plan => plan.Shifts)
             .SingleOrDefaultAsync(plan => plan.WeekStart == weekStart, cancellationToken);
@@ -144,6 +165,7 @@ public sealed class RosterGenerationAlgorithm(
             });
         }
 
+        await ReportAsync("saving", 96, "Saving the generated roster.");
         await db.SaveChangesAsync(cancellationToken);
         return rosterPlan;
     }
@@ -487,7 +509,7 @@ public sealed class RosterGenerationAlgorithm(
         IReadOnlyList<CandidateShift> candidates,
         IReadOnlyList<int> demand,
         IReadOnlyList<Employee> employees,
-        RosterGenerationWeights weights)
+        RosterGenerationParameters parameters)
     {
         private readonly Random random = new(20260907);
         private readonly List<int>[] candidatesBySlot = BuildCandidatesBySlot(candidates);
@@ -495,14 +517,26 @@ public sealed class RosterGenerationAlgorithm(
 
         public IReadOnlyList<int> FailureSlots => failureSlots.ToArray();
 
-        public IReadOnlyList<CandidateShift>? Solve()
+        public async Task<IReadOnlyList<CandidateShift>?> SolveAsync(
+            Func<string, int, string, Task>? reportProgress)
         {
-            var population = Enumerable.Range(0, PopulationSize)
+            var population = Enumerable.Range(0, parameters.PopulationSize)
                 .Select(_ => CreateIndividual())
                 .ToList();
+            // Report every generation so every admin sees a detailed live trace.
+            var progressInterval = 1;
 
-            for (var generation = 0; generation < GenerationCount; generation++)
+            for (var generation = 0; generation < parameters.GenerationCount; generation++)
             {
+                if (generation % progressInterval == 0)
+                {
+                    await ReportAsync(
+                        reportProgress,
+                        "genetic-optimization",
+                        40 + (generation * 35 / parameters.GenerationCount),
+                        $"Genetic optimization: generation {generation + 1} of {parameters.GenerationCount}.");
+                }
+
                 population = population
                     .OrderBy(individual => individual.Score)
                     .ToList();
@@ -512,9 +546,9 @@ public sealed class RosterGenerationAlgorithm(
                     return population[0].Selected.Select(index => candidates[index]).ToList();
                 }
 
-                var nextPopulation = population.Take(2).ToList();
+                var nextPopulation = population.Take(parameters.EliteCount).ToList();
 
-                while (nextPopulation.Count < PopulationSize)
+                while (nextPopulation.Count < parameters.PopulationSize)
                 {
                     var first = Tournament(population);
                     var second = Tournament(population);
@@ -535,9 +569,23 @@ public sealed class RosterGenerationAlgorithm(
                 return best.Selected.Select(index => candidates[index]).ToList();
             }
 
-            var exactSelection = TryExactSearch(best.Priorities);
+            await ReportAsync(
+                reportProgress,
+                "exact-search",
+                78,
+                "Genetic optimization did not find a complete roster; starting exact constraint search.");
+            var exactSelection = await TryExactSearchAsync(best.Priorities, reportProgress);
             return exactSelection?.Select(index => candidates[index]).ToList();
         }
+
+        private static Task ReportAsync(
+            Func<string, int, string, Task>? reportProgress,
+            string stage,
+            int progress,
+            string message) =>
+            reportProgress is null
+                ? Task.CompletedTask
+                : reportProgress(stage, progress, message);
 
         private Individual CreateIndividual()
         {
@@ -562,8 +610,8 @@ public sealed class RosterGenerationAlgorithm(
             var score = uncoveredHours * 1_000_000L
                 + soloHours * 500_000L
                 + minimumHoursMissing * 100_000L
-                + targetDeviation * weights.TargetHoursWeight
-                + shortShiftPenalty * weights.ShortShiftPenalty
+                + targetDeviation * parameters.TargetHoursWeight
+                + shortShiftPenalty * parameters.ShortShiftPenalty
                 + selected.Sum(index => GetUnpleasantHoursPenalty(candidates[index]));
 
             return new Individual(
@@ -629,11 +677,11 @@ public sealed class RosterGenerationAlgorithm(
                         employeeHours[candidate.EmployeeIndex] + candidate.DurationHours -
                         employees[candidate.EmployeeIndex].TargetHours);
                     var longShiftBonus = candidate.DurationHours >= PreferredMinimumShiftHours
-                        ? weights.LongShiftBonus
+                        ? parameters.LongShiftBonus
                         : 0;
                     var score = gain * 10_000D
                         + longShiftBonus
-                        - targetDifference * weights.TargetHoursWeight
+                        - targetDifference * parameters.TargetHoursWeight
                         - GetUnpleasantHoursPenalty(candidate)
                         + priorities[index];
 
@@ -662,20 +710,34 @@ public sealed class RosterGenerationAlgorithm(
             return selected;
         }
 
-        private IReadOnlyList<int>? TryExactSearch(IReadOnlyList<double> priorities)
+        private async Task<IReadOnlyList<int>?> TryExactSearchAsync(
+            IReadOnlyList<double> priorities,
+            Func<string, int, string, Task>? reportProgress)
         {
             var remaining = demand.ToArray();
             var employeeHours = new int[employees.Count];
             var selected = new List<int>();
             var nodes = 0;
+            var progressInterval = Math.Max(1, parameters.ExactSearchNodeLimit / 20);
 
-            return Search() ? selected.ToList() : null;
+            return await SearchAsync() ? selected.ToList() : null;
 
-            bool Search()
+            async Task<bool> SearchAsync()
             {
-                if (++nodes > 500_000)
+                nodes++;
+
+                if (nodes > parameters.ExactSearchNodeLimit)
                 {
                     return false;
+                }
+
+                if (nodes % progressInterval == 0)
+                {
+                    await ReportAsync(
+                        reportProgress,
+                        "exact-search",
+                        78 + Math.Min(12, nodes * 12 / parameters.ExactSearchNodeLimit),
+                        $"Exact constraint search: checked {nodes:n0} combinations.");
                 }
 
                 var nextSlot = FindMostConstrainedSlot();
@@ -694,13 +756,13 @@ public sealed class RosterGenerationAlgorithm(
                             candidate.CoveredSlots.All(slot => remaining[slot] > 0);
                     })
                     .OrderByDescending(index => candidates[index].DurationHours >= PreferredMinimumShiftHours
-                        ? weights.LongShiftBonus
+                        ? parameters.LongShiftBonus
                         : 0)
                     .ThenBy(index => Math.Abs(
                         employeeHours[candidates[index].EmployeeIndex] + candidates[index].DurationHours -
-                        employees[candidates[index].EmployeeIndex].TargetHours) * weights.TargetHoursWeight
+                        employees[candidates[index].EmployeeIndex].TargetHours) * parameters.TargetHoursWeight
                         + (candidates[index].DurationHours < PreferredMinimumShiftHours
-                            ? weights.ShortShiftPenalty
+                            ? parameters.ShortShiftPenalty
                             : 0)
                         + GetUnpleasantHoursPenalty(candidates[index]))
                     .ThenByDescending(index => priorities[index])
@@ -722,7 +784,7 @@ public sealed class RosterGenerationAlgorithm(
                         remaining[slot]--;
                     }
 
-                    if (Search())
+                    if (await SearchAsync())
                     {
                         return true;
                     }
@@ -812,9 +874,19 @@ public sealed class RosterGenerationAlgorithm(
 
         private Individual Tournament(IReadOnlyList<Individual> population)
         {
-            var first = population[random.Next(population.Count)];
-            var second = population[random.Next(population.Count)];
-            return first.Score <= second.Score ? first : second;
+            var best = population[random.Next(population.Count)];
+
+            for (var index = 1; index < parameters.TournamentSize; index++)
+            {
+                var contender = population[random.Next(population.Count)];
+
+                if (contender.Score < best.Score)
+                {
+                    best = contender;
+                }
+            }
+
+            return best;
         }
 
         private double[] Crossover(IReadOnlyList<double> first, IReadOnlyList<double> second)
@@ -833,7 +905,7 @@ public sealed class RosterGenerationAlgorithm(
         {
             for (var index = 0; index < priorities.Length; index++)
             {
-                if (random.NextDouble() < 0.03)
+                if (random.NextDouble() < (double)parameters.MutationRate)
                 {
                     priorities[index] = random.NextDouble();
                 }
@@ -849,7 +921,7 @@ public sealed class RosterGenerationAlgorithm(
                 : Math.Max(0, finishHour - 22);
             var earlyStart = Math.Max(0, 8 - startHour);
 
-            return lateFinish * weights.LateFinishPenalty + earlyStart * weights.EarlyStartPenalty;
+            return lateFinish * parameters.LateFinishPenalty + earlyStart * parameters.EarlyStartPenalty;
         }
 
         private sealed record Individual(
