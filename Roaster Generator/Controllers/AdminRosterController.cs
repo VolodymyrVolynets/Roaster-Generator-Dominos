@@ -44,6 +44,31 @@ public sealed class AdminRosterController(
             : Ok(plan);
     }
 
+    [HttpGet("summary")]
+    public async Task<IActionResult> GetSummary(
+        [FromQuery] int? weekOffset,
+        CancellationToken cancellationToken)
+    {
+        var selection = new WeekSelectionRequest
+        {
+            WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
+        };
+        var validationResult = await weekValidator.ValidateAsync(selection, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            var errors = validationResult.Errors
+                .GroupBy(error => error.PropertyName)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(error => error.ErrorMessage).ToArray());
+
+            return ValidationError(errors, "The selected week is invalid.");
+        }
+
+        return Ok(await rosterPlans.GetSummaryAsync(selection.WeekOffset, cancellationToken));
+    }
+
     [HttpPost("generate")]
     public async Task<IActionResult> Generate(
         [FromBody] WeekSelectionRequest request,

@@ -294,6 +294,35 @@ input:focus {
   margin-top: 14px;
 }
 
+.roster-week-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.roster-week-summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.68);
+}
+
+.roster-week-summary-card span {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.roster-week-summary-card strong {
+  color: #6ee7b7;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .roster-generation-actions {
   display: flex;
   flex-wrap: wrap;
@@ -929,6 +958,10 @@ select:disabled {
   }
 
   .demand-import-form {
+    grid-template-columns: 1fr;
+  }
+
+  .roster-week-summary {
     grid-template-columns: 1fr;
   }
 

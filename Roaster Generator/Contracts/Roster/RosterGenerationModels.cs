@@ -30,6 +30,19 @@ public sealed class RosterPlanResponse
     public IReadOnlyList<RosterEmployeeResponse> Employees { get; init; } = [];
 }
 
+public sealed class RosterWeekSummaryResponse
+{
+    public DateOnly WeekStart { get; init; }
+
+    public bool DemandPlanExists { get; init; }
+
+    public int RequiredDriverHours { get; init; }
+
+    public int EnteredAvailabilityHours { get; init; }
+
+    public int DriversWithoutAvailability { get; init; }
+}
+
 public sealed class RosterEmployeeResponse
 {
     public Guid EmployeeId { get; init; }

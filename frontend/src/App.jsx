@@ -57,6 +57,7 @@ async function fetchJson(url, options) {
   const response = await fetch(url, { ...options, credentials: 'include' })
   const body = await response.text()
   let payload = null
+  const requestPath = url.split('?')[0]
 
   try {
     payload = body ? JSON.parse(body) : null
@@ -74,7 +75,18 @@ async function fetchJson(url, options) {
       .filter(Boolean)
       .filter((message, index, allMessages) => allMessages.indexOf(message) === index)
 
-    const error = new Error(messages.join('\n') || body || 'The API request failed.')
+    if (response.status === 401 &&
+        requestPath !== '/api/auth/login' &&
+        requestPath !== '/api/auth/logout') {
+      window.dispatchEvent(new CustomEvent('auth-expired', {
+        detail: { showMessage: requestPath !== '/api/auth/me' },
+      }))
+    }
+
+    const message = response.status === 401 && requestPath !== '/api/auth/login'
+      ? 'Your session has expired. Please sign in again.'
+      : messages.join('\n') || body || 'The API request failed.'
+    const error = new Error(message)
     error.status = response.status
     throw error
   }
@@ -555,6 +567,7 @@ function RosterGenerationPanel({ setErrorPopup }) {
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
   const [roster, setRoster] = useState(null)
+  const [weekSummary, setWeekSummary] = useState(null)
 
   useEffect(() => {
     setRoster(null)
@@ -565,6 +578,13 @@ function RosterGenerationPanel({ setErrorPopup }) {
           setErrorPopup(error.message)
         }
       })
+  }, [setErrorPopup, weekOffset])
+
+  useEffect(() => {
+    setWeekSummary(null)
+    fetchJson(`/api/admin/roster/summary?weekOffset=${weekOffset}`)
+      .then(setWeekSummary)
+      .catch((error) => setErrorPopup(error.message))
   }, [setErrorPopup, weekOffset])
 
   useEffect(() => {
@@ -694,6 +714,27 @@ function RosterGenerationPanel({ setErrorPopup }) {
         Select a future week and start roster generation. Progress is sent live over a WebSocket connection.
       </p>
 
+      {weekSummary && (
+        <div className="roster-week-summary" aria-label="Roster week summary">
+          <div className="roster-week-summary-card">
+            <span>Hours needed</span>
+            <strong>{weekSummary.requiredDriverHours}h</strong>
+          </div>
+          <div className="roster-week-summary-card">
+            <span>Availability entered</span>
+            <strong>{weekSummary.enteredAvailabilityHours}h</strong>
+          </div>
+          <div className="roster-week-summary-card">
+            <span>Drivers with no availability</span>
+            <strong>{weekSummary.driversWithoutAvailability}</strong>
+          </div>
+        </div>
+      )}
+
+      {weekSummary && !weekSummary.demandPlanExists && (
+        <p className="message info-message">No demand has been imported for this week yet.</p>
+      )}
+
       <div className="roster-generation-actions">
         <button
           type="button"
@@ -791,8 +832,14 @@ function AdminConsole({
   availability,
   setErrorPopup,
   logout,
+  onTabChange,
 }) {
   const [activeTab, setActiveTab] = useState('employees')
+
+  function switchTab(tab) {
+    setActiveTab(tab)
+    onTabChange()
+  }
 
   function openEmployee(employeeId) {
     setSelectedEmployeeId(String(employeeId))
@@ -845,35 +892,35 @@ function AdminConsole({
             <button
               type="button"
               className={activeTab === 'employees' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => setActiveTab('employees')}
+              onClick={() => switchTab('employees')}
             >
               Employees
             </button>
             <button
               type="button"
               className={activeTab === 'roster' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => setActiveTab('roster')}
+              onClick={() => switchTab('roster')}
             >
               Availability roster
             </button>
             <button
               type="button"
               className={activeTab === 'employee-availability' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => setActiveTab('employee-availability')}
+              onClick={() => switchTab('employee-availability')}
             >
               Employee availability
             </button>
             <button
               type="button"
               className={activeTab === 'demand' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => setActiveTab('demand')}
+              onClick={() => switchTab('demand')}
             >
               Demand
             </button>
             <button
               type="button"
               className={activeTab === 'generate-roster' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => setActiveTab('generate-roster')}
+              onClick={() => switchTab('generate-roster')}
             >
               Generate roster
             </button>
@@ -1201,9 +1248,37 @@ function App() {
   const [employeeEditorOpen, setEmployeeEditorOpen] = useState(false)
   const [employeeSaveState, setEmployeeSaveState] = useState({ status: 'idle' })
   const [availability, setAvailability] = useState(null)
+  const [dataRefreshKey, setDataRefreshKey] = useState(0)
 
   const isAuthenticated = authState.status === 'authenticated'
   const isAdmin = isAuthenticated && authState.user.isAdmin
+
+  useEffect(() => {
+    function handleAuthExpired(event) {
+      void fetchJson('/api/auth/logout', { method: 'POST' }).catch(() => {})
+
+      setAuthState({
+        status: 'anonymous',
+        user: null,
+        message: 'Your session has expired. Please sign in again.',
+      })
+      setEmployees([])
+      setEmployeesState({ status: 'idle' })
+      setSelectedEmployeeId('')
+      setSchedule(null)
+      setScheduleState({ status: 'idle' })
+      setAvailability(null)
+      setEmployeeEditorOpen(false)
+      setIsCreatingEmployee(false)
+
+      if (event.detail?.showMessage) {
+        setErrorPopup('Your session has expired. Please sign in again.')
+      }
+    }
+
+    window.addEventListener('auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('auth-expired', handleAuthExpired)
+  }, [])
 
   useEffect(() => {
     fetchJson('/api/auth/me')
@@ -1233,7 +1308,7 @@ function App() {
         setEmployeesState({ status: 'error', message: error.message })
         setErrorPopup(error.message)
       })
-  }, [authState, isAuthenticated, isAdmin])
+  }, [authState, isAuthenticated, isAdmin, dataRefreshKey])
 
   useEffect(() => {
     if (!isAuthenticated || !selectedEmployeeId) {
@@ -1256,7 +1331,7 @@ function App() {
         setScheduleState({ status: 'error', message: error.message })
         setErrorPopup(error.message)
       })
-  }, [isAuthenticated, selectedEmployeeId, weekOffset])
+  }, [isAuthenticated, selectedEmployeeId, weekOffset, dataRefreshKey])
 
   useEffect(() => {
     if (!isAdmin) {
@@ -1267,7 +1342,7 @@ function App() {
     fetchJson(`/api/admin/availability?weekOffset=${weekOffset}`)
       .then(setAvailability)
       .catch((error) => setErrorPopup(error.message))
-  }, [isAdmin, weekOffset])
+  }, [isAdmin, weekOffset, dataRefreshKey])
 
   useEffect(() => {
     const employee = employees.find((item) => String(item.id) === selectedEmployeeId)
@@ -1496,6 +1571,7 @@ function App() {
         availability={availability}
         setErrorPopup={setErrorPopup}
         logout={logout}
+        onTabChange={() => setDataRefreshKey((current) => current + 1)}
       />
     )
   }

@@ -90,7 +90,7 @@ public sealed class AuthController(
     }
 
     [HttpPost("logout")]
-    [Authorize]
+    [AllowAnonymous]
     public async Task<IActionResult> Logout()
     {
         await signInManager.SignOutAsync();
