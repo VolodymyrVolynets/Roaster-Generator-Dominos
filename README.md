@@ -18,6 +18,15 @@ docker compose up --build
 
 Open `http://localhost:3000/`. The backend is available at `http://localhost:8080/`; the React frontend calls `/api/hello`, and the API reads the PostgreSQL server time.
 
+To force fresh base images and rebuild both application images without using the Docker build cache:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.rebuild.yaml \
+  up -d --build --force-recreate
+```
+
 ## Production configuration
 
 Production uses `compose.prod.yaml` with Traefik routing:
