@@ -19,7 +19,9 @@ public sealed class RosterPlanService(AppDbContext db)
             .Include(plan => plan.Columns)
             .Include(plan => plan.Rows)
             .ThenInclude(row => row.Values)
-            .SingleOrDefaultAsync(plan => plan.WeekStart == weekStart, cancellationToken);
+            .OrderByDescending(plan => plan.UpdatedAtUtc)
+            .ThenByDescending(plan => plan.WeekStart)
+            .FirstOrDefaultAsync(cancellationToken);
 
         var demandColumnIds = demandPlan?.Columns
             .Where(column => column.Position is >= 0 and < 7)

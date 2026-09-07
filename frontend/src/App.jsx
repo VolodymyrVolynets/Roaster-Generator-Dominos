@@ -169,7 +169,7 @@ function DemandManager({ setErrorPopup }) {
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [plan, setPlan] = useState(null)
   const [selectedDemandDayPosition, setSelectedDemandDayPosition] = useState(0)
-  const [name, setName] = useState('Next week demand')
+  const [name, setName] = useState('Weekly demand')
   const [weekStart, setWeekStart] = useState(getNextMondayValue())
   const [pasteContent, setPasteContent] = useState('')
   const [status, setStatus] = useState({ status: 'idle', message: '' })
@@ -351,43 +351,14 @@ function DemandManager({ setErrorPopup }) {
           <span className="eyebrow">Administration</span>
           <h2>Demand input</h2>
         </div>
-        {plans.length > 0 && (
-          <select
-            className="demand-plan-select"
-            value={selectedPlanId}
-            onChange={(event) => setSelectedPlanId(event.target.value)}
-            aria-label="Demand plan"
-          >
-            {plans.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} ({item.weekStart})
-              </option>
-            ))}
-          </select>
-        )}
       </div>
 
       <p className="demand-help">
-        Import an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
+        Import the single weekly demand template as an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
         and read-only, while demand is calculated from deliveries and can be edited below. Open hours always
         require at least one driver. Hours are shown
-        as 06–23, followed by next-day 00–05.
+        as 06–23, followed by next-day 00–05. Importing new data replaces the existing template.
       </p>
-
-      <div className="demand-import-form">
-        <label>
-          Plan name
-          <input value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <label>
-          Week starting Monday
-          <input
-            type="date"
-            value={weekStart}
-            onChange={(event) => setWeekStart(event.target.value)}
-          />
-        </label>
-      </div>
 
       <label className="demand-paste-label">
         Paste demand table

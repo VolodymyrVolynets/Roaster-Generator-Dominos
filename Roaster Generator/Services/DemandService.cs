@@ -33,7 +33,9 @@ public sealed class DemandService(
     {
         return await db.DemandPlans
             .AsNoTracking()
-            .OrderByDescending(plan => plan.WeekStart)
+            .OrderByDescending(plan => plan.UpdatedAtUtc)
+            .ThenByDescending(plan => plan.WeekStart)
+            .Take(1)
             .Select(plan => new DemandPlanSummaryResponse
             {
                 Id = plan.Id,
@@ -210,7 +212,9 @@ public sealed class DemandService(
             .Include(plan => plan.Columns)
             .Include(plan => plan.Rows)
             .ThenInclude(row => row.Values)
-            .SingleOrDefaultAsync(plan => plan.WeekStart == weekStart, cancellationToken);
+            .OrderByDescending(plan => plan.UpdatedAtUtc)
+            .ThenByDescending(plan => plan.WeekStart)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (existingPlan is null)
         {
@@ -553,22 +557,96 @@ public sealed class DemandService(
                 "The imported table must contain exactly seven day pairs: Monday through Sunday.");
         }
 
-        var normalizedRows = parsed.Rows
-            .Select(row => new ParsedDemandRow(
-                row.Hour,
-                row.Values
-                    .Select(value => new ParsedDemandValue(
-                        value.Position,
-                        value.Deliveries,
-                        IsShopOpen(weekStart, value.Position, row.Hour)
-                            ? Math.Max(1, value.Demand ?? 0)
-                            : value.Demand))
+        var valuesByHour = parsed.Rows.ToDictionary(
+            row => row.Hour,
+            row => row.Values.ToDictionary(value => value.Position));
+
+        foreach (var column in parsed.Columns)
+        {
+            var lastProvided = parsed.Rows
+                .SelectMany(row => row.Values.Select(value => new { row.Hour, Value = value }))
+                .Where(item => item.Value.Position == column.Position && HasInput(item.Value))
+                .OrderBy(item => GetDisplayHourOrder(item.Hour))
+                .LastOrDefault();
+
+            if (lastProvided is null)
+            {
+                continue;
+            }
+
+            var lastOpenHourOrder = GetDisplayHours()
+                .Where(hour => IsShopOpen(weekStart, column.Position, hour))
+                .Select(GetDisplayHourOrder)
+                .DefaultIfEmpty(-1)
+                .Max();
+
+            if (GetDisplayHourOrder(lastProvided.Hour) >= lastOpenHourOrder)
+            {
+                continue;
+            }
+
+            foreach (var hour in GetDisplayHours())
+            {
+                var displayOrder = GetDisplayHourOrder(hour);
+
+                if (displayOrder <= GetDisplayHourOrder(lastProvided.Hour) ||
+                    displayOrder > lastOpenHourOrder ||
+                    !IsShopOpen(weekStart, column.Position, hour))
+                {
+                    continue;
+                }
+
+                if (!valuesByHour.TryGetValue(hour, out var values))
+                {
+                    values = parsed.Columns
+                        .ToDictionary(
+                            item => item.Position,
+                            item => new ParsedDemandValue(item.Position, null, null));
+                    valuesByHour[hour] = values;
+                }
+
+                if (!values.TryGetValue(column.Position, out var currentValue) ||
+                    !HasInput(currentValue))
+                {
+                    values[column.Position] = new ParsedDemandValue(
+                        column.Position,
+                        lastProvided.Value.Deliveries,
+                        lastProvided.Value.Demand);
+                }
+            }
+        }
+
+        var normalizedRows = valuesByHour
+            .OrderBy(item => GetDisplayHourOrder(item.Key))
+            .Select(item => new ParsedDemandRow(
+                item.Key,
+                parsed.Columns
+                    .OrderBy(column => column.Position)
+                    .Select(column =>
+                    {
+                        var value = item.Value.TryGetValue(column.Position, out var existingValue)
+                            ? existingValue
+                            : new ParsedDemandValue(column.Position, null, null);
+
+                        return new ParsedDemandValue(
+                            column.Position,
+                            value.Deliveries,
+                            IsShopOpen(weekStart, column.Position, item.Key)
+                                ? Math.Max(1, value.Demand ?? 0)
+                                : value.Demand);
+                    })
                     .ToList()))
             .ToList();
         var normalized = new ParsedDemand(parsed.Columns, normalizedRows);
 
         return normalized;
     }
+
+    private static bool HasInput(ParsedDemandValue value) =>
+        value.Deliveries is not null || value.Demand is not null;
+
+    private static IEnumerable<int> GetDisplayHours() =>
+        Enumerable.Range(6, 18).Concat(Enumerable.Range(0, 6));
 
     private int CalculateTotalHours(DemandPlan plan, DemandColumn column)
     {

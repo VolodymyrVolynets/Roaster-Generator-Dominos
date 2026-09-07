@@ -29,12 +29,14 @@ public sealed class RosterGenerationAlgorithm(
             .Include(plan => plan.Columns)
             .Include(plan => plan.Rows)
             .ThenInclude(row => row.Values)
-            .SingleOrDefaultAsync(plan => plan.WeekStart == weekStart, cancellationToken);
+            .OrderByDescending(plan => plan.UpdatedAtUtc)
+            .ThenByDescending(plan => plan.WeekStart)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (demandPlan is null)
         {
             throw new RosterGenerationException(
-                "Import demand for the selected week before generating a roster.");
+                "Import the weekly demand before generating a roster.");
         }
 
         var employees = await db.Employees
