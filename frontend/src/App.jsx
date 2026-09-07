@@ -1,4 +1,9 @@
 import { useEffect, useState } from 'react'
+import {
+  HubConnectionBuilder,
+  HttpTransportType,
+  LogLevel,
+} from '@microsoft/signalr'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',
@@ -517,6 +522,150 @@ function WeekSelector({ weekOffset, onChange, disabled = false }) {
   )
 }
 
+function RosterGenerationPanel({ setErrorPopup }) {
+  const [weekOffset, setWeekOffset] = useState(minWeekOffset)
+  const [hubStatus, setHubStatus] = useState('connecting')
+  const [generation, setGeneration] = useState(null)
+
+  useEffect(() => {
+    let isMounted = true
+    const connection = new HubConnectionBuilder()
+      .withUrl('/hubs/roster-generation', {
+        transport: HttpTransportType.WebSockets,
+        skipNegotiation: true,
+      })
+      .withAutomaticReconnect()
+      .configureLogging(LogLevel.Warning)
+      .build()
+
+    const handleProgress = (payload) => {
+      if (!isMounted) {
+        return
+      }
+
+      setGeneration((current) => {
+        if (!current || current.jobId === payload.jobId) {
+          return payload
+        }
+
+        return current
+      })
+    }
+
+    connection.on('rosterGenerationProgress', handleProgress)
+    connection.onreconnecting(() => {
+      if (isMounted) {
+        setHubStatus('reconnecting')
+      }
+    })
+    connection.onreconnected(() => {
+      if (isMounted) {
+        setHubStatus('connected')
+      }
+    })
+    connection.onclose(() => {
+      if (isMounted) {
+        setHubStatus('disconnected')
+      }
+    })
+
+    connection
+      .start()
+      .then(() => {
+        if (isMounted) {
+          setHubStatus('connected')
+        }
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setHubStatus('error')
+          setErrorPopup(`Live roster updates are unavailable: ${error.message}`)
+        }
+      })
+
+    return () => {
+      isMounted = false
+      connection.off('rosterGenerationProgress', handleProgress)
+      connection.stop()
+    }
+  }, [setErrorPopup])
+
+  const isRunning = generation?.status === 'starting'
+    || generation?.status === 'started'
+    || generation?.status === 'running'
+
+  async function generateRoster() {
+    setGeneration({
+      status: 'starting',
+      progress: 0,
+      message: 'Starting roster generation…',
+    })
+
+    try {
+      const payload = await fetchJson('/api/admin/roster/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weekOffset }),
+      })
+
+      setGeneration((current) => current?.jobId === payload.jobId && current.progress > payload.progress
+        ? current
+        : payload)
+    } catch (error) {
+      setGeneration(null)
+      setErrorPopup(error.message)
+    }
+  }
+
+  return (
+    <section className="admin-tools roster-generation-tools">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Administration</span>
+          <h2>Generate roster</h2>
+        </div>
+        <WeekSelector
+          weekOffset={weekOffset}
+          onChange={setWeekOffset}
+          disabled={isRunning}
+        />
+      </div>
+
+      <p className="demand-help">
+        Select a future week and start roster generation. Progress is sent live over a WebSocket connection.
+      </p>
+
+      <div className="roster-generation-actions">
+        <button
+          type="button"
+          onClick={generateRoster}
+          disabled={hubStatus !== 'connected' || isRunning}
+        >
+          {isRunning ? 'Generating roster…' : 'Generate roster'}
+        </button>
+        <span className={`hub-status ${hubStatus}`}>
+          Live updates: {hubStatus}
+        </span>
+      </div>
+
+      {generation && (
+        <div className={`roster-generation-status ${generation.status}`}>
+          <div className="roster-generation-status-heading">
+            <strong>{generation.message}</strong>
+            <span>{generation.progress}%</span>
+          </div>
+          <div className="roster-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={generation.progress}>
+            <span style={{ width: `${generation.progress}%` }} />
+          </div>
+          {generation.weekStart && (
+            <small>Week starting {generation.weekStart}</small>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function AdminConsole({
   authState,
   errorPopup,
@@ -622,6 +771,13 @@ function AdminConsole({
               onClick={() => setActiveTab('demand')}
             >
               Demand
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'generate-roster' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => setActiveTab('generate-roster')}
+            >
+              Generate roster
             </button>
           </nav>
 
@@ -887,6 +1043,10 @@ function AdminConsole({
           )}
 
           {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} />}
+
+          {activeTab === 'generate-roster' && (
+            <RosterGenerationPanel setErrorPopup={setErrorPopup} />
+          )}
         </section>
       </main>
     </>

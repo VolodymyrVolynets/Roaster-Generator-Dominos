@@ -283,6 +283,78 @@ input:focus {
   margin-top: 14px;
 }
 
+.roster-generation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.hub-status {
+  color: #94a3b8;
+  font-size: 0.88rem;
+  text-transform: capitalize;
+}
+
+.hub-status.connected {
+  color: #6ee7b7;
+}
+
+.hub-status.error,
+.hub-status.disconnected {
+  color: #fca5a5;
+}
+
+.roster-generation-status {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.68);
+}
+
+.roster-generation-status.completed {
+  border-color: rgba(110, 231, 183, 0.4);
+}
+
+.roster-generation-status.failed {
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+.roster-generation-status-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #cbd5e1;
+}
+
+.roster-generation-status-heading span {
+  color: #7dd3fc;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.roster-progress {
+  height: 10px;
+  margin: 12px 0 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.roster-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #6ee7b7);
+  transition: width 0.25s ease;
+}
+
+.roster-generation-status small {
+  color: #94a3b8;
+}
+
 .file-button {
   display: inline-flex;
   align-items: center;

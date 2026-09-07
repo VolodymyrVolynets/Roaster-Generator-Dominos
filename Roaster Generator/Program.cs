@@ -39,13 +39,16 @@ builder.Services
     .AddIdentityCookies();
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
+builder.Services.AddSignalR();
 builder.Services.AddScoped<DemandService>();
 builder.Services.AddScoped<WeeklyScheduleService>();
+builder.Services.AddSingleton<RosterGenerationService>();
 builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
 builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();
 
 var app = builder.Build();
 
+app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -57,5 +60,6 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 app.MapControllers();
+app.MapHub<Roaster_Generator.Hubs.RosterGenerationHub>("/hubs/roster-generation");
 
 app.Run();
