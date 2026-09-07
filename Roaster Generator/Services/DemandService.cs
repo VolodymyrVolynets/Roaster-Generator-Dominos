@@ -567,49 +567,7 @@ public sealed class DemandService(
             .ToList();
         var normalized = new ParsedDemand(parsed.Columns, normalizedRows);
 
-        ValidateSinglePeakPerDay(normalized, weekStart);
         return normalized;
-    }
-
-    private void ValidateSinglePeakPerDay(ParsedDemand parsed, DateOnly weekStart)
-    {
-        for (var position = 0; position < DayLabels.Length; position++)
-        {
-            var previousDemand = (int?)null;
-            var hasStartedDecreasing = false;
-
-            foreach (var row in parsed.Rows.OrderBy(row => GetDisplayHourOrder(row.Hour)))
-            {
-                if (!IsShopOpen(weekStart, position, row.Hour))
-                {
-                    continue;
-                }
-
-                var demand = row.Values
-                    .FirstOrDefault(value => value.Position == position)
-                    ?.Demand;
-
-                if (demand is null)
-                {
-                    continue;
-                }
-
-                if (previousDemand is not null)
-                {
-                    if (demand < previousDemand)
-                    {
-                        hasStartedDecreasing = true;
-                    }
-                    else if (hasStartedDecreasing && demand > previousDemand)
-                    {
-                        throw new DemandValidationException(
-                            $"{GetColumnLabel(position)} demand must rise to one peak and then decrease without rising again.");
-                    }
-                }
-
-                previousDemand = demand;
-            }
-        }
     }
 
     private int CalculateTotalHours(DemandPlan plan, DemandColumn column)

@@ -356,7 +356,7 @@ function DemandManager({ setErrorPopup }) {
       <p className="demand-help">
         Import an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
         and read-only, while demand is calculated from deliveries and can be edited below. Open hours always
-        require at least one driver, and demand can rise to one peak and then fall only once. Hours are shown
+        require at least one driver. Hours are shown
         as 06–23, followed by next-day 00–05.
       </p>
 
