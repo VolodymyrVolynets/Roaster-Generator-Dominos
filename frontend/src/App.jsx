@@ -15,6 +15,22 @@ function parseDate(dateValue) {
   return new Date(year, month - 1, day)
 }
 
+function getShiftDuration(startTime, finishTime) {
+  if (!startTime || !finishTime) {
+    return null
+  }
+
+  const startHour = Number(startTime.split(':')[0])
+  const finishHour = Number(finishTime.split(':')[0])
+  const duration = finishHour - startHour
+
+  if (duration <= 0) {
+    return null
+  }
+
+  return `${duration} ${duration === 1 ? 'hour' : 'hours'}`
+}
+
 async function fetchJson(url, options) {
   const response = await fetch(url, options)
   const body = await response.text()
@@ -290,6 +306,11 @@ function App() {
                   <div className="day-cell" role="cell">
                     <strong>{day.dayOfWeek}</strong>
                     <span>{dateFormatter.format(parseDate(day.date))}</span>
+                    {getShiftDuration(day.startTime, day.finishTime) && (
+                      <span className="shift-duration">
+                        {getShiftDuration(day.startTime, day.finishTime)}
+                      </span>
+                    )}
                   </div>
                   <div role="cell">
                     <label className="visually-hidden" htmlFor={`${day.date}-start`}>
