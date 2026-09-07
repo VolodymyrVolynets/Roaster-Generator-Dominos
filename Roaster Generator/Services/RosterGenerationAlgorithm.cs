@@ -10,7 +10,8 @@ public sealed class RosterGenerationException(string message) : Exception(messag
 
 public sealed class RosterGenerationAlgorithm(
     AppDbContext db,
-    IOptions<ShopHoursOptions> shopHoursOptions)
+    IOptions<ShopHoursOptions> shopHoursOptions,
+    RosterGenerationSettingsService rosterSettings)
 {
     private const int MinimumShiftHours = 3;
     private const int PreferredMinimumShiftHours = 6;
@@ -79,7 +80,8 @@ public sealed class RosterGenerationAlgorithm(
                 "No valid 3–10 hour shifts can be created from the employees' availability and shop hours.");
         }
 
-        var solver = new GeneticRosterSolver(candidates, demand, employees);
+        var weights = await rosterSettings.GetWeightsAsync(cancellationToken);
+        var solver = new GeneticRosterSolver(candidates, demand, employees, weights);
         var selectedCandidates = solver.Solve();
 
         if (selectedCandidates is null)
@@ -330,7 +332,8 @@ public sealed class RosterGenerationAlgorithm(
     private sealed class GeneticRosterSolver(
         IReadOnlyList<CandidateShift> candidates,
         IReadOnlyList<int> demand,
-        IReadOnlyList<Employee> employees)
+        IReadOnlyList<Employee> employees,
+        RosterGenerationWeights weights)
     {
         private readonly Random random = new(20260907);
         private readonly List<int>[] candidatesBySlot = BuildCandidatesBySlot(candidates);
@@ -402,8 +405,8 @@ public sealed class RosterGenerationAlgorithm(
             var score = uncoveredHours * 1_000_000L
                 + soloHours * 500_000L
                 + minimumHoursMissing * 100_000L
-                + targetDeviation * 100L
-                + shortShiftPenalty * 10L
+                + targetDeviation * weights.TargetHoursWeight
+                + shortShiftPenalty * weights.ShortShiftPenalty
                 + selected.Sum(index => GetUnpleasantHoursPenalty(candidates[index]));
 
             return new Individual(
@@ -468,10 +471,12 @@ public sealed class RosterGenerationAlgorithm(
                     var targetDifference = Math.Abs(
                         employeeHours[candidate.EmployeeIndex] + candidate.DurationHours -
                         employees[candidate.EmployeeIndex].TargetHours);
-                    var longShiftBonus = candidate.DurationHours >= PreferredMinimumShiftHours ? 25 : 0;
+                    var longShiftBonus = candidate.DurationHours >= PreferredMinimumShiftHours
+                        ? weights.LongShiftBonus
+                        : 0;
                     var score = gain * 10_000D
                         + longShiftBonus
-                        - targetDifference * 4D
+                        - targetDifference * weights.TargetHoursWeight
                         - GetUnpleasantHoursPenalty(candidate)
                         + priorities[index];
 
@@ -531,10 +536,16 @@ public sealed class RosterGenerationAlgorithm(
                         return CanAdd(candidate, selected) &&
                             candidate.CoveredSlots.All(slot => remaining[slot] > 0);
                     })
-                    .OrderByDescending(index => candidates[index].DurationHours >= PreferredMinimumShiftHours)
+                    .OrderByDescending(index => candidates[index].DurationHours >= PreferredMinimumShiftHours
+                        ? weights.LongShiftBonus
+                        : 0)
                     .ThenBy(index => Math.Abs(
                         employeeHours[candidates[index].EmployeeIndex] + candidates[index].DurationHours -
-                        employees[candidates[index].EmployeeIndex].TargetHours))
+                        employees[candidates[index].EmployeeIndex].TargetHours) * weights.TargetHoursWeight
+                        + (candidates[index].DurationHours < PreferredMinimumShiftHours
+                            ? weights.ShortShiftPenalty
+                            : 0)
+                        + GetUnpleasantHoursPenalty(candidates[index]))
                     .ThenByDescending(index => priorities[index])
                     .ToList();
 
@@ -667,7 +678,7 @@ public sealed class RosterGenerationAlgorithm(
             }
         }
 
-        private static int GetUnpleasantHoursPenalty(CandidateShift candidate)
+        private int GetUnpleasantHoursPenalty(CandidateShift candidate)
         {
             var startHour = candidate.StartTime.Hour;
             var finishHour = candidate.FinishTime.Hour;
@@ -676,7 +687,7 @@ public sealed class RosterGenerationAlgorithm(
                 : Math.Max(0, finishHour - 22);
             var earlyStart = Math.Max(0, 8 - startHour);
 
-            return lateFinish * 2 + earlyStart;
+            return lateFinish * weights.LateFinishPenalty + earlyStart * weights.EarlyStartPenalty;
         }
 
         private sealed record Individual(

@@ -540,6 +540,14 @@ function RosterGenerationPanel({ setErrorPopup }) {
   const [generation, setGeneration] = useState(null)
   const [roster, setRoster] = useState(null)
   const [weekSummary, setWeekSummary] = useState(null)
+  const [settingsForm, setSettingsForm] = useState({
+    targetHoursWeight: 100,
+    longShiftBonus: 25,
+    shortShiftPenalty: 10,
+    lateFinishPenalty: 2,
+    earlyStartPenalty: 1,
+  })
+  const [settingsState, setSettingsState] = useState({ status: 'loading', message: '' })
 
   useEffect(() => {
     setRoster(null)
@@ -558,6 +566,19 @@ function RosterGenerationPanel({ setErrorPopup }) {
       .then(setWeekSummary)
       .catch((error) => setErrorPopup(error.message))
   }, [setErrorPopup, weekOffset])
+
+  useEffect(() => {
+    setSettingsState({ status: 'loading', message: '' })
+    fetchJson('/api/admin/roster/settings')
+      .then((settings) => {
+        setSettingsForm(settings)
+        setSettingsState({ status: 'idle', message: '' })
+      })
+      .catch((error) => {
+        setSettingsState({ status: 'error', message: error.message })
+        setErrorPopup(error.message)
+      })
+  }, [setErrorPopup])
 
   useEffect(() => {
     let isMounted = true
@@ -668,6 +689,29 @@ function RosterGenerationPanel({ setErrorPopup }) {
     }
   }
 
+  function updateSetting(field, value) {
+    setSettingsForm((current) => ({ ...current, [field]: Number(value) }))
+    setSettingsState({ status: 'idle', message: '' })
+  }
+
+  async function saveSettings(event) {
+    event.preventDefault()
+    setSettingsState({ status: 'saving', message: '' })
+
+    try {
+      const settings = await fetchJson('/api/admin/roster/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingsForm),
+      })
+      setSettingsForm(settings)
+      setSettingsState({ status: 'success', message: 'Generator weights saved.' })
+    } catch (error) {
+      setSettingsState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
   return (
     <section className="admin-tools roster-generation-tools">
       <div className="section-heading">
@@ -706,6 +750,91 @@ function RosterGenerationPanel({ setErrorPopup }) {
       {weekSummary && !weekSummary.demandPlanExists && (
         <p className="message info-message">No demand has been imported for this week yet.</p>
       )}
+
+      <form className="roster-settings-form" onSubmit={saveSettings}>
+        <div className="roster-settings-header">
+          <div>
+            <span className="eyebrow">Admin settings</span>
+            <h3>Generator weights</h3>
+          </div>
+          <p>These values tune the optimizer. Demand coverage and scheduling safety rules remain mandatory.</p>
+        </div>
+        <div className="roster-settings-grid">
+          <label>
+            Target-hour balance
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              step="1"
+              value={settingsForm.targetHoursWeight}
+              onChange={(event) => updateSetting('targetHoursWeight', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Long-shift bonus
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              step="1"
+              value={settingsForm.longShiftBonus}
+              onChange={(event) => updateSetting('longShiftBonus', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Short-shift penalty
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              step="1"
+              value={settingsForm.shortShiftPenalty}
+              onChange={(event) => updateSetting('shortShiftPenalty', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Late-finish penalty
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              step="1"
+              value={settingsForm.lateFinishPenalty}
+              onChange={(event) => updateSetting('lateFinishPenalty', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+          <label>
+            Early-start penalty
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              step="1"
+              value={settingsForm.earlyStartPenalty}
+              onChange={(event) => updateSetting('earlyStartPenalty', event.target.value)}
+              disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+            />
+          </label>
+        </div>
+        <div className="roster-settings-actions">
+          <button
+            type="submit"
+            disabled={settingsState.status === 'loading' || settingsState.status === 'saving'}
+          >
+            {settingsState.status === 'saving' ? 'Saving…' : 'Save weights'}
+          </button>
+          {settingsState.message && (
+            <span className={`save-message ${settingsState.status}`} aria-live="polite">
+              {settingsState.message}
+            </span>
+          )}
+        </div>
+      </form>
 
       <div className="roster-generation-actions">
         <button

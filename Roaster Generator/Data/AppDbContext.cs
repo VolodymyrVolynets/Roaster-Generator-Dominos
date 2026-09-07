@@ -24,6 +24,8 @@ public sealed class AppDbContext(
 
     public DbSet<RosterShift> RosterShifts => Set<RosterShift>();
 
+    public DbSet<RosterGenerationSettings> RosterGenerationSettings => Set<RosterGenerationSettings>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

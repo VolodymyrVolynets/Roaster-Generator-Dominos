@@ -15,6 +15,32 @@ public sealed class RosterGenerationStartResponse
     public string Message { get; init; } = string.Empty;
 }
 
+public sealed class RosterGenerationSettingsRequest
+{
+    public int TargetHoursWeight { get; set; }
+
+    public int LongShiftBonus { get; set; }
+
+    public int ShortShiftPenalty { get; set; }
+
+    public int LateFinishPenalty { get; set; }
+
+    public int EarlyStartPenalty { get; set; }
+}
+
+public sealed class RosterGenerationSettingsResponse
+{
+    public int TargetHoursWeight { get; init; }
+
+    public int LongShiftBonus { get; init; }
+
+    public int ShortShiftPenalty { get; init; }
+
+    public int LateFinishPenalty { get; init; }
+
+    public int EarlyStartPenalty { get; init; }
+}
+
 public sealed class RosterPlanResponse
 {
     public Guid Id { get; init; }

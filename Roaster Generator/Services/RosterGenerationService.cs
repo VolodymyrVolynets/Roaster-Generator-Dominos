@@ -20,7 +20,6 @@ public sealed class RosterGenerationService(
     ILogger<RosterGenerationService> logger,
     IServiceScopeFactory scopeFactory)
 {
-    private const int DurationInSeconds = 10;
     private readonly ConcurrentDictionary<DateOnly, Guid> activeJobs = new();
 
     public RosterGenerationStartResponse Start(int weekOffset)
@@ -58,45 +57,45 @@ public sealed class RosterGenerationService(
                 0,
                 "Roster generation started.");
 
-            for (var second = 1; second <= DurationInSeconds; second++)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(1));
+            await PublishAsync(
+                jobId,
+                weekOffset,
+                weekStart,
+                "running",
+                10,
+                "Loading demand and employee availability.");
 
-                if (second < DurationInSeconds)
-                {
-                    await PublishAsync(
-                        jobId,
-                        weekOffset,
-                        weekStart,
-                        "running",
-                        second * 10,
-                        $"Preparing roster generation… {second} of {DurationInSeconds} seconds.");
-                    continue;
-                }
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var algorithm = scope.ServiceProvider.GetRequiredService<RosterGenerationAlgorithm>();
 
-                await PublishAsync(
-                    jobId,
-                    weekOffset,
-                    weekStart,
-                    "running",
-                    90,
-                    "Selecting exact shifts from demand and availability.");
+            await PublishAsync(
+                jobId,
+                weekOffset,
+                weekStart,
+                "running",
+                35,
+                "Generating valid shifts and optimizing the roster.");
 
-                await using var scope = scopeFactory.CreateAsyncScope();
-                var algorithm = scope.ServiceProvider.GetRequiredService<RosterGenerationAlgorithm>();
-                var plan = await algorithm.GenerateAsync(weekStart, CancellationToken.None);
-                var totalScheduledHours = plan.Shifts.Sum(GetDurationHours);
+            var plan = await algorithm.GenerateAsync(weekStart, CancellationToken.None);
+            var totalScheduledHours = plan.Shifts.Sum(GetDurationHours);
 
-                await PublishAsync(
-                    jobId,
-                    weekOffset,
-                    weekStart,
-                    "completed",
-                    100,
-                    $"Roster generated with {totalScheduledHours} driver-hours.",
-                    plan.Id,
-                    totalScheduledHours);
-            }
+            await PublishAsync(
+                jobId,
+                weekOffset,
+                weekStart,
+                "running",
+                90,
+                "Saving the optimized roster.");
+
+            await PublishAsync(
+                jobId,
+                weekOffset,
+                weekStart,
+                "completed",
+                100,
+                $"Roster generated with {totalScheduledHours} driver-hours.",
+                plan.Id,
+                totalScheduledHours);
         }
         catch (Exception exception)
         {

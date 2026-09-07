@@ -14,7 +14,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class AdminRosterController(
     IValidator<WeekSelectionRequest> weekValidator,
     RosterGenerationService rosterGeneration,
-    RosterPlanService rosterPlans) : ApiControllerBase
+    RosterPlanService rosterPlans,
+    RosterGenerationSettingsService rosterSettings) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(
@@ -67,6 +68,27 @@ public sealed class AdminRosterController(
         }
 
         return Ok(await rosterPlans.GetSummaryAsync(selection.WeekOffset, cancellationToken));
+    }
+
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings(CancellationToken cancellationToken) =>
+        Ok(await rosterSettings.GetAsync(cancellationToken));
+
+    [HttpPut("settings")]
+    public async Task<IActionResult> UpdateSettings(
+        [FromBody] RosterGenerationSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await rosterSettings.UpdateAsync(request, cancellationToken));
+        }
+        catch (RosterGenerationSettingsValidationException exception)
+        {
+            return ValidationError(
+                new Dictionary<string, string[]> { ["settings"] = [exception.Message] },
+                "Generator settings are invalid.");
+        }
     }
 
     [HttpPost("generate")]
