@@ -144,9 +144,30 @@ input[type="time"]:focus {
   margin-bottom: 18px;
 }
 
+.week-navigation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .week-range {
   color: #cbd5e1;
   font-size: 0.95rem;
+  text-align: center;
+}
+
+.week-range strong,
+.week-range span {
+  display: block;
+}
+
+.week-range strong {
+  color: #f8fafc;
+  font-size: 0.9rem;
+}
+
+.week-range span {
+  margin-top: 3px;
   white-space: nowrap;
 }
 
@@ -220,6 +241,22 @@ button {
   font-weight: 800;
 }
 
+.week-navigation .week-arrow {
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  color: #bae6fd;
+  background: rgba(14, 116, 144, 0.3);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.week-navigation .week-arrow:hover:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.8);
+  background: rgba(14, 116, 144, 0.55);
+}
+
   button:hover:not(:disabled) {
     background: #bae6fd;
   }
@@ -275,6 +312,11 @@ select:disabled {
   .form-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .week-navigation {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .schedule-row {

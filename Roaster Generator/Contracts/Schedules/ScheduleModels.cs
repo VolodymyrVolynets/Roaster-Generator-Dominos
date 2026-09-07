@@ -2,7 +2,14 @@ namespace Roaster_Generator.Contracts.Schedules;
 
 public sealed class WeeklyScheduleRequest
 {
+    public int WeekOffset { get; set; }
+
     public List<ScheduleDayRequest> Days { get; set; } = [];
+}
+
+public sealed class WeekSelectionRequest
+{
+    public int WeekOffset { get; init; }
 }
 
 public sealed class ScheduleDayRequest

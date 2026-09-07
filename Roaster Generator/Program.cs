@@ -16,6 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 builder.Services.AddScoped<WeeklyScheduleService>();
 builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
+builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();
 
 var app = builder.Build();
 
@@ -46,19 +47,43 @@ app.MapGet("/api/employees", async (
     return Results.Ok(employees);
 });
 
-app.MapGet("/api/employees/{employeeId:guid}/schedule/next-week", async Task<IResult> (
+app.MapGet("/api/employees/{employeeId:guid}/schedule", async Task<IResult> (
     Guid employeeId,
+    int? weekOffset,
+    IValidator<WeekSelectionRequest> weekValidator,
     WeeklyScheduleService schedules,
     CancellationToken cancellationToken) =>
 {
-    var schedule = await schedules.GetNextWeekAsync(employeeId, cancellationToken);
+    var selection = new WeekSelectionRequest
+    {
+        WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
+    };
+    var validationResult = await weekValidator.ValidateAsync(selection, cancellationToken);
+
+    if (!validationResult.IsValid)
+    {
+        var errors = validationResult.Errors
+            .GroupBy(error => error.PropertyName)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(error => error.ErrorMessage).ToArray());
+
+        return Results.ValidationProblem(
+            errors,
+            title: "The selected week is invalid.");
+    }
+
+    var schedule = await schedules.GetWeekAsync(
+        employeeId,
+        selection.WeekOffset,
+        cancellationToken);
 
     return schedule is null
         ? Results.NotFound(new { message = "Employee not found." })
         : Results.Ok(schedule);
 });
 
-app.MapPut("/api/employees/{employeeId:guid}/schedule/next-week", async Task<IResult> (
+app.MapPut("/api/employees/{employeeId:guid}/schedule", async Task<IResult> (
     Guid employeeId,
     WeeklyScheduleRequest request,
     IValidator<WeeklyScheduleRequest> validator,
@@ -90,7 +115,7 @@ app.MapPut("/api/employees/{employeeId:guid}/schedule/next-week", async Task<IRe
             title: "The shift schedule is invalid.");
     }
 
-    var schedule = await schedules.ReplaceNextWeekAsync(
+    var schedule = await schedules.ReplaceWeekAsync(
         employeeId,
         request,
         cancellationToken);

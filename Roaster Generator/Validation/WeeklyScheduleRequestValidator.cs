@@ -8,6 +8,12 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
 {
     public WeeklyScheduleRequestValidator()
     {
+        RuleFor(request => request.WeekOffset)
+            .InclusiveBetween(
+                WeeklyScheduleService.MinWeekOffset,
+                WeeklyScheduleService.MaxWeekOffset)
+            .WithMessage("Only the current week and the next two weeks can be edited.");
+
         RuleFor(request => request.Days)
             .NotNull()
             .WithMessage("Seven schedule days are required.")
@@ -17,15 +23,23 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
         RuleForEach(request => request.Days)
             .SetValidator(new ScheduleDayRequestValidator());
 
-        RuleFor(request => request.Days)
-            .Custom((days, context) =>
+        RuleFor(request => request)
+            .Custom((request, context) =>
             {
+                var days = request.Days;
+
                 if (days is null || days.Count != 7)
                 {
                     return;
                 }
 
-                var weekStart = WeeklyScheduleService.GetNextWeekMonday();
+                if (request.WeekOffset is < WeeklyScheduleService.MinWeekOffset
+            or > WeeklyScheduleService.MaxWeekOffset)
+                {
+                    return;
+                }
+
+                var weekStart = WeeklyScheduleService.GetWeekMonday(request.WeekOffset);
 
                 for (var index = 0; index < days.Count; index++)
                 {
@@ -35,10 +49,22 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
                     {
                         context.AddFailure(
                             $"Days[{index}].Date",
-                            $"Date must be {expectedDate:yyyy-MM-dd} for the next-week schedule.");
+                            $"Date must be {expectedDate:yyyy-MM-dd} for the selected week.");
                     }
                 }
             });
+    }
+}
+
+public sealed class WeekSelectionRequestValidator : AbstractValidator<WeekSelectionRequest>
+{
+    public WeekSelectionRequestValidator()
+    {
+        RuleFor(request => request.WeekOffset)
+            .InclusiveBetween(
+                WeeklyScheduleService.MinWeekOffset,
+                WeeklyScheduleService.MaxWeekOffset)
+            .WithMessage("Only the current week and the next two weeks can be viewed.");
     }
 }
 

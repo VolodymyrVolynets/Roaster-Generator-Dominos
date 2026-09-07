@@ -6,6 +6,9 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
+const minWeekOffset = 0
+const maxWeekOffset = 2
+const weekLabels = ['Current week', 'Next week', 'Week after next']
 
 function parseDate(dateValue) {
   const [year, month, day] = dateValue.split('-').map(Number)
@@ -54,6 +57,7 @@ function App() {
   const [scheduleState, setScheduleState] = useState({ status: 'idle' })
   const [schedule, setSchedule] = useState(null)
   const [saveState, setSaveState] = useState({ status: 'idle' })
+  const [weekOffset, setWeekOffset] = useState(minWeekOffset)
 
   useEffect(() => {
     fetchJson('/api/employees')
@@ -73,15 +77,16 @@ function App() {
     }
 
     setScheduleState({ status: 'loading' })
+    setSchedule(null)
     setSaveState({ status: 'idle' })
 
-    fetchJson(`/api/employees/${selectedEmployeeId}/schedule/next-week`)
+    fetchJson(`/api/employees/${selectedEmployeeId}/schedule?weekOffset=${weekOffset}`)
       .then((payload) => {
         setSchedule(payload)
         setScheduleState({ status: 'success' })
       })
       .catch((error) => setScheduleState({ status: 'error', message: error.message }))
-  }, [selectedEmployeeId])
+  }, [selectedEmployeeId, weekOffset])
 
   function updateDay(date, field, value) {
     setSchedule((current) => ({
@@ -103,17 +108,24 @@ function App() {
     setSaveState({ status: 'idle' })
   }
 
+  function changeWeek(direction) {
+    setWeekOffset((current) =>
+      Math.min(maxWeekOffset, Math.max(minWeekOffset, current + direction)),
+    )
+  }
+
   async function saveSchedule(event) {
     event.preventDefault()
     setSaveState({ status: 'saving' })
 
     try {
       const payload = await fetchJson(
-        `/api/employees/${selectedEmployeeId}/schedule/next-week`,
+        `/api/employees/${selectedEmployeeId}/schedule`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            weekOffset,
             days: schedule.days.map((day) => ({
               date: day.date,
               startTime: day.startTime || null,
@@ -146,7 +158,10 @@ function App() {
           <select
             id="employee"
             value={selectedEmployeeId}
-            onChange={(event) => setSelectedEmployeeId(event.target.value)}
+            onChange={(event) => {
+              setSelectedEmployeeId(event.target.value)
+              setWeekOffset(minWeekOffset)
+            }}
             disabled={employeesState.status !== 'success' || employees.length === 0}
           >
             <option value="">
@@ -169,7 +184,7 @@ function App() {
         )}
 
         {scheduleState.status === 'loading' && (
-          <p className="message info-message">Loading next week…</p>
+          <p className="message info-message">Loading week…</p>
         )}
 
         {scheduleState.status === 'error' && (
@@ -183,13 +198,36 @@ function App() {
                 <span className="eyebrow">Schedule for</span>
                 <h2>{schedule.employeeName}</h2>
               </div>
-              <span className="week-range">
-                {dateFormatter.format(parseDate(schedule.weekStart))} –{' '}
-                {dateFormatter.format(parseDate(schedule.weekEnd))}
-              </span>
+              <div className="week-navigation" aria-label="Week navigation">
+                <button
+                  type="button"
+                  className="week-arrow"
+                  aria-label="Previous week"
+                  onClick={() => changeWeek(-1)}
+                  disabled={weekOffset === minWeekOffset || scheduleState.status === 'loading'}
+                >
+                  ←
+                </button>
+                <div className="week-range">
+                  <strong>{weekLabels[weekOffset]}</strong>
+                  <span>
+                    {dateFormatter.format(parseDate(schedule.weekStart))} –{' '}
+                    {dateFormatter.format(parseDate(schedule.weekEnd))}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="week-arrow"
+                  aria-label="Next week"
+                  onClick={() => changeWeek(1)}
+                  disabled={weekOffset === maxWeekOffset || scheduleState.status === 'loading'}
+                >
+                  →
+                </button>
+              </div>
             </div>
 
-            <div className="schedule-table" role="table" aria-label="Next week schedule">
+            <div className="schedule-table" role="table" aria-label="Selected week schedule">
                 <div className="schedule-row schedule-header" role="row">
                   <span role="columnheader">Day</span>
                   <span role="columnheader">Start time</span>

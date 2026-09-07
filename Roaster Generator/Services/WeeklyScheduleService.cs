@@ -8,8 +8,12 @@ namespace Roaster_Generator.Services;
 
 public sealed class WeeklyScheduleService(AppDbContext db)
 {
-    public async Task<WeeklyScheduleResponse?> GetNextWeekAsync(
+    public const int MinWeekOffset = 0;
+    public const int MaxWeekOffset = 2;
+
+    public async Task<WeeklyScheduleResponse?> GetWeekAsync(
         Guid employeeId,
+        int weekOffset,
         CancellationToken cancellationToken)
     {
         var employee = await db.Employees
@@ -21,7 +25,7 @@ public sealed class WeeklyScheduleService(AppDbContext db)
             return null;
         }
 
-        var weekStart = GetNextWeekMonday();
+        var weekStart = GetWeekMonday(weekOffset);
         var shifts = await db.Shifts
             .AsNoTracking()
             .Where(shift => shift.EmployeeId == employeeId)
@@ -32,7 +36,7 @@ public sealed class WeeklyScheduleService(AppDbContext db)
         return BuildResponse(employee, weekStart, shifts);
     }
 
-    public async Task<WeeklyScheduleResponse?> ReplaceNextWeekAsync(
+    public async Task<WeeklyScheduleResponse?> ReplaceWeekAsync(
         Guid employeeId,
         WeeklyScheduleRequest request,
         CancellationToken cancellationToken)
@@ -45,7 +49,7 @@ public sealed class WeeklyScheduleService(AppDbContext db)
             return null;
         }
 
-        var weekStart = GetNextWeekMonday();
+        var weekStart = GetWeekMonday(request.WeekOffset);
 
         var weekEnd = weekStart.AddDays(7);
         var existingShifts = await db.Shifts
@@ -78,18 +82,16 @@ public sealed class WeeklyScheduleService(AppDbContext db)
         return BuildResponse(employee, weekStart, savedShifts);
     }
 
-    public static DateOnly GetNextWeekMonday()
+    public static DateOnly GetCurrentWeekMonday()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var daysUntilNextMonday = ((int)DayOfWeek.Monday - (int)today.DayOfWeek + 7) % 7;
+        var daysSinceMonday = ((int)today.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
 
-        if (daysUntilNextMonday == 0)
-        {
-            daysUntilNextMonday = 7;
-        }
-
-        return today.AddDays(daysUntilNextMonday);
+        return today.AddDays(-daysSinceMonday);
     }
+
+    public static DateOnly GetWeekMonday(int weekOffset) =>
+        GetCurrentWeekMonday().AddDays(weekOffset * 7);
 
     private static WeeklyScheduleResponse BuildResponse(
         Employee employee,
