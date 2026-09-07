@@ -394,8 +394,63 @@ public sealed class RosterGenerationAlgorithm(
 
         if (diagnostics.Count == 0)
         {
+            var employeesWithoutCandidates = employees
+                .Where(employee => candidates.All(candidate => candidate.EmployeeId != employee.Id))
+                .Select(GetEmployeeName)
+                .ToList();
+
+            if (employeesWithoutCandidates.Count > 0)
+            {
+                diagnostics.Add(
+                    "Employees required to receive at least 3 hours but with no valid shift candidates: " +
+                    string.Join(", ", employeesWithoutCandidates) + ".");
+            }
+
             diagnostics.Add(
-                "Every demand hour has enough individual candidate drivers, but no combination satisfies all shift and break constraints. Review the candidate shifts shown for the most constrained periods and split or extend availability where needed.");
+                "CP-SAT found enough individual candidates at some periods, but no complete combination satisfies all demand, shift-overlap, 7-hour-break, minimum-hours, and solo-driver constraints.");
+
+            var detailedSlots = slotsToExplain
+                .Select(slot =>
+                {
+                    var slotCandidates = candidates
+                        .Where(candidate => candidate.CoveredSlots.Contains(slot))
+                        .ToList();
+                    var employeeCount = slotCandidates
+                        .Select(candidate => candidate.EmployeeIndex)
+                        .Distinct()
+                        .Count();
+
+                    return new
+                    {
+                        Slot = slot,
+                        Candidates = slotCandidates,
+                        EmployeeCount = employeeCount
+                    };
+                })
+                .OrderBy(item => item.EmployeeCount - demand[item.Slot])
+                .ThenBy(item => item.Candidates.Count)
+                .ThenBy(item => item.Slot)
+                .Take(12)
+                .ToList();
+
+            foreach (var detail in detailedSlots)
+            {
+                var (date, hour) = GetBusinessDateAndHour(weekStart, detail.Slot);
+                var employeeOptions = detail.Candidates
+                    .GroupBy(candidate => candidate.EmployeeIndex)
+                    .OrderBy(group => group.Key)
+                    .Select(group =>
+                        $"{GetEmployeeName(employees[group.Key])}: {group.Count()} option(s)")
+                    .Take(8);
+                var examples = FormatCandidateExamples(detail.Candidates, employees);
+
+                diagnostics.Add(
+                    $"{date:yyyy-MM-dd} {hour:00}:00: requires {demand[detail.Slot]} driver(s); " +
+                    $"{detail.EmployeeCount} employee(s) and {detail.Candidates.Count} candidate shift(s) can cover this hour, " +
+                    "but those shifts conflict with requirements in other hours. " +
+                    $"Options by employee: {string.Join(", ", employeeOptions)}. " +
+                    $"Candidate shifts: {examples}.");
+            }
         }
 
         var omittedCount = slotsToExplain.Count(slot =>
@@ -423,7 +478,7 @@ public sealed class RosterGenerationAlgorithm(
                     $"{GetEmployeeName(employees[candidate.EmployeeIndex])} " +
                     $"{candidate.Date:dd MMM} {candidate.StartTime:HH:mm}–{candidate.FinishTime:HH:mm}")
                 .Distinct()
-                .Take(4));
+                .Take(8));
     }
 
     private static string FormatAvailabilityExamples(
@@ -442,7 +497,7 @@ public sealed class RosterGenerationAlgorithm(
                     $"{GetEmployeeName(employeesById[shift.EmployeeId])} " +
                     $"{shift.StartTime:HH:mm}–{shift.FinishTime:HH:mm}")
                 .Distinct()
-                .Take(4));
+                .Take(8));
     }
 
     private static (DateOnly Date, int Hour) GetBusinessDateAndHour(DateOnly weekStart, int slot)
