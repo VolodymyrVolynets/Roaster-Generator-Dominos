@@ -187,7 +187,22 @@ public sealed class DemandService(
                 .ToList());
 
         parsed = NormalizeAndValidateDemand(parsed, request.WeekStart);
-        await ReplacePlanContentsAsync(plan, request.Name.Trim(), request.WeekStart, parsed, cancellationToken);
+        foreach (var parsedRow in parsed.Rows)
+        {
+            var row = plan.Rows.Single(item => item.Hour == parsedRow.Hour);
+            var valuesByPosition = row.Values.ToDictionary(
+                value => positionsByColumnId[value.DemandColumnId]);
+
+            foreach (var parsedValue in parsedRow.Values)
+            {
+                valuesByPosition[parsedValue.Position].Demand = parsedValue.Demand;
+            }
+        }
+
+        plan.Name = request.Name.Trim();
+        plan.WeekStart = request.WeekStart;
+        plan.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
         return ToResponse(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan);
     }
 
@@ -224,27 +239,108 @@ public sealed class DemandService(
             return ToResponse(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan);
         }
 
-        await ReplacePlanContentsAsync(existingPlan, name.Trim(), weekStart, parsed, cancellationToken);
+        await UpdatePlanContentsAsync(existingPlan, name.Trim(), weekStart, parsed, cancellationToken);
+        db.ChangeTracker.Clear();
         return ToResponse(await LoadPlanAsync(existingPlan.Id, cancellationToken) ?? existingPlan);
     }
 
-    private async Task ReplacePlanContentsAsync(
+    private async Task UpdatePlanContentsAsync(
         DemandPlan plan,
         string name,
         DateOnly weekStart,
         ParsedDemand parsed,
         CancellationToken cancellationToken)
     {
-        db.DemandValues.RemoveRange(plan.Rows.SelectMany(row => row.Values));
-        db.DemandRows.RemoveRange(plan.Rows);
-        db.DemandColumns.RemoveRange(plan.Columns);
-        await db.SaveChangesAsync(cancellationToken);
-
         plan.Name = name;
         plan.WeekStart = weekStart;
         plan.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
-        AddParsedContents(plan, parsed);
+        var requestedColumnPositions = parsed.Columns
+            .Select(column => column.Position)
+            .ToHashSet();
+        var columnsByPosition = plan.Columns.ToDictionary(column => column.Position);
+
+        foreach (var parsedColumn in parsed.Columns)
+        {
+            if (columnsByPosition.ContainsKey(parsedColumn.Position))
+            {
+                continue;
+            }
+
+            var column = new DemandColumn
+            {
+                Id = Guid.NewGuid(),
+                DemandPlanId = plan.Id,
+                Position = parsedColumn.Position,
+                Label = GetColumnLabel(parsedColumn.Position)
+            };
+
+            plan.Columns.Add(column);
+            columnsByPosition[column.Position] = column;
+        }
+
+        var staleColumns = plan.Columns
+            .Where(column => !requestedColumnPositions.Contains(column.Position))
+            .ToList();
+        var requestedColumnIds = parsed.Columns
+            .Select(column => columnsByPosition[column.Position].Id)
+            .ToHashSet();
+
+        foreach (var staleColumn in staleColumns)
+        {
+            db.DemandColumns.Remove(staleColumn);
+        }
+
+        var requestedHours = parsed.Rows
+            .Select(row => row.Hour)
+            .ToHashSet();
+        var rowsByHour = plan.Rows.ToDictionary(row => row.Hour);
+
+        foreach (var parsedRow in parsed.Rows)
+        {
+            if (!rowsByHour.TryGetValue(parsedRow.Hour, out var row))
+            {
+                row = new DemandRow
+                {
+                    Id = Guid.NewGuid(),
+                    DemandPlanId = plan.Id,
+                    Hour = parsedRow.Hour
+                };
+                plan.Rows.Add(row);
+                rowsByHour[row.Hour] = row;
+            }
+
+            foreach (var parsedValue in parsedRow.Values)
+            {
+                var column = columnsByPosition[parsedValue.Position];
+                var value = row.Values.FirstOrDefault(item => item.DemandColumnId == column.Id);
+
+                if (value is null)
+                {
+                    value = new DemandValue
+                    {
+                        Id = Guid.NewGuid(),
+                        DemandRowId = row.Id,
+                        DemandColumnId = column.Id
+                    };
+                    row.Values.Add(value);
+                }
+
+                value.Deliveries = parsedValue.Deliveries;
+                value.Demand = parsedValue.Demand;
+            }
+
+            var staleValues = row.Values
+                .Where(value => !requestedColumnIds.Contains(value.DemandColumnId))
+                .ToList();
+            db.DemandValues.RemoveRange(staleValues);
+        }
+
+        var staleRows = plan.Rows
+            .Where(row => !requestedHours.Contains(row.Hour))
+            .ToList();
+        db.DemandRows.RemoveRange(staleRows);
+
         await db.SaveChangesAsync(cancellationToken);
     }
 
