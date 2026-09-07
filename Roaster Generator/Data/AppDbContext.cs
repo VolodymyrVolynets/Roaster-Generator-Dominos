@@ -12,6 +12,14 @@ public sealed class AppDbContext(
 
     public DbSet<Shift> Shifts => Set<Shift>();
 
+    public DbSet<DemandPlan> DemandPlans => Set<DemandPlan>();
+
+    public DbSet<DemandColumn> DemandColumns => Set<DemandColumn>();
+
+    public DbSet<DemandRow> DemandRows => Set<DemandRow>();
+
+    public DbSet<DemandValue> DemandValues => Set<DemandValue>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

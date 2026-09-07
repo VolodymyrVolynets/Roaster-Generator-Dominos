@@ -1,0 +1,65 @@
+namespace Roaster_Generator.Entities;
+
+public sealed class DemandPlan
+{
+    public Guid Id { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public DateOnly WeekStart { get; set; }
+
+    public DateTimeOffset CreatedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+
+    public ICollection<DemandColumn> Columns { get; set; } = new List<DemandColumn>();
+
+    public ICollection<DemandRow> Rows { get; set; } = new List<DemandRow>();
+}
+
+public sealed class DemandColumn
+{
+    public Guid Id { get; set; }
+
+    public Guid DemandPlanId { get; set; }
+
+    public int Position { get; set; }
+
+    public string Label { get; set; } = string.Empty;
+
+    public DemandPlan DemandPlan { get; set; } = null!;
+
+    public ICollection<DemandValue> Values { get; set; } = new List<DemandValue>();
+}
+
+public sealed class DemandRow
+{
+    public Guid Id { get; set; }
+
+    public Guid DemandPlanId { get; set; }
+
+    public int Hour { get; set; }
+
+    public DemandPlan DemandPlan { get; set; } = null!;
+
+    public ICollection<DemandValue> Values { get; set; } = new List<DemandValue>();
+}
+
+public sealed class DemandValue
+{
+    public Guid Id { get; set; }
+
+    public Guid DemandRowId { get; set; }
+
+    public Guid DemandColumnId { get; set; }
+
+    public decimal? Pizzas { get; set; }
+
+    public decimal? Deliveries { get; set; }
+
+    public int? Demand { get; set; }
+
+    public DemandRow Row { get; set; } = null!;
+
+    public DemandColumn Column { get; set; } = null!;
+}

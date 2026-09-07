@@ -21,6 +21,14 @@ function parseDate(dateValue) {
   return new Date(year, month - 1, day)
 }
 
+function getNextMondayValue() {
+  const date = new Date()
+  const day = date.getDay()
+  const daysUntilNextMonday = day === 0 ? 1 : 8 - day
+  date.setDate(date.getDate() + daysUntilNextMonday)
+  return date.toISOString().slice(0, 10)
+}
+
 function getShiftDuration(startTime, finishTime) {
   if (!startTime || !finishTime) {
     return null
@@ -137,6 +145,730 @@ function LoginView({ onLogin, error, isSubmitting }) {
   )
 }
 
+function DemandManager({ setErrorPopup }) {
+  const [plans, setPlans] = useState([])
+  const [selectedPlanId, setSelectedPlanId] = useState('')
+  const [plan, setPlan] = useState(null)
+  const [name, setName] = useState('Next week demand')
+  const [weekStart, setWeekStart] = useState(getNextMondayValue())
+  const [pasteContent, setPasteContent] = useState('')
+  const [status, setStatus] = useState({ status: 'idle', message: '' })
+
+  useEffect(() => {
+    fetchJson('/api/admin/demand')
+      .then((payload) => {
+        setPlans(payload)
+        if (payload.length > 0) {
+          setSelectedPlanId(String(payload[0].id))
+        }
+      })
+      .catch((error) => setErrorPopup(error.message))
+  }, [setErrorPopup])
+
+  useEffect(() => {
+    if (!selectedPlanId) {
+      setPlan(null)
+      return
+    }
+
+    fetchJson(`/api/admin/demand/${selectedPlanId}`)
+      .then((payload) => {
+        setPlan(payload)
+        setName(payload.name)
+        setWeekStart(payload.weekStart)
+        setStatus({ status: 'idle', message: '' })
+      })
+      .catch((error) => setErrorPopup(error.message))
+  }, [selectedPlanId, setErrorPopup])
+
+  function updateDemandValue(hour, position, field, rawValue) {
+    const value = rawValue === '' ? null : Number(rawValue)
+    const deliveries = field === 'deliveries'
+      ? value
+      : plan.rows.find((row) => row.hour === hour)?.values.find((item) => item.position === position)?.deliveries ?? null
+    const demand = deliveries === null || Number.isNaN(deliveries)
+      ? null
+      : Math.round(deliveries / 2.7)
+
+    setPlan((current) => ({
+      ...current,
+      rows: current.rows.map((row) => {
+        if (row.hour !== hour) {
+          return row
+        }
+
+        const existing = row.values.find((item) => item.position === position)
+        const nextValue = {
+          position,
+          pizzas: existing?.pizzas ?? null,
+          deliveries: existing?.deliveries ?? null,
+          demand: existing?.demand ?? null,
+          [field]: value,
+          demand,
+        }
+
+        return {
+          ...row,
+          values: [
+            ...row.values.filter((item) => item.position !== position),
+            nextValue,
+          ].sort((left, right) => left.position - right.position),
+        }
+      }),
+    }))
+    setStatus({ status: 'idle', message: '' })
+  }
+
+  async function importPaste() {
+    setStatus({ status: 'saving', message: '' })
+
+    try {
+      const payload = await fetchJson('/api/admin/demand/paste', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, weekStart, content: pasteContent }),
+      })
+      setPlan(payload)
+      setSelectedPlanId(String(payload.id))
+      setPasteContent('')
+      setStatus({ status: 'success', message: 'Demand imported.' })
+      await refreshPlans()
+    } catch (error) {
+      setStatus({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function importFile(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) {
+      return
+    }
+
+    setStatus({ status: 'saving', message: '' })
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('name', name)
+    formData.append('weekStart', weekStart)
+
+    try {
+      const payload = await fetchJson('/api/admin/demand/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      setPlan(payload)
+      setSelectedPlanId(String(payload.id))
+      setStatus({ status: 'success', message: 'Excel demand imported.' })
+      await refreshPlans()
+    } catch (error) {
+      setStatus({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function refreshPlans() {
+    const payload = await fetchJson('/api/admin/demand')
+    setPlans(payload)
+  }
+
+  async function savePlan(event) {
+    event.preventDefault()
+    setStatus({ status: 'saving', message: '' })
+
+    try {
+      const payload = await fetchJson(`/api/admin/demand/${selectedPlanId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          weekStart,
+          columns: plan.columns,
+          rows: plan.rows.map((row) => ({
+            hour: row.hour,
+            values: row.values.map((value) => ({
+              position: value.position,
+              pizzas: value.pizzas,
+              deliveries: value.deliveries,
+            })),
+          })),
+        }),
+      })
+      setPlan(payload)
+      setStatus({ status: 'success', message: 'Demand changes saved.' })
+      await refreshPlans()
+    } catch (error) {
+      setStatus({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function deletePlan() {
+    if (!selectedPlanId || !window.confirm('Delete this demand plan?')) {
+      return
+    }
+
+    try {
+      await fetchJson(`/api/admin/demand/${selectedPlanId}`, { method: 'DELETE' })
+      const remainingPlans = plans.filter((item) => String(item.id) !== selectedPlanId)
+      setPlans(remainingPlans)
+      setSelectedPlanId(remainingPlans[0] ? String(remainingPlans[0].id) : '')
+      setPlan(null)
+      setStatus({ status: 'success', message: 'Demand plan deleted.' })
+    } catch (error) {
+      setErrorPopup(error.message)
+    }
+  }
+
+  function updateColumnLabel(position, label) {
+    setPlan((current) => ({
+      ...current,
+      columns: current.columns.map((column) =>
+        column.position === position ? { ...column, label } : column,
+      ),
+    }))
+    setStatus({ status: 'idle', message: '' })
+  }
+
+  return (
+    <section className="admin-tools demand-tools">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Administration</span>
+          <h2>Demand input</h2>
+        </div>
+        {plans.length > 0 && (
+          <select
+            className="demand-plan-select"
+            value={selectedPlanId}
+            onChange={(event) => setSelectedPlanId(event.target.value)}
+            aria-label="Demand plan"
+          >
+            {plans.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} ({item.weekStart})
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <p className="demand-help">
+        Import an Excel/CSV/table paste. Every two non-empty columns are treated as pizzas and deliveries;
+        demand is calculated as deliveries ÷ 2.7 and rounded.
+      </p>
+
+      <div className="demand-import-form">
+        <label>
+          Plan name
+          <input value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label>
+          Week starting Monday
+          <input
+            type="date"
+            value={weekStart}
+            onChange={(event) => setWeekStart(event.target.value)}
+          />
+        </label>
+      </div>
+
+      <label className="demand-paste-label">
+        Paste demand table
+        <textarea
+          value={pasteContent}
+          onChange={(event) => setPasteContent(event.target.value)}
+          placeholder="Paste rows from Excel, CSV, TSV, or a Markdown table…"
+          rows={6}
+        />
+      </label>
+
+      <div className="demand-actions">
+        <button type="button" onClick={importPaste} disabled={!pasteContent || status.status === 'saving'}>
+          {status.status === 'saving' ? 'Importing…' : 'Import pasted table'}
+        </button>
+        <label className="secondary-button file-button">
+          Import Excel
+          <input type="file" accept=".xlsx,.xlsm" onChange={importFile} />
+        </label>
+      </div>
+
+      {status.message && (
+        <p className={`save-message ${status.status}`}>{status.message}</p>
+      )}
+
+      {plan && (
+        <form onSubmit={savePlan}>
+          <div className="demand-table-wrapper">
+            <table className="demand-table">
+              <thead>
+                <tr>
+                  <th rowSpan="2">Hour</th>
+                  {plan.columns.map((column) => (
+                    <th key={column.position} colSpan="3">
+                      <input
+                        value={column.label}
+                        onChange={(event) => updateColumnLabel(column.position, event.target.value)}
+                        aria-label={`Column ${column.position + 1} label`}
+                      />
+                    </th>
+                  ))}
+                </tr>
+                <tr>
+                  {plan.columns.flatMap((column) => [
+                    <th key={`${column.position}-pizzas`}>Pizzas</th>,
+                    <th key={`${column.position}-deliveries`}>Deliveries</th>,
+                    <th key={`${column.position}-demand`}>Demand</th>,
+                  ])}
+                </tr>
+              </thead>
+              <tbody>
+                {plan.rows.map((row) => (
+                  <tr key={row.hour}>
+                    <th>{String(row.hour).padStart(2, '0')}</th>
+                    {plan.columns.flatMap((column) => {
+                      const value = row.values.find((item) => item.position === column.position) || {}
+                      return [
+                        <td key={`${row.hour}-${column.position}-pizzas`}>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={value.pizzas ?? ''}
+                            onChange={(event) => updateDemandValue(
+                              row.hour,
+                              column.position,
+                              'pizzas',
+                              event.target.value,
+                            )}
+                          />
+                        </td>,
+                        <td key={`${row.hour}-${column.position}-deliveries`}>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={value.deliveries ?? ''}
+                            onChange={(event) => updateDemandValue(
+                              row.hour,
+                              column.position,
+                              'deliveries',
+                              event.target.value,
+                            )}
+                          />
+                        </td>,
+                        <td key={`${row.hour}-${column.position}-demand`} className="demand-result">
+                          {value.demand ?? '—'}
+                        </td>,
+                      ]
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="demand-actions">
+            <button type="submit" disabled={status.status === 'saving'}>Save demand changes</button>
+            <button type="button" className="secondary-button" onClick={deletePlan}>Delete plan</button>
+          </div>
+        </form>
+      )}
+    </section>
+  )
+}
+
+function WeekSelector({ weekOffset, onChange, disabled = false }) {
+  return (
+    <label className="week-selector">
+      Week
+      <select
+        value={weekOffset}
+        onChange={(event) => onChange(Number(event.target.value))}
+        disabled={disabled}
+      >
+        <option value={1}>Next week</option>
+        <option value={2}>Week after next</option>
+        <option value={3}>Three weeks ahead</option>
+      </select>
+    </label>
+  )
+}
+
+function AdminConsole({
+  authState,
+  errorPopup,
+  employees,
+  employeesState,
+  selectedEmployeeId,
+  setSelectedEmployeeId,
+  weekOffset,
+  setWeekOffset,
+  scheduleState,
+  schedule,
+  saveState,
+  saveSchedule,
+  updateDay,
+  resetDay,
+  employeeForm,
+  updateEmployeeForm,
+  isCreatingEmployee,
+  setIsCreatingEmployee,
+  employeeEditorOpen,
+  setEmployeeEditorOpen,
+  employeeSaveState,
+  saveEmployee,
+  changeEmployeeStatus,
+  removeEmployee,
+  availability,
+  setErrorPopup,
+  logout,
+}) {
+  const [activeTab, setActiveTab] = useState('employees')
+
+  function openEmployee(employeeId) {
+    setSelectedEmployeeId(String(employeeId))
+    setIsCreatingEmployee(false)
+    setEmployeeEditorOpen(true)
+  }
+
+  function addEmployee() {
+    setSelectedEmployeeId('')
+    setIsCreatingEmployee(true)
+    setEmployeeEditorOpen(true)
+    updateEmployeeForm('employeeNumber', '')
+    updateEmployeeForm('firstName', '')
+    updateEmployeeForm('lastName', '')
+    updateEmployeeForm('phoneNumber', '')
+  }
+
+  function closeEmployeeEditor() {
+    setIsCreatingEmployee(false)
+    setEmployeeEditorOpen(false)
+  }
+
+  function selectScheduleEmployee(event) {
+    setSelectedEmployeeId(event.target.value)
+    setWeekOffset(minWeekOffset)
+  }
+
+  const selectedEmployee = employees.find(
+    (employee) => String(employee.id) === selectedEmployeeId,
+  )
+
+  return (
+    <>
+      <ErrorPopup message={errorPopup} onClose={() => setErrorPopup('')} />
+      <main className="page-shell">
+        <section className="app-card">
+          <header className="page-header">
+            <span className="eyebrow">Roaster Generator</span>
+            <h1>Admin console</h1>
+            <p className="lead">Manage employees, review availability, and prepare demand data.</p>
+          </header>
+
+          <div className="app-toolbar">
+            <span className="role-badge">Admin</span>
+            <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
+          </div>
+
+          <nav className="admin-tabs" aria-label="Administrator sections">
+            <button
+              type="button"
+              className={activeTab === 'employees' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => setActiveTab('employees')}
+            >
+              Employees
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'roster' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => setActiveTab('roster')}
+            >
+              Availability roster
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'employee-availability' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => setActiveTab('employee-availability')}
+            >
+              Employee availability
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'demand' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => setActiveTab('demand')}
+            >
+              Demand
+            </button>
+          </nav>
+
+          {activeTab === 'employees' && (
+            <section className="admin-tools">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Administration</span>
+                  <h2>Employees</h2>
+                </div>
+                <button type="button" onClick={addEmployee}>Add employee</button>
+              </div>
+
+              {employeesState.status === 'loading' && (
+                <p className="message info-message">Loading employees…</p>
+              )}
+              {employeesState.status === 'error' && (
+                <p className="message error-message">Unable to load employees.</p>
+              )}
+
+              <div className="employee-card-grid">
+                {employees.map((employee) => (
+                  <button
+                    type="button"
+                    className={`employee-card ${employee.isActive ? '' : 'inactive'}`}
+                    key={employee.id}
+                    onClick={() => openEmployee(employee.id)}
+                  >
+                    <strong>{employee.firstName} {employee.lastName}</strong>
+                    <span>Employee number: {employee.employeeNumber}</span>
+                    <span>Phone: {employee.phoneNumber || 'Not set'}</span>
+                    <span className="employee-card-status">
+                      {employee.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {employees.length === 0 && employeesState.status === 'success' && (
+                <p className="message info-message">No employees are available yet.</p>
+              )}
+
+              {employeeEditorOpen && (
+                <section className="employee-editor-card">
+                  <div className="section-heading">
+                    <div>
+                      <span className="eyebrow">Employee card</span>
+                      <h2>{isCreatingEmployee ? 'Add employee' : 'Edit employee'}</h2>
+                    </div>
+                    <button type="button" className="secondary-button" onClick={closeEmployeeEditor}>
+                      Close
+                    </button>
+                  </div>
+
+                  <form className="employee-form" onSubmit={saveEmployee}>
+                    <label htmlFor="admin-employee-number">Employee number</label>
+                    <input
+                      id="admin-employee-number"
+                      value={employeeForm.employeeNumber}
+                      onChange={(event) => updateEmployeeForm('employeeNumber', event.target.value)}
+                      required
+                    />
+                    <label htmlFor="admin-employee-first-name">First name</label>
+                    <input
+                      id="admin-employee-first-name"
+                      value={employeeForm.firstName}
+                      onChange={(event) => updateEmployeeForm('firstName', event.target.value)}
+                      required
+                    />
+                    <label htmlFor="admin-employee-last-name">Last name</label>
+                    <input
+                      id="admin-employee-last-name"
+                      value={employeeForm.lastName}
+                      onChange={(event) => updateEmployeeForm('lastName', event.target.value)}
+                      required
+                    />
+                    <label htmlFor="admin-employee-phone">Phone number</label>
+                    <input
+                      id="admin-employee-phone"
+                      value={employeeForm.phoneNumber}
+                      onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
+                    />
+
+                    <div className="employee-form-actions">
+                      <button type="submit" disabled={employeeSaveState.status === 'saving'}>
+                        {employeeSaveState.status === 'saving' ? 'Saving…' : 'Save employee'}
+                      </button>
+                      {!isCreatingEmployee && selectedEmployee && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => changeEmployeeStatus(selectedEmployee.isActive ? 'deactivate' : 'reactivate')}
+                        >
+                          {selectedEmployee.isActive ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                      )}
+                      {!isCreatingEmployee && selectedEmployee && (
+                        <button type="button" className="danger-button" onClick={removeEmployee}>
+                          Remove completely
+                        </button>
+                      )}
+                    </div>
+                    {employeeSaveState.message && (
+                      <p className={`save-message ${employeeSaveState.status}`}>
+                        {employeeSaveState.message}
+                      </p>
+                    )}
+                  </form>
+                </section>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'roster' && (
+            <section className="availability-section admin-tools">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Admin overview</span>
+                  <h2>Full availability roster</h2>
+                </div>
+                <WeekSelector weekOffset={weekOffset} onChange={setWeekOffset} />
+              </div>
+
+              {availability && (
+                <>
+                  <div className="week-range availability-week-range">
+                    {dateFormatter.format(parseDate(availability.weekStart))} –{' '}
+                    {dateFormatter.format(parseDate(availability.weekEnd))}
+                  </div>
+                  <div className="availability-table" role="table">
+                    <div className="availability-row availability-header" role="row">
+                      <strong>Employee</strong>
+                      {availability.employees[0]?.days.map((day) => (
+                        <span key={day.date}>{day.dayOfWeek.slice(0, 3)}</span>
+                      ))}
+                    </div>
+                    {availability.employees.map((employeeSchedule) => (
+                      <div className="availability-row" role="row" key={employeeSchedule.employeeId}>
+                        <strong>{employeeSchedule.employeeName}</strong>
+                        {employeeSchedule.days.map((day) => (
+                          <span key={day.date}>
+                            {day.startTime && day.finishTime
+                              ? `${day.startTime}–${day.finishTime}`
+                              : 'Off'}
+                          </span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  {availability.employees.length === 0 && (
+                    <p className="message info-message">No active employees.</p>
+                  )}
+                </>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'employee-availability' && (
+            <section className="admin-tools">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Administration</span>
+                  <h2>Employee availability</h2>
+                </div>
+                <WeekSelector weekOffset={weekOffset} onChange={setWeekOffset} />
+              </div>
+
+              <div className="employee-picker">
+                <label htmlFor="schedule-employee">Employee</label>
+                <select
+                  id="schedule-employee"
+                  value={selectedEmployeeId}
+                  onChange={selectScheduleEmployee}
+                  disabled={employeesState.status !== 'success' || employees.length === 0}
+                >
+                  <option value="">Select an employee</option>
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.firstName} {employee.lastName}{employee.isActive ? '' : ' (inactive)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {scheduleState.status === 'loading' && (
+                <p className="message info-message">Loading week…</p>
+              )}
+              {scheduleState.status === 'error' && (
+                <p className="message error-message">Unable to load employee availability.</p>
+              )}
+
+              {schedule && (
+                <form className="schedule-form" onSubmit={saveSchedule}>
+                  <div className="schedule-heading">
+                    <div>
+                      <span className="eyebrow">Schedule for</span>
+                      <h2>{schedule.employeeName}</h2>
+                    </div>
+                    <span className="week-range">
+                      {dateFormatter.format(parseDate(schedule.weekStart))} –{' '}
+                      {dateFormatter.format(parseDate(schedule.weekEnd))}
+                    </span>
+                  </div>
+
+                  <div className="schedule-table" role="table" aria-label="Employee schedule">
+                    <div className="schedule-row schedule-header" role="row">
+                      <span role="columnheader">Day</span>
+                      <span role="columnheader">Start time</span>
+                      <span role="columnheader">Finish time</span>
+                      <span role="columnheader">Reset</span>
+                    </div>
+                    {schedule.days.map((day) => (
+                      <div className="schedule-row" role="row" key={day.date}>
+                        <div className="day-cell" role="cell">
+                          <strong>{day.dayOfWeek}</strong>
+                          <span>{dateFormatter.format(parseDate(day.date))}</span>
+                          {getShiftDuration(day.startTime, day.finishTime) && (
+                            <span className="shift-duration">
+                              {getShiftDuration(day.startTime, day.finishTime)}
+                            </span>
+                          )}
+                        </div>
+                        <div role="cell">
+                          <TimeSelector
+                            id={`${day.date}-admin-start`}
+                            label={`${day.dayOfWeek} start time`}
+                            value={day.startTime || ''}
+                            onChange={(value) => updateDay(day.date, 'startTime', value)}
+                          />
+                        </div>
+                        <div role="cell">
+                          <TimeSelector
+                            id={`${day.date}-admin-finish`}
+                            label={`${day.dayOfWeek} finish time`}
+                            value={day.finishTime || ''}
+                            onChange={(value) => updateDay(day.date, 'finishTime', value)}
+                          />
+                        </div>
+                        <div role="cell">
+                          <button
+                            type="button"
+                            className="reset-button"
+                            onClick={() => resetDay(day.date)}
+                            disabled={!day.startTime && !day.finishTime}
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="form-footer">
+                    <span className={`save-message ${saveState.status}`} aria-live="polite">
+                      {saveState.message || 'Leave both fields empty for a day off.'}
+                    </span>
+                    <button type="submit" disabled={saveState.status === 'saving'}>
+                      {saveState.status === 'saving' ? 'Saving…' : 'Save availability'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} />}
+        </section>
+      </main>
+    </>
+  )
+}
+
 function TimeSelector({ id, label, value, onChange }) {
   const selectedHour = value ? value.split(':')[0] : ''
 
@@ -172,6 +904,7 @@ function App() {
   const [errorPopup, setErrorPopup] = useState('')
   const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm)
   const [isCreatingEmployee, setIsCreatingEmployee] = useState(false)
+  const [employeeEditorOpen, setEmployeeEditorOpen] = useState(false)
   const [employeeSaveState, setEmployeeSaveState] = useState({ status: 'idle' })
   const [availability, setAvailability] = useState(null)
 
@@ -341,6 +1074,7 @@ function App() {
       })
       setSelectedEmployeeId(String(savedEmployee.id))
       setIsCreatingEmployee(false)
+      setEmployeeEditorOpen(true)
       setEmployeeSaveState({ status: 'success', message: 'Employee saved.' })
     } catch (error) {
       setEmployeeSaveState({ status: 'error', message: error.message })
@@ -365,6 +1099,25 @@ function App() {
         status: 'success',
         message: action === 'deactivate' ? 'Employee deactivated.' : 'Employee reactivated.',
       })
+    } catch (error) {
+      setEmployeeSaveState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function removeEmployee() {
+    if (!selectedEmployeeId || !window.confirm('Remove this employee and their login completely?')) {
+      return
+    }
+
+    try {
+      await fetchJson(`/api/admin/employees/${selectedEmployeeId}`, { method: 'DELETE' })
+      setEmployees((current) => current.filter((employee) => String(employee.id) !== selectedEmployeeId))
+      setSelectedEmployeeId('')
+      setEmployeeForm(emptyEmployeeForm)
+      setIsCreatingEmployee(false)
+      setEmployeeEditorOpen(false)
+      setEmployeeSaveState({ status: 'success', message: 'Employee removed completely.' })
     } catch (error) {
       setEmployeeSaveState({ status: 'error', message: error.message })
       setErrorPopup(error.message)
@@ -415,6 +1168,40 @@ function App() {
           isSubmitting={authState.status === 'logging-in'}
         />
       </>
+    )
+  }
+
+  if (isAdmin) {
+    return (
+      <AdminConsole
+        authState={authState}
+        errorPopup={errorPopup}
+        employees={employees}
+        employeesState={employeesState}
+        selectedEmployeeId={selectedEmployeeId}
+        setSelectedEmployeeId={setSelectedEmployeeId}
+        weekOffset={weekOffset}
+        setWeekOffset={setWeekOffset}
+        scheduleState={scheduleState}
+        schedule={schedule}
+        saveState={saveState}
+        saveSchedule={saveSchedule}
+        updateDay={updateDay}
+        resetDay={resetDay}
+        employeeForm={employeeForm}
+        updateEmployeeForm={updateEmployeeForm}
+        isCreatingEmployee={isCreatingEmployee}
+        setIsCreatingEmployee={setIsCreatingEmployee}
+        employeeEditorOpen={employeeEditorOpen}
+        setEmployeeEditorOpen={setEmployeeEditorOpen}
+        employeeSaveState={employeeSaveState}
+        saveEmployee={saveEmployee}
+        changeEmployeeStatus={changeEmployeeStatus}
+        removeEmployee={removeEmployee}
+        availability={availability}
+        setErrorPopup={setErrorPopup}
+        logout={logout}
+      />
     )
   }
 
@@ -562,6 +1349,8 @@ function App() {
             )}
           </section>
         )}
+
+        {isAdmin && <DemandManager setErrorPopup={setErrorPopup} />}
 
         {isAdmin && availability && (
           <section className="availability-section">

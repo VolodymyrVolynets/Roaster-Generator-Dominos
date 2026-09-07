@@ -104,6 +104,30 @@ h2 {
   margin-top: 24px;
 }
 
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 28px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.admin-tab {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.62);
+  font-size: 0.86rem;
+}
+
+.admin-tab.active {
+  border-color: rgba(125, 211, 252, 0.75);
+  color: #082f49;
+  background: #7dd3fc;
+}
+
 .role-badge {
   padding: 6px 10px;
   border: 1px solid rgba(125, 211, 252, 0.35);
@@ -197,12 +221,136 @@ input:focus {
 }
 
 .admin-tools,
-.availability-section {
+.availability-section,
+.demand-tools {
   margin-top: 32px;
   padding: 20px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.62);
+}
+
+.demand-plan-select {
+  width: min(100%, 280px);
+}
+
+.demand-help {
+  margin: 0 0 18px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.demand-import-form {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.demand-import-form label,
+.demand-paste-label {
+  display: grid;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.demand-paste-label textarea {
+  width: 100%;
+  min-height: 130px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.96);
+  font: inherit;
+  outline: none;
+}
+
+.demand-paste-label textarea:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+}
+
+.demand-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.file-button input {
+  display: none;
+}
+
+.demand-table-wrapper {
+  max-width: 100%;
+  margin-top: 20px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+}
+
+.demand-table {
+  min-width: 900px;
+  border-collapse: collapse;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+
+.demand-table th,
+.demand-table td {
+  min-width: 76px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.demand-table thead th {
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.82);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.demand-table thead th input {
+  min-height: 32px;
+  min-width: 100px;
+  padding: 0 6px;
+  color: #f8fafc;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.demand-table tbody th {
+  color: #f8fafc;
+  background: rgba(30, 41, 59, 0.38);
+}
+
+.demand-table td input {
+  min-height: 34px;
+  min-width: 66px;
+  padding: 0 6px;
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.demand-result {
+  color: #6ee7b7;
+  font-weight: 800;
 }
 
 .section-heading {
@@ -229,6 +377,83 @@ input:focus {
 .employee-form-actions,
 .employee-form .save-message {
   grid-column: 1 / -1;
+}
+
+.employee-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.employee-card {
+  display: grid;
+  min-height: 150px;
+  padding: 16px;
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.65);
+  text-align: left;
+}
+
+.employee-card:hover:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.8);
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.employee-card strong {
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.employee-card span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.employee-card-status {
+  margin-top: auto;
+  color: #6ee7b7 !important;
+  font-weight: 800;
+}
+
+.employee-card.inactive {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.employee-card.inactive .employee-card-status {
+  color: #fca5a5 !important;
+}
+
+.employee-editor-card {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.danger-button {
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.45);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: rgba(127, 29, 29, 0.75);
+}
+
+.week-selector {
+  display: grid;
+  min-width: 220px;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.availability-week-range {
+  margin: -4px 0 14px;
+  text-align: left;
 }
 
 .availability-table {
@@ -513,6 +738,27 @@ select:disabled {
   }
 
   .employee-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-tabs {
+    flex-direction: column;
+  }
+
+  .admin-tab {
+    width: 100%;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .week-selector {
+    width: 100%;
+  }
+
+  .demand-import-form {
     grid-template-columns: 1fr;
   }
 
