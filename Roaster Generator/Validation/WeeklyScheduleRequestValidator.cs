@@ -63,7 +63,6 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
                 }
             });
     }
-
     
     private void ValidateShopHours(
         ScheduleDayRequest day,
