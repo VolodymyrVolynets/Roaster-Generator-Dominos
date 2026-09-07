@@ -1,8 +1,10 @@
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Data;
 using Roaster_Generator.Services;
+using Roaster_Generator.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +15,7 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 builder.Services.AddScoped<WeeklyScheduleService>();
+builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
 
 var app = builder.Build();
 
@@ -58,24 +61,43 @@ app.MapGet("/api/employees/{employeeId:guid}/schedule/next-week", async Task<IRe
 app.MapPut("/api/employees/{employeeId:guid}/schedule/next-week", async Task<IResult> (
     Guid employeeId,
     WeeklyScheduleRequest request,
+    IValidator<WeeklyScheduleRequest> validator,
     WeeklyScheduleService schedules,
     CancellationToken cancellationToken) =>
 {
-    try
-    {
-        var schedule = await schedules.ReplaceNextWeekAsync(
-            employeeId,
-            request,
-            cancellationToken);
+    var validationResult = await validator.ValidateAsync(request, cancellationToken);
 
-        return schedule is null
-            ? Results.NotFound(new { message = "Employee not found." })
-            : Results.Ok(schedule);
-    }
-    catch (ScheduleValidationException exception)
+    if (!validationResult.IsValid)
     {
-        return Results.BadRequest(new { message = exception.Message });
+        var errors = validationResult.Errors
+            .GroupBy(error => error.PropertyName)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(error => error.ErrorMessage).ToArray());
+
+        return Results.ValidationProblem(
+            errors,
+            title: "The shift schedule is invalid.");
     }
+
+    if (employeeId == Guid.Empty)
+    {
+        return Results.ValidationProblem(
+            new Dictionary<string, string[]>
+            {
+                ["employeeId"] = ["Employee ID must not be empty."]
+            },
+            title: "The shift schedule is invalid.");
+    }
+
+    var schedule = await schedules.ReplaceNextWeekAsync(
+        employeeId,
+        request,
+        cancellationToken);
+
+    return schedule is null
+        ? Results.NotFound(new { message = "Employee not found." })
+        : Results.Ok(schedule);
 });
 
 app.MapGet("/api/hello", async (

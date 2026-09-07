@@ -46,7 +46,6 @@ public sealed class WeeklyScheduleService(AppDbContext db)
         }
 
         var weekStart = GetNextWeekMonday();
-        ValidateRequest(request, weekStart);
 
         var weekEnd = weekStart.AddDays(7);
         var existingShifts = await db.Shifts
@@ -92,43 +91,6 @@ public sealed class WeeklyScheduleService(AppDbContext db)
         return today.AddDays(daysUntilNextMonday);
     }
 
-    private static void ValidateRequest(WeeklyScheduleRequest request, DateOnly weekStart)
-    {
-        if (request.Days.Count != 7)
-        {
-            throw new ScheduleValidationException("Exactly seven days are required.");
-        }
-
-        for (var index = 0; index < request.Days.Count; index++)
-        {
-            var day = request.Days[index];
-            var expectedDate = weekStart.AddDays(index);
-
-            if (day.Date != expectedDate)
-            {
-                throw new ScheduleValidationException(
-                    $"Schedule dates must cover {weekStart:yyyy-MM-dd} through {weekStart.AddDays(6):yyyy-MM-dd}.");
-            }
-
-            if (day.StartTime is null && day.FinishTime is null)
-            {
-                continue;
-            }
-
-            if (day.StartTime is null || day.FinishTime is null)
-            {
-                throw new ScheduleValidationException(
-                    $"Both start and finish times are required for {day.Date:yyyy-MM-dd}.");
-            }
-
-            if (day.FinishTime <= day.StartTime)
-            {
-                throw new ScheduleValidationException(
-                    $"Finish time must be after start time for {day.Date:yyyy-MM-dd}.");
-            }
-        }
-    }
-
     private static WeeklyScheduleResponse BuildResponse(
         Employee employee,
         DateOnly weekStart,
@@ -165,5 +127,3 @@ public sealed class WeeklyScheduleService(AppDbContext db)
     private static string? FormatTime(TimeOnly? time) =>
         time?.ToString("HH:mm", CultureInfo.InvariantCulture);
 }
-
-public sealed class ScheduleValidationException(string message) : Exception(message);
