@@ -854,6 +854,17 @@ input:focus {
   gap: 12px;
 }
 
+.employee-active-count {
+  margin: 6px 0 0;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.employee-active-count strong {
+  color: #6ee7b7;
+  font-size: 1.15rem;
+}
+
 .employee-card {
   display: grid;
   min-height: 150px;

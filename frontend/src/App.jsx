@@ -603,6 +603,7 @@ function AdminConsole({
   const selectedEmployee = employees.find(
     (employee) => String(employee.id) === selectedEmployeeId,
   )
+  const activeEmployeeCount = employees.filter((employee) => employee.isActive).length
 
   return (
     <>
@@ -671,6 +672,10 @@ function AdminConsole({
                 <div>
                   <span className="eyebrow">Administration</span>
                   <h2>Employees</h2>
+                  <p className="employee-active-count" aria-live="polite">
+                    <strong>{employeesState.status === 'success' ? activeEmployeeCount : '—'}</strong>{' '}
+                    active {activeEmployeeCount === 1 ? 'employee' : 'employees'}
+                  </p>
                 </div>
                 <button type="button" onClick={addEmployee}>Add employee</button>
               </div>
