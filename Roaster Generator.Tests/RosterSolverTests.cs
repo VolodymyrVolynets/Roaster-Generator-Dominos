@@ -309,7 +309,8 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     public void RetainsBusinessDateAndExtendedHoursForAnOvernightShift()
     {
         var employee = Driver();
-        var input = Input([employee], [Available(employee, Monday, 21, 3)], Demand(Monday, 21, 6));
+        var input = Input([employee], [Available(employee, Monday, 21, 3)], Demand(Monday, 21, 6),
+            options: new RosterSolverOptions { LatestShiftStartHour = 22, MaxSolveSeconds = 2 });
 
         var result = solver.Solve(input);
 
@@ -329,7 +330,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         var result = solver.Solve(input);
 
         AssertInfeasible(result);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("22:00", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("20:00", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -341,7 +342,8 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         var tuesday = Monday.AddDays(1);
         var input = Input([employee],
             [Available(employee, Monday, 21, 3), Available(employee, tuesday, secondStartHour, secondStartHour + 6)],
-            [.. Demand(Monday, 21, 6), .. Demand(tuesday, secondStartHour, 6)]);
+            [.. Demand(Monday, 21, 6), .. Demand(tuesday, secondStartHour, 6)],
+            options: new RosterSolverOptions { LatestShiftStartHour = 22, MaxSolveSeconds = 2 });
 
         var result = solver.Solve(input);
 
@@ -678,7 +680,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         Assert.Equal(result.TotalDemandHours, result.TotalScheduledHours);
         Assert.Equal(result.TotalScheduledHours, result.Shifts.Sum(shift => shift.DurationHours));
         Assert.All(result.Shifts, shift => Assert.InRange(shift.DurationHours, 3, 10));
-        Assert.All(result.Shifts, shift => Assert.InRange(shift.StartHour, 6, 22));
+        Assert.All(result.Shifts, shift => Assert.InRange(shift.StartHour, 6, input.Options.LatestShiftStartHour));
         Assert.All(result.Shifts.GroupBy(shift => (shift.EmployeeId, shift.Date)), group => Assert.Single(group));
         var demand = input.Demand.ToDictionary(slot => (slot.Date, slot.Hour), slot => slot.RequiredDrivers);
         for (var day = 0; day < 7; day++)

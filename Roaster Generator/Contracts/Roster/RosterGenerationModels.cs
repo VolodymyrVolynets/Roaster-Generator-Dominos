@@ -76,6 +76,26 @@ public sealed class RosterPlanResponse
     public IReadOnlyList<RosterEmployeeResponse> Employees { get; init; } = [];
 }
 
+public sealed class RosterPlanUpdateRequest
+{
+    public DateOnly WeekStart { get; init; }
+
+    public List<RosterShiftUpdateRequest> Shifts { get; init; } = [];
+}
+
+public sealed class RosterShiftUpdateRequest
+{
+    public Guid EmployeeId { get; init; }
+
+    public DateOnly Date { get; init; }
+
+    /// <summary>Absolute business-day hour, 0–47. Starts after midnight are rejected by validation.</summary>
+    public int StartHour { get; init; }
+
+    /// <summary>Absolute business-day hour, 0–48. Values above 24 represent an overnight finish.</summary>
+    public int FinishHour { get; init; }
+}
+
 public sealed class RosterWeekSummaryResponse
 {
     public DateOnly WeekStart { get; init; }
@@ -183,6 +203,7 @@ public sealed class RosterSettingsRequest : IValidatableObject
     [Range(0, 1000)] public int ShortBreakPenalty { get; set; } = 100;
     [Range(0, 24)] public int MinimumRestHours { get; set; } = 8;
     [Range(0, 48)] public int PreferredRestHours { get; set; } = 12;
+    [Range(6, 22)] public int LatestShiftStartHour { get; set; } = 20;
     [Range(1, 120)] public int MaxSolveSeconds { get; set; } = 20;
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

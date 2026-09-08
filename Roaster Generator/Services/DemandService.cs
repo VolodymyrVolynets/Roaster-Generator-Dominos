@@ -16,6 +16,7 @@ public sealed class DemandService(
     IOptions<ShopHoursOptions> shopHoursOptions)
 {
     private const decimal DeliveriesPerEmployee = 2.7m;
+    private const decimal SundayPayRateMultiplier = 1.25m;
     private readonly ShopHoursOptions shopHours = shopHoursOptions.Value;
     private static readonly string[] DayLabels =
     [
@@ -43,7 +44,9 @@ public sealed class DemandService(
                 WeekStart = plan.WeekStart,
                 UpdatedAtUtc = plan.UpdatedAtUtc,
                 RowCount = plan.Rows.Count,
-                ColumnCount = plan.Columns.Count
+                ColumnCount = plan.Columns.Count,
+                HourlyRate = plan.HourlyRate,
+                WeeklyTargetSales = plan.Columns.Sum(column => column.TargetSales)
             })
             .ToListAsync(cancellationToken);
     }
@@ -147,6 +150,16 @@ public sealed class DemandService(
             throw new DemandValidationException("Demand cannot be negative.");
         }
 
+        if (request.HourlyRate < 0)
+        {
+            throw new DemandValidationException("Hourly rate cannot be negative.");
+        }
+
+        if (request.Columns.Any(column => column.TargetSales < 0))
+        {
+            throw new DemandValidationException("Target sales cannot be negative.");
+        }
+
         var otherPlan = await db.DemandPlans
             .AsNoTracking()
             .SingleOrDefaultAsync(
@@ -201,6 +214,12 @@ public sealed class DemandService(
 
         plan.Name = request.Name.Trim();
         plan.WeekStart = request.WeekStart;
+        plan.HourlyRate = request.HourlyRate;
+        foreach (var columnRequest in request.Columns)
+        {
+            plan.Columns.Single(column => column.Position == columnRequest.Position).TargetSales =
+                columnRequest.TargetSales;
+        }
         plan.UpdatedAtUtc = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         return ToResponse(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan);
@@ -272,7 +291,8 @@ public sealed class DemandService(
                 Id = Guid.NewGuid(),
                 DemandPlanId = plan.Id,
                 Position = parsedColumn.Position,
-                Label = GetColumnLabel(parsedColumn.Position)
+                Label = GetColumnLabel(parsedColumn.Position),
+                TargetSales = 0m
             };
 
             plan.Columns.Add(column);
@@ -371,7 +391,8 @@ public sealed class DemandService(
                 Id = Guid.NewGuid(),
                 DemandPlanId = plan.Id,
                 Position = parsedColumn.Position,
-                Label = GetColumnLabel(parsedColumn.Position)
+                Label = GetColumnLabel(parsedColumn.Position),
+                TargetSales = 0m
             };
 
             plan.Columns.Add(column);
@@ -428,10 +449,35 @@ public sealed class DemandService(
             {
                 Position = column.Position,
                 Label = GetColumnLabel(column.Position),
-                TotalHours = CalculateTotalHours(plan, column)
+                TotalHours = CalculateTotalHours(plan, column),
+                TargetSales = column.TargetSales
             })
             .ToList();
         var columnsById = plan.Columns.ToDictionary(column => column.Id);
+        var dailyLabour = columns
+            .Select(column =>
+            {
+                var requiredDriverHours = column.TotalHours;
+                var appliedHourlyRate = AppliedHourlyRate(column.Position, plan.HourlyRate);
+                var labourCost = Math.Round(requiredDriverHours * appliedHourlyRate, 2, MidpointRounding.AwayFromZero);
+                var labourPercentage = column.TargetSales > 0m
+                    ? Math.Round(labourCost / column.TargetSales * 100m, 2, MidpointRounding.AwayFromZero)
+                    : (decimal?)null;
+
+                return new DemandLabourDayResponse
+                {
+                    Position = column.Position,
+                    Label = column.Label,
+                    TargetSales = column.TargetSales,
+                    RequiredDriverHours = requiredDriverHours,
+                    AppliedHourlyRate = appliedHourlyRate,
+                    LabourCost = labourCost,
+                    LabourPercentage = labourPercentage
+                };
+            })
+            .ToList();
+        var weeklyTargetSales = dailyLabour.Sum(item => item.TargetSales);
+        var weeklyLabourCost = Math.Round(dailyLabour.Sum(item => item.LabourCost), 2, MidpointRounding.AwayFromZero);
 
         return new DemandPlanResponse
         {
@@ -439,7 +485,14 @@ public sealed class DemandService(
             Name = plan.Name,
             WeekStart = plan.WeekStart,
             UpdatedAtUtc = plan.UpdatedAtUtc,
+            HourlyRate = plan.HourlyRate,
+            WeeklyTargetSales = weeklyTargetSales,
+            WeeklyLabourCost = weeklyLabourCost,
+            WeeklyLabourPercentage = weeklyTargetSales > 0m
+                ? Math.Round(weeklyLabourCost / weeklyTargetSales * 100m, 2, MidpointRounding.AwayFromZero)
+                : null,
             Columns = columns,
+            DailyLabour = dailyLabour,
             Rows = plan.Rows
                 .OrderBy(row => GetDisplayHourOrder(row.Hour))
                 .Select(row => new DemandRowResponse
@@ -459,6 +512,11 @@ public sealed class DemandService(
                 .ToList()
         };
     }
+
+    private static decimal AppliedHourlyRate(int position, decimal baseHourlyRate) =>
+        position == 6
+            ? Math.Round(baseHourlyRate * SundayPayRateMultiplier, 2, MidpointRounding.AwayFromZero)
+            : baseHourlyRate;
 
     private static void ValidateMetadata(string? name, DateOnly weekStart)
     {

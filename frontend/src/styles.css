@@ -252,6 +252,128 @@ input:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.demand-labour-settings {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 20px 0 14px;
+  padding: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 14px;
+  background: rgba(14, 116, 144, 0.12);
+}
+
+.demand-labour-settings h3 {
+  margin: 4px 0 6px;
+  color: #f8fafc;
+  font-size: 1.05rem;
+}
+
+.demand-labour-settings p {
+  max-width: 680px;
+  margin: 0;
+  color: #bae6fd;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.demand-labour-settings label {
+  display: grid;
+  flex: 0 0 160px;
+  gap: 6px;
+  color: #e0f2fe;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.demand-labour-settings input,
+.demand-labour-table input {
+  min-height: 34px;
+  padding: 0 8px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  font: inherit;
+  text-align: right;
+}
+
+.demand-labour-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.demand-labour-weekly {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.68);
+}
+
+.demand-labour-weekly span {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.demand-labour-weekly strong {
+  color: #6ee7b7;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.demand-labour-note {
+  margin: -4px 0 12px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.demand-labour-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+}
+
+.demand-labour-table {
+  width: 100%;
+  min-width: 650px;
+  border-collapse: collapse;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+}
+
+.demand-labour-table th,
+.demand-labour-table td {
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.demand-labour-table thead th {
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.82);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.demand-labour-table tbody th {
+  color: #f8fafc;
+  background: rgba(30, 41, 59, 0.38);
+  text-align: left;
+}
+
+.demand-labour-table input {
+  width: 120px;
+}
+
 .demand-import-form {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
@@ -329,6 +451,81 @@ input:focus {
   align-items: center;
   gap: 14px;
   margin-top: 20px;
+}
+
+.roster-edit-panel {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  border-radius: 14px;
+  background: rgba(14, 116, 144, 0.12);
+}
+
+.roster-edit-panel .section-heading {
+  margin-bottom: 8px;
+}
+
+.roster-edit-panel h3 {
+  margin: 4px 0 0;
+  color: #f8fafc;
+}
+
+.roster-edit-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.roster-edit-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.35fr) repeat(3, minmax(130px, 0.8fr)) auto auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.roster-edit-row label {
+  display: grid;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.roster-edit-row input,
+.roster-edit-row select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.roster-edit-finish {
+  display: grid;
+  grid-template-columns: minmax(86px, 1fr) minmax(92px, 1fr);
+  gap: 6px;
+}
+
+.roster-edit-duration {
+  align-self: center;
+  color: #6ee7b7;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.roster-edit-remove {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 0.78rem;
 }
 
 .hub-status {
@@ -1244,6 +1441,19 @@ select:disabled {
     grid-template-columns: 1fr;
   }
 
+  .demand-labour-settings {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .demand-labour-settings label {
+    flex-basis: auto;
+  }
+
+  .demand-labour-summary {
+    grid-template-columns: 1fr;
+  }
+
   .roster-week-summary {
     grid-template-columns: 1fr;
   }
@@ -1282,6 +1492,16 @@ select:disabled {
 }
 
 @media (max-width: 768px) {
+  .roster-edit-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .roster-edit-row label:first-child,
+  .roster-edit-duration,
+  .roster-edit-remove {
+    grid-column: 1 / -1;
+  }
+
   .demand-mobile-controls {
     display: grid;
     gap: 7px;

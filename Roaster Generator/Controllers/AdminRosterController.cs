@@ -53,6 +53,27 @@ public sealed class AdminRosterController(
             : Ok(plan);
     }
 
+    [HttpPut]
+    public async Task<IActionResult> Update(
+        [FromBody] RosterPlanUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await rosterPlans.UpdateAsync(request, cancellationToken));
+        }
+        catch (RosterInputException exception)
+        {
+            var messages = new[] { exception.Message }
+                .Concat(exception.Diagnostics)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            return ValidationError(
+                new Dictionary<string, string[]> { ["roster"] = messages },
+                "The edited roster is invalid.");
+        }
+    }
+
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary(
         [FromQuery] int? weekOffset,

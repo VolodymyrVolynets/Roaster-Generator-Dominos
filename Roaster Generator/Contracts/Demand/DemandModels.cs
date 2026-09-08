@@ -15,6 +15,8 @@ public sealed class DemandPlanUpdateRequest
 
     public DateOnly WeekStart { get; set; }
 
+    public decimal HourlyRate { get; set; }
+
     public List<DemandColumnRequest> Columns { get; set; } = [];
 
     public List<DemandRowRequest> Rows { get; set; } = [];
@@ -25,6 +27,8 @@ public sealed class DemandColumnRequest
     public int Position { get; set; }
 
     public string Label { get; set; } = string.Empty;
+
+    public decimal TargetSales { get; set; }
 }
 
 public sealed class DemandRowRequest
@@ -54,6 +58,10 @@ public sealed class DemandPlanSummaryResponse
     public int RowCount { get; init; }
 
     public int ColumnCount { get; init; }
+
+    public decimal HourlyRate { get; init; }
+
+    public decimal WeeklyTargetSales { get; init; }
 }
 
 public sealed class DemandPlanResponse
@@ -66,9 +74,19 @@ public sealed class DemandPlanResponse
 
     public DateTimeOffset UpdatedAtUtc { get; init; }
 
+    public decimal HourlyRate { get; init; }
+
+    public decimal WeeklyTargetSales { get; init; }
+
+    public decimal WeeklyLabourCost { get; init; }
+
+    public decimal? WeeklyLabourPercentage { get; init; }
+
     public List<DemandColumnResponse> Columns { get; init; } = [];
 
     public List<DemandRowResponse> Rows { get; init; } = [];
+
+    public List<DemandLabourDayResponse> DailyLabour { get; init; } = [];
 }
 
 public sealed class DemandColumnResponse
@@ -78,6 +96,25 @@ public sealed class DemandColumnResponse
     public string Label { get; init; } = string.Empty;
 
     public int TotalHours { get; init; }
+
+    public decimal TargetSales { get; init; }
+}
+
+public sealed class DemandLabourDayResponse
+{
+    public int Position { get; init; }
+
+    public string Label { get; init; } = string.Empty;
+
+    public decimal TargetSales { get; init; }
+
+    public int RequiredDriverHours { get; init; }
+
+    public decimal AppliedHourlyRate { get; init; }
+
+    public decimal LabourCost { get; init; }
+
+    public decimal? LabourPercentage { get; init; }
 }
 
 public sealed class DemandRowResponse

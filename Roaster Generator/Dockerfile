@@ -1,4 +1,9 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+# Npgsql probes Kerberos support on Linux. Install the small runtime library so
+# the probe is clean even when the application uses password authentication.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 USER $APP_UID
 WORKDIR /app
 EXPOSE 8080

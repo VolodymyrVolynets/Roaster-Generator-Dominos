@@ -25,6 +25,8 @@ public sealed class RosterGenerationSettings
 
     public int PreferredRestHours { get; set; } = 12;
 
+    public int LatestShiftStartHour { get; set; } = 20;
+
     public int MaxSolveSeconds { get; set; } = 20;
 
     public int DailyOptionPoolSize { get; set; } = 256;

@@ -24,6 +24,7 @@ public sealed class RosterSettingsService(AppDbContext db)
         settings.ShortBreakPenalty = request.ShortBreakPenalty;
         settings.MinimumRestHours = request.MinimumRestHours;
         settings.PreferredRestHours = request.PreferredRestHours;
+        settings.LatestShiftStartHour = request.LatestShiftStartHour;
         settings.MaxSolveSeconds = request.MaxSolveSeconds;
         await db.SaveChangesAsync(ct);
         return ToResponse(settings);
@@ -40,6 +41,7 @@ public sealed class RosterSettingsService(AppDbContext db)
         ShortBreakPenalty = settings.ShortBreakPenalty,
         MinimumRestHours = settings.MinimumRestHours,
         PreferredRestHours = settings.PreferredRestHours,
+        LatestShiftStartHour = settings.LatestShiftStartHour,
         MaxSolveSeconds = settings.MaxSolveSeconds
     };
 
@@ -54,6 +56,7 @@ public sealed class RosterSettingsService(AppDbContext db)
         ShortBreakPenalty = settings.ShortBreakPenalty,
         MinimumRestHours = settings.MinimumRestHours,
         PreferredRestHours = settings.PreferredRestHours,
+        LatestShiftStartHour = settings.LatestShiftStartHour,
         MaxSolveSeconds = settings.MaxSolveSeconds
     };
 }

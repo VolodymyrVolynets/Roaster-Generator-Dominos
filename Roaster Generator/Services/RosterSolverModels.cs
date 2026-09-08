@@ -36,6 +36,7 @@ public sealed class RosterSolverOptions
     public int ShortBreakPenalty { get; init; } = 100;
     public int MinimumRestHours { get; init; } = 8;
     public int PreferredRestHours { get; init; } = 12;
+    public int LatestShiftStartHour { get; init; } = 20;
     public int MaxSolveSeconds { get; init; } = 20;
 }
 

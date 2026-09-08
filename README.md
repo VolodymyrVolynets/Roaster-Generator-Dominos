@@ -52,6 +52,9 @@ need to choose their own passwords.
 Administrators can use **Generate roster** to generate one of the next three weeks,
 and **Saved rosters** to review the result or browse previously saved weeks. The
 latest imported Monday–Sunday demand template is reused for the selected week.
+Admins can edit a saved roster by adding, removing, reassigning, or retiming shifts;
+the complete edited set is revalidated before it replaces the saved week, and the
+updated hours, percentages, coverage, rest, and warnings are displayed immediately.
 Enter demand for every open hour; explicit zero demand is respected. Hours outside
 the configured shop opening times are excluded and reported in the generation log.
 Early-morning hours belong to the previous business day and are marked `+1 day`.
@@ -60,8 +63,10 @@ The scheduler uses [OR-Tools CP-SAT](https://developers.google.com/optimization/
 It enumerates legal shifts and requires exact driver counts at every hour, with no
 understaffing or overstaffing. Each employee can have one continuous shift per
 business day, lasting 3–10 hours and contained in their entered availability.
-Shifts must start by 22:00 inclusive; later starts, including after midnight in
-the same business day, are forbidden. Shifts can still finish after midnight.
+The default latest shift start is 20:00. Administrators can change it in
+generation preferences between 06:00 and 22:00 inclusive; later starts,
+including after midnight in the same business day, are forbidden. Shifts can
+still finish after midnight.
 At least one employee marked **Can work alone** must cover each staffed hour.
 Rest is checked against other generated shifts and adjacent saved weeks.
 
@@ -78,6 +83,8 @@ Saved admin preferences control:
 - Short shifts, number of shifts, and rest below the preferred rest goal.
 - Minimum rest (default 8 hours), preferred rest (default 12 hours), and a total
   solver budget of 1–120 seconds (default 20).
+- Latest shift start (default 20:00), a hard limit configurable from 06:00 to
+  22:00. Overnight finishes remain valid when the start is within the limit.
 
 Targets are proportional goals, not hard weekly caps; percentages may exceed 100%
 when demand requires it. Zero-target employees can act as reserves, with a penalty

@@ -8,6 +8,9 @@ public sealed class DemandPlan
 
     public DateOnly WeekStart { get; set; }
 
+    // Hourly pay used to turn required driver-hours into an estimated labour cost.
+    public decimal HourlyRate { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public DateTimeOffset UpdatedAtUtc { get; set; }
@@ -26,6 +29,10 @@ public sealed class DemandColumn
     public int Position { get; set; }
 
     public string Label { get; set; } = string.Empty;
+
+    // Sales target for this day. Keeping this on the day column lets the admin
+    // compare labour percentage for each day as well as for the whole week.
+    public decimal TargetSales { get; set; }
 
     public DemandPlan DemandPlan { get; set; } = null!;
 

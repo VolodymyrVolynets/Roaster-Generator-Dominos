@@ -118,7 +118,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             var loaded = await inputs.LoadAsync(job.WeekStart, ct);
             foreach (var warning in loaded.Warnings) Publish(job, "running", "input-check", 5, warning, "warning");
             Publish(job, "running", "input-check", 8,
-                $"Loaded {loaded.Input.Employees.Count} active employees and {loaded.Input.Demand.Sum(d => d.RequiredDrivers)} required driver-hours. Latest shift start 22:00 (overnight finishes allowed). Minimum rest {loaded.Settings.MinimumRestHours}h; preferred rest {loaded.Settings.PreferredRestHours}h; solver budget {loaded.Settings.MaxSolveSeconds}s, one CPU worker.");
+                $"Loaded {loaded.Input.Employees.Count} active employees and {loaded.Input.Demand.Sum(d => d.RequiredDrivers)} required driver-hours. Latest shift start {loaded.Settings.LatestShiftStartHour:00}:00 (overnight finishes allowed). Minimum rest {loaded.Settings.MinimumRestHours}h; preferred rest {loaded.Settings.PreferredRestHours}h; solver budget {loaded.Settings.MaxSolveSeconds}s, one CPU worker.");
             var history = loaded.Input.History ?? [];
             Publish(job, "running", "fairness-history", 8,
                 $"Fairness uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Missing weeks are not counted as zero-hour work. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");

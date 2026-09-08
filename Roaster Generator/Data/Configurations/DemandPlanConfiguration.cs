@@ -28,6 +28,12 @@ public sealed class DemandPlanConfiguration : IEntityTypeConfiguration<DemandPla
             .HasColumnType("date")
             .IsRequired();
 
+        builder.Property(plan => plan.HourlyRate)
+            .HasColumnName("hourly_rate")
+            .HasPrecision(12, 2)
+            .HasDefaultValue(0m)
+            .IsRequired();
+
         builder.Property(plan => plan.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .HasColumnType("timestamp with time zone")

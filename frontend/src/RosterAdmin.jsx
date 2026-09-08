@@ -3,13 +3,13 @@ import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/si
 import { createRosterEventState, mergeRosterEvents } from './rosterEvents'
 
 const weightFields = [
-  ['targetHoursWeight', 'Equal target percentages', 'Share hours in proportion to each employee’s target hours.'],
-  ['historyFairnessWeight', 'Compensate previous weeks', 'Use the previous four saved weeks to rebalance employees who received too few or too many hours.'],
-  ['fairnessSpreadWeight', 'Avoid gaps above 30 percentage points', 'Strongly penalise target-percentage gaps above 30 points. This preference is balanced with exact coverage, rest, shift length, and past-hour compensation.'],
-  ['longShiftBonus', 'Longer shifts', 'Prefer longer shifts in the 6–8 hour range.'],
-  ['shortShiftPenalty', 'Avoid short shifts', 'Discourage shifts under 6 hours.'],
-  ['dailyShiftCountPenalty', 'Fewer shifts', 'Cover demand with fewer, longer shifts.'],
-  ['shortBreakPenalty', 'Longer breaks', 'Prefer the rest goal below when assigning consecutive shifts.'],
+  ['targetHoursWeight', 'Equal target percentages', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s target percentage; reduce it when availability or exact coverage needs more flexibility. Set to 0 to disable it.'],
+  ['historyFairnessWeight', 'Compensate previous weeks', 'Uses up to four saved weeks. Increase it to give more hours to employees who have been below the group percentage and fewer to those above it; reduce it to focus mostly on this week.'],
+  ['fairnessSpreadWeight', 'Avoid gaps above 30 percentage points', 'Adds a strong penalty when target-percentage spread exceeds 30 points. Increase it to close large gaps; reduce it if coverage, availability, or shift shape needs more flexibility.'],
+  ['longShiftBonus', 'Longer shifts', 'Rewards shifts in the preferred 6–8 hour range, with longer legal shifts scoring better. Increase it to join adjacent demand into longer shifts; very high values can make target balancing harder.'],
+  ['shortShiftPenalty', 'Avoid short shifts', 'Penalises shifts below 6 hours while the hard minimum remains 3 hours. Increase it to avoid 3–5 hour shifts; reduce it when sparse demand makes short coverage useful.'],
+  ['dailyShiftCountPenalty', 'Fewer shifts', 'Penalises multiple shifts for one employee on the same business day. Increase it to consolidate coverage into fewer shifts; reduce it when gaps or availability require separate shifts.'],
+  ['shortBreakPenalty', 'Longer breaks', 'Penalises rest below the preferred-rest value while respecting the hard minimum. Increase it to spread consecutive shifts farther apart; reduce it when availability is tight.'],
 ]
 const runningStatuses = new Set(['starting', 'started', 'running', 'queued'])
 const numberFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
@@ -18,7 +18,7 @@ const formatNumber = (value) => numberFormatter.format(Number(value ?? 0))
 const formatStage = (stage) => (stage || 'starting').replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 const parseDate = (value) => new Date(`${value}T12:00:00`)
 const formatDate = (value) => value ? dateFormatter.format(parseDate(value)) : ''
-const withSettingsDefaults = (settings) => ({ historyFairnessWeight: 100, fairnessSpreadWeight: 1000, ...settings })
+const withSettingsDefaults = (settings) => ({ historyFairnessWeight: 100, fairnessSpreadWeight: 1000, latestShiftStartHour: 20, ...settings })
 const averageFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 const averageShiftHours = (shifts) => shifts.length ? Math.round(shifts.reduce((total, shift) => total + shift.durationHours, 0) * 100 / shifts.length) / 100 : 0
 
@@ -41,11 +41,12 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
     <details className="roster-settings" open>
       <summary>Scheduling preferences</summary>
       <p className="demand-help">
-        Demand is exact at every hour. Every shift must be 3–10 hours, within availability, and start no later than 22:00.
-        Shifts may finish after 22:00 or overnight, with at most one shift per business day.
+        Demand is exact at every hour. Every shift must be 3–10 hours, within availability, and start no later than {settings?.latestShiftStartHour ?? 20}:00.
+        Shifts may finish after the latest start time or overnight, with at most one shift per business day.
         Employees with a zero-hour target may cover demand as reserves and are excluded from percentage balancing.
-        Higher weights give a preference more influence; zero disables it. Fairness can use up to four previous saved weeks
-        to compensate past differences. Exact coverage, availability, and shift rules still apply.
+        Weight fields use a 0–1000 scale: higher values give that preference more influence and 0 disables it. Exact coverage,
+        availability, and hard shift rules always apply. Start with the defaults, then raise one weight at a time when a specific
+        outcome needs more influence.
       </p>
       {!settings ? error ? <div>
         <p className="message error-message" role="alert">{error}</p>
@@ -66,19 +67,25 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
                 <span>Minimum rest (hours)</span>
                 <input type="number" min="0" max="24" step="1" required value={settings.minimumRestHours}
                   onChange={(event) => setSettings({ ...settings, minimumRestHours: event.target.value === '' ? '' : Number(event.target.value) })} />
-                <small>Hard limit between shifts, including adjacent saved weeks. Default: 8 hours.</small>
+                <small>Hard limit between shifts, including adjacent saved weeks. Increase it for more recovery time; lower it only when availability cannot support the spacing. Default: 8 hours.</small>
               </label>
               <label>
                 <span>Preferred rest (hours)</span>
                 <input type="number" min={settings.minimumRestHours || 0} max="48" step="1" required value={settings.preferredRestHours}
                   onChange={(event) => setSettings({ ...settings, preferredRestHours: event.target.value === '' ? '' : Number(event.target.value) })} />
-                <small>A soft goal, balanced against your other preferences. Default: 12 hours.</small>
+                <small>Soft goal balanced against the weights above. Increase it to prefer longer breaks; lower it when the week is tightly staffed. Default: 12 hours.</small>
+              </label>
+              <label>
+                <span>Latest shift start (HH:00)</span>
+                <input type="number" min="6" max="22" step="1" required value={settings.latestShiftStartHour}
+                  onChange={(event) => setSettings({ ...settings, latestShiftStartHour: event.target.value === '' ? '' : Number(event.target.value) })} />
+                <small>Hard start-time limit in whole hours. Default: 20:00. Lower it to finish staffing earlier; raise it only when later starts are safe. The limit cannot exceed 22:00 and overnight finishes remain allowed.</small>
               </label>
               <label>
                 <span>Solver time budget (seconds)</span>
                 <input type="number" min="1" max="120" step="1" required value={settings.maxSolveSeconds}
                   onChange={(event) => setSettings({ ...settings, maxSolveSeconds: event.target.value === '' ? '' : Number(event.target.value) })} />
-                <small>Limits optimisation time on slower servers. A feasible roster can be saved before optimality is proven.</small>
+                <small>Limits optimisation time on slower servers. Increase it for better fairness search; lower it for faster responses. A feasible roster can be saved before optimality is proven.</small>
               </label>
             </div>
             <div className="roster-generation-actions">
@@ -370,6 +377,31 @@ function shiftStartHour(shift) {
   return Date.parse(`${shift.date}T00:00:00Z`) / 3600000 + hour + (shift.startDayOffset ?? (hour < 6 ? 1 : 0)) * 24
 }
 
+function clockHour(time) {
+  return Number(String(time || '00:00').slice(0, 2))
+}
+
+function absoluteShiftHour(time, dayOffset = 0) {
+  return clockHour(time) + Number(dayOffset || 0) * 24
+}
+
+function hourInputValue(hour) {
+  return `${String(((Number(hour) % 24) + 24) % 24).padStart(2, '0')}:00`
+}
+
+function draftShift(employeeId, shift) {
+  return {
+    employeeId: String(employeeId),
+    date: shift.date,
+    startHour: absoluteShiftHour(shift.startTime, shift.startDayOffset),
+    finishHour: absoluteShiftHour(shift.finishTime, shift.finishDayOffset),
+  }
+}
+
+function rosterDraftShifts(roster) {
+  return roster.employees.flatMap((employee) => employee.shifts.map((shift) => draftShift(employee.employeeId, shift)))
+}
+
 function minimumEmployeeRest(shifts) {
   const ordered = [...shifts].sort((left, right) => shiftStartHour(left) - shiftStartHour(right))
   if (ordered.length < 2) return null
@@ -458,6 +490,10 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
   const [history, setHistory] = useState([])
   const [selection, setSelection] = useState(initialWeekStart ? `date:${initialWeekStart}` : 'offset:1')
   const [roster, setRoster] = useState(null)
+  const [availableEmployees, setAvailableEmployees] = useState([])
+  const [draftShifts, setDraftShifts] = useState([])
+  const [editing, setEditing] = useState(false)
+  const [editStatus, setEditStatus] = useState({ status: 'idle', message: '' })
   const [status, setStatus] = useState('loading')
   const [refreshKey, setRefreshKey] = useState(0)
   const [coverageDay, setCoverageDay] = useState('')
@@ -472,8 +508,17 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
 
   useEffect(() => {
     let active = true
+    fetchJson('/api/admin/employees', { cache: 'no-store' })
+      .then((payload) => { if (active) setAvailableEmployees(payload.filter((employee) => employee.isActive)) })
+      .catch((error) => { if (active) setErrorPopup(error.message) })
+    return () => { active = false }
+  }, [fetchJson, setErrorPopup])
+
+  useEffect(() => {
+    let active = true
     setStatus('loading')
     setRoster(null)
+    setEditStatus({ status: 'idle', message: '' })
     const [kind, value] = selection.split(':')
     const query = kind === 'date' ? `weekStart=${encodeURIComponent(value)}` : `weekOffset=${value}`
     fetchJson(`/api/admin/roster?${query}`, { cache: 'no-store' }).then((payload) => {
@@ -485,6 +530,60 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
     })
     return () => { active = false }
   }, [fetchJson, setErrorPopup, selection, refreshKey])
+
+  useEffect(() => {
+    if (!roster) return
+    setDraftShifts(rosterDraftShifts(roster))
+    setEditing(false)
+  }, [roster])
+
+  function updateDraftShift(index, changes) {
+    setDraftShifts((current) => current.map((shift, shiftIndex) => (
+      shiftIndex === index ? { ...shift, ...changes } : shift
+    )))
+    setEditStatus({ status: 'idle', message: '' })
+  }
+
+  function addDraftShift() {
+    const employeeId = String((availableEmployees[0] || roster?.employees[0])?.id || roster?.employees[0]?.employeeId || '')
+    setDraftShifts((current) => [
+      ...current,
+      { employeeId, date: roster.weekStart, startHour: 12, finishHour: 18 },
+    ])
+    setEditing(true)
+    setEditStatus({ status: 'idle', message: '' })
+  }
+
+  function removeDraftShift(index) {
+    setDraftShifts((current) => current.filter((_, shiftIndex) => shiftIndex !== index))
+    setEditStatus({ status: 'idle', message: '' })
+  }
+
+  async function saveEditedRoster(event) {
+    event.preventDefault()
+    setEditStatus({ status: 'saving', message: '' })
+    try {
+      const payload = await fetchJson('/api/admin/roster', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weekStart: roster.weekStart,
+          shifts: draftShifts.map((shift) => ({
+            employeeId: shift.employeeId,
+            date: shift.date,
+            startHour: Number(shift.startHour),
+            finishHour: Number(shift.finishHour),
+          })),
+        }),
+      })
+      setRoster(payload)
+      setEditStatus({ status: 'success', message: 'Roster changes saved and revalidated.' })
+      setEditing(false)
+    } catch (error) {
+      setEditStatus({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
 
   const dates = roster ? weekDates(roster.weekStart) : []
   const shifts = roster?.employees.flatMap((employee) => employee.shifts) || []
@@ -510,12 +609,62 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
       <div className="roster-generation-actions">
         <button type="button" className="secondary-button" disabled={status === 'loading'} onClick={() => setRefreshKey((value) => value + 1)}>Refresh saved roster</button>
         {roster && <button type="button" className="secondary-button" onClick={() => exportRosterCsv(roster, dates)}>Download CSV</button>}
+        {roster && <button type="button" className="secondary-button" onClick={() => { setEditing((value) => !value); setEditStatus({ status: 'idle', message: '' }) }}>{editing ? 'Close roster editor' : 'Edit roster'}</button>}
       </div>
+      {editStatus.message && !editing && <p className={`save-message ${editStatus.status}`} role="status">{editStatus.message}</p>}
       {status === 'loading' && <p className="message info-message" role="status">Loading saved roster…</p>}
       {status === 'empty' && <p className="message info-message">No roster has been saved for this week. Use Generate roster to create one.</p>}
       {status === 'error' && <p className="message error-message" role="alert">The saved roster could not be loaded. Try refreshing.</p>}
       {roster && <>
         <p className="roster-footnote">Week starting {formatDate(roster.weekStart)} · Saved {new Date(roster.updatedAtUtc).toLocaleString()}</p>
+        {editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
+          <div className="section-heading">
+            <div><span className="eyebrow">Administrator</span><h3>Edit generated shifts</h3></div>
+            <button type="button" className="secondary-button" onClick={addDraftShift}>Add shift</button>
+          </div>
+          <p className="demand-help">Change an employee, date or time, add a shift, or remove one. Saving runs the full demand, availability, shift length, start-time, supervision and rest validation again.</p>
+          <div className="roster-edit-list">
+            {draftShifts.map((shift, index) => {
+              const employee = roster.employees.find((item) => String(item.employeeId) === String(shift.employeeId))
+              const rosterEmployees = roster.employees.map((item) => ({ id: item.employeeId, firstName: item.employeeName, lastName: '' }))
+              const employeeOptions = [...availableEmployees, ...rosterEmployees.filter((item) => !availableEmployees.some((option) => String(option.id) === String(item.id)))]
+              const finishDayOffset = Math.max(0, Math.floor(Number(shift.finishHour) / 24))
+              return <div className="roster-edit-row" key={`${index}-${shift.employeeId}-${shift.date}`}>
+                <label>
+                  Employee
+                  <select value={shift.employeeId} onChange={(event) => updateDraftShift(index, { employeeId: event.target.value })}>
+                    {employeeOptions.map((option) => <option key={option.id} value={option.id}>{option.firstName} {option.lastName}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Date
+                  <input type="date" value={shift.date} min={roster.weekStart} max={weekDates(roster.weekStart)[6]} onChange={(event) => updateDraftShift(index, { date: event.target.value })} />
+                </label>
+                <label>
+                  Start
+                  <input type="time" step="3600" value={hourInputValue(shift.startHour)} onChange={(event) => updateDraftShift(index, { startHour: clockHour(event.target.value) })} />
+                </label>
+                <label>
+                  Finish
+                  <span className="roster-edit-finish">
+                    <input type="time" step="3600" value={hourInputValue(shift.finishHour)} onChange={(event) => updateDraftShift(index, { finishHour: finishDayOffset * 24 + clockHour(event.target.value) })} />
+                    <select value={finishDayOffset} onChange={(event) => updateDraftShift(index, { finishHour: Number(event.target.value) * 24 + (Number(shift.finishHour) % 24) })} aria-label="Finish day offset">
+                      <option value="0">Same day</option><option value="1">Next day</option>
+                    </select>
+                  </span>
+                </label>
+                <span className="roster-edit-duration">{Math.max(0, Number(shift.finishHour) - Number(shift.startHour))}h{employee ? '' : ' · unknown employee'}</span>
+                <button type="button" className="danger-button roster-edit-remove" onClick={() => removeDraftShift(index)}>Remove</button>
+              </div>
+            })}
+            {draftShifts.length === 0 && <p className="message info-message">No shifts. Save to keep the roster empty only when demand is zero.</p>}
+          </div>
+          <div className="roster-generation-actions">
+            <button type="submit" disabled={editStatus.status === 'saving'}>{editStatus.status === 'saving' ? 'Validating and saving…' : 'Save roster changes'}</button>
+            <button type="button" className="secondary-button" onClick={() => { setDraftShifts(rosterDraftShifts(roster)); setEditing(false); setEditStatus({ status: 'idle', message: '' }) }}>Cancel</button>
+            {editStatus.message && <span className={`save-message ${editStatus.status}`}>{editStatus.message}</span>}
+          </div>
+        </form>}
         <div className="roster-week-summary roster-result-metrics">
           <Metric label="Demand matched" value={roster.coveragePercent == null ? 'Unverified' : `${formatNumber(roster.coveragePercent)}%`} />
           <Metric label="Scheduled / needed" value={`${formatNumber(roster.totalScheduledHours)} / ${formatNumber(roster.totalDemandHours)}h`} />
@@ -526,7 +675,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
           <Metric label="Solver time" value={`${formatNumber(roster.solveSeconds)}s`} />
         </div>
         <p className="message info-message">
-          {roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
+          {roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.solverStatus === 'manual' ? 'Manually updated by an administrator; all hard constraints were revalidated.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
           {' '}Status: {formatStage(roster.solverStatus)}.
         </p>
         {!!roster.warnings?.length && <DiagnosticList entries={roster.warnings} title="Roster notes" />}
@@ -574,6 +723,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
             {weightFields.map(([field, label]) => <div key={field}><dt>{label}</dt><dd>{roster.settings[field] ?? 'Not recorded'}</dd></div>)}
             <div><dt>Minimum rest</dt><dd>{roster.settings.minimumRestHours}h</dd></div>
             <div><dt>Preferred rest</dt><dd>{roster.settings.preferredRestHours}h</dd></div>
+            <div><dt>Latest shift start</dt><dd>{String(roster.settings.latestShiftStartHour ?? 20).padStart(2, '0')}:00</dd></div>
             <div><dt>Solver time budget</dt><dd>{roster.settings.maxSolveSeconds}s</dd></div>
           </dl>
         </details>}

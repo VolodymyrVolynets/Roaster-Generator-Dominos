@@ -32,6 +32,12 @@ public sealed class DemandColumnConfiguration : IEntityTypeConfiguration<DemandC
             .HasMaxLength(100)
             .IsRequired();
 
+        builder.Property(column => column.TargetSales)
+            .HasColumnName("target_sales")
+            .HasPrecision(12, 2)
+            .HasDefaultValue(0m)
+            .IsRequired();
+
         builder.HasOne(column => column.DemandPlan)
             .WithMany(plan => plan.Columns)
             .HasForeignKey(column => column.DemandPlanId)

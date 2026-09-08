@@ -58,6 +58,60 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         var validation = RosterSolver.Validate(loaded.Input, result.Shifts);
         if (!result.Success || validation.Count > 0)
             throw new RosterInputException("The generated roster failed final validation and was not saved.", validation);
+        return await PersistValidatedAsync(loaded, result, ct);
+    }
+
+    public async Task<RosterPlanResponse> UpdateAsync(
+        RosterPlanUpdateRequest request,
+        CancellationToken ct)
+    {
+        if (request.WeekStart == default || request.WeekStart.DayOfWeek != DayOfWeek.Monday)
+            throw new RosterInputException("Select the Monday of a saved roster week.");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var ownsLock = await db.Database
+            .SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock(724863910) AS \"Value\"")
+            .SingleAsync(ct);
+        if (!ownsLock)
+            throw new RosterInputException("A roster is being generated or edited on this server. Retry after it finishes.");
+
+        var exists = await db.RosterPlans
+            .AsNoTracking()
+            .AnyAsync(plan => plan.WeekStart == request.WeekStart, ct);
+        if (!exists)
+            throw new RosterInputException("A roster has not been generated for this week.");
+
+        var loaded = await inputs.LoadAsync(request.WeekStart, ct);
+        var shifts = (request.Shifts ?? [])
+            .Select(shift => new RosterSolverShift(
+                shift.EmployeeId,
+                shift.Date,
+                shift.StartHour,
+                shift.FinishHour))
+            .ToArray();
+        var validation = RosterSolver.Validate(loaded.Input, shifts);
+        if (validation.Count > 0)
+            throw new RosterInputException("The edited roster is invalid and was not saved.", validation);
+
+        var result = new RosterSolverResult
+        {
+            Status = "manual",
+            Message = "Roster manually updated by an administrator.",
+            Shifts = shifts,
+            Diagnostics = ["Roster manually updated by an administrator."],
+            TotalDemandHours = loaded.Input.Demand.Sum(demand => demand.RequiredDrivers),
+            TotalScheduledHours = shifts.Sum(shift => shift.DurationHours)
+        };
+        var response = await PersistValidatedAsync(loaded, result, ct);
+        await transaction.CommitAsync(ct);
+        return response;
+    }
+
+    private async Task<RosterPlanResponse> PersistValidatedAsync(
+        LoadedRosterInput loaded,
+        RosterSolverResult result,
+        CancellationToken ct)
+    {
         var plan = await db.RosterPlans.Include(p => p.Shifts).SingleOrDefaultAsync(p => p.WeekStart == loaded.Input.WeekStart, ct);
         var now = DateTimeOffset.UtcNow;
         if (plan is null)

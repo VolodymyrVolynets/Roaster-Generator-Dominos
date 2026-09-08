@@ -237,11 +237,16 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("demand_plan_id");
 
-                    b.Property<string>("Label")
+                b.Property<string>("Label")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("label");
+
+                    b.Property<decimal>("TargetSales")
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("target_sales")
+                        .HasDefaultValue(0m);
 
                     b.Property<int>("Position")
                         .HasColumnType("integer")
@@ -272,6 +277,11 @@ namespace Roaster_Generator.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
+
+                    b.Property<decimal>("HourlyRate")
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("hourly_rate")
+                        .HasDefaultValue(0m);
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -717,6 +727,12 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(12)
                         .HasColumnName("preferred_rest_hours");
 
+                    b.Property<int>("LatestShiftStartHour")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(20)
+                        .HasColumnName("latest_shift_start_hour");
+
                     b.Property<int>("ShortBreakPenalty")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -763,6 +779,7 @@ namespace Roaster_Generator.Data.Migrations
                             MutationRate = 0.03m,
                             PopulationSize = 24,
                             PreferredRestHours = 12,
+                            LatestShiftStartHour = 20,
                             ShortBreakPenalty = 100,
                             ShortShiftPenalty = 10,
                             TargetHoursWeight = 100,

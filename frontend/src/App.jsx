@@ -226,6 +226,23 @@ function DemandManager({ setErrorPopup }) {
     setStatus({ status: 'idle', message: '' })
   }
 
+  function updateTargetSales(position, rawValue) {
+    const targetSales = rawValue === '' ? 0 : Number(rawValue)
+    setPlan((current) => ({
+      ...current,
+      columns: current.columns.map((column) => (
+        column.position === position ? { ...column, targetSales } : column
+      )),
+    }))
+    setStatus({ status: 'idle', message: '' })
+  }
+
+  function updateHourlyRate(rawValue) {
+    const hourlyRate = rawValue === '' ? 0 : Number(rawValue)
+    setPlan((current) => ({ ...current, hourlyRate }))
+    setStatus({ status: 'idle', message: '' })
+  }
+
   async function importPaste() {
     setStatus({ status: 'saving', message: '' })
 
@@ -297,9 +314,11 @@ function DemandManager({ setErrorPopup }) {
         body: JSON.stringify({
           name,
           weekStart,
+          hourlyRate: Number(plan.hourlyRate ?? 0),
           columns: plan.columns.map((column) => ({
             position: column.position,
             label: column.label,
+            targetSales: Number(column.targetSales ?? 0),
           })),
           rows: plan.rows.map((row) => ({
             hour: row.hour,
@@ -343,6 +362,38 @@ function DemandManager({ setErrorPopup }) {
     (total, column) => total + (column.totalHours ?? 0),
     0,
   ) ?? 0
+  const dailyLabourRows = plan?.columns.map((column) => {
+    const targetSales = Number(column.targetSales ?? 0)
+    const requiredDriverHours = Number(column.totalHours ?? 0)
+    const baseHourlyRate = Number(plan.hourlyRate ?? 0)
+    const appliedHourlyRate = column.position === 6
+      ? Math.round(baseHourlyRate * 1.25 * 100) / 100
+      : baseHourlyRate
+    const labourCost = Math.round(requiredDriverHours * appliedHourlyRate * 100) / 100
+    const labourPercentage = targetSales > 0
+      ? Math.round((labourCost / targetSales) * 10000) / 100
+      : null
+
+    return {
+      ...column,
+      targetSales,
+      requiredDriverHours,
+      appliedHourlyRate,
+      labourCost,
+      labourPercentage,
+    }
+  }) ?? []
+  const weeklyTargetSales = dailyLabourRows.reduce((total, day) => total + day.targetSales, 0)
+  const weeklyLabourCost = Math.round(
+    dailyLabourRows.reduce((total, day) => total + day.labourCost, 0) * 100,
+  ) / 100
+  const weeklyLabourPercentage = weeklyTargetSales > 0
+    ? Math.round((weeklyLabourCost / weeklyTargetSales) * 10000) / 100
+    : null
+  const formatMoney = (value) => `€${Number(value ?? 0).toFixed(2)}`
+  const formatPercentage = (value) => value === null || value === undefined
+    ? '—'
+    : `${Number(value).toFixed(2)}%`
 
   return (
     <section className="admin-tools demand-tools">
@@ -357,7 +408,8 @@ function DemandManager({ setErrorPopup }) {
         Import the single weekly demand template as an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
         and read-only, while demand is calculated from deliveries and can be edited below. Enter 0 when no drivers
         are needed; every open hour needs an explicit demand value before generation. Hours are shown
-        as 06–23, followed by next-day 00–05. Importing new data replaces the existing template.
+        as 06–23, followed by next-day 00–05. Importing new data replaces the demand cells while
+        keeping saved sales targets for matching weekdays.
       </p>
 
       <label className="demand-paste-label">
@@ -386,6 +438,83 @@ function DemandManager({ setErrorPopup }) {
 
       {plan && (
         <form onSubmit={savePlan}>
+          <div className="demand-labour-settings">
+            <div>
+              <span className="eyebrow">Labour planning</span>
+              <h3>Sales targets and labour percentage</h3>
+              <p>
+                Labour percentage is estimated as required driver-hours × hourly rate ÷ target sales.
+                Enter a target for each day to see daily and weekly cost immediately. The estimate uses
+                the demand plan hours before roster fairness adjustments. Sunday uses a 25% pay premium,
+                so its applied rate is the base rate × 1.25.
+              </p>
+            </div>
+            <label>
+              Base hourly rate
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={plan.hourlyRate ?? 0}
+                onChange={(event) => updateHourlyRate(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="demand-labour-summary">
+            <div className="demand-labour-weekly">
+              <span>Weekly target sales</span>
+              <strong>{formatMoney(weeklyTargetSales)}</strong>
+            </div>
+            <div className="demand-labour-weekly">
+              <span>Estimated labour cost</span>
+              <strong>{formatMoney(weeklyLabourCost)}</strong>
+            </div>
+            <div className="demand-labour-weekly">
+              <span>Weekly labour</span>
+              <strong>{formatPercentage(weeklyLabourPercentage)}</strong>
+            </div>
+          </div>
+          <p className="demand-labour-note">
+            A dash means that day has no target sales yet, so a percentage cannot be calculated.
+          </p>
+
+          <div className="demand-labour-table-wrapper">
+            <table className="demand-labour-table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  <th>Target sales</th>
+                  <th>Driver-hours</th>
+                  <th>Applied rate</th>
+                  <th>Labour cost</th>
+                  <th>Labour %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyLabourRows.map((day) => (
+                  <tr key={day.position}>
+                    <th>{day.label}</th>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={day.targetSales}
+                        onChange={(event) => updateTargetSales(day.position, event.target.value)}
+                        aria-label={`${day.label} target sales`}
+                      />
+                    </td>
+                    <td>{day.requiredDriverHours}</td>
+                    <td>{formatMoney(day.appliedHourlyRate)}{day.position === 6 && <small>Sunday +25%</small>}</td>
+                    <td>{formatMoney(day.labourCost)}</td>
+                    <td className="demand-result">{formatPercentage(day.labourPercentage)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
           <p className="demand-total-summary">
             Weekly total driver-hours: <strong>{weeklyTotalHours}</strong>
           </p>

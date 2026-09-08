@@ -5,17 +5,17 @@ namespace Roaster_Generator.Tests;
 public sealed partial class RosterSolverTests
 {
     [Fact]
-    public void LatestStartAt22AllowsAnOvernightFinishAt01()
+    public void LatestStartAt20AllowsAnOvernightFinishAt02()
     {
         var employee = Driver();
-        var input = Input([employee], [Available(employee, Monday, 22, 1)], Demand(Monday, 22, 3));
+        var input = Input([employee], [Available(employee, Monday, 20, 2)], Demand(Monday, 20, 6));
 
         var result = solver.Solve(input);
 
         AssertExactRoster(input, result);
         var shift = Assert.Single(result.Shifts);
-        Assert.Equal(22, shift.StartHour);
-        Assert.Equal(25, shift.FinishHour);
+        Assert.Equal(20, shift.StartHour);
+        Assert.Equal(26, shift.FinishHour);
     }
 
     [Theory]
@@ -36,7 +36,7 @@ public sealed partial class RosterSolverTests
         var result = solver.Solve(input);
 
         AssertInfeasible(result);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("22:00", StringComparison.Ordinal) &&
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("20:00", StringComparison.Ordinal) &&
             diagnostic.Contains($"{start:00}:00", StringComparison.Ordinal) && diagnostic.Contains("need 1", StringComparison.Ordinal));
     }
 
@@ -67,7 +67,7 @@ public sealed partial class RosterSolverTests
 
         var errors = RosterSolver.Validate(input, shifts);
 
-        Assert.Contains(errors, error => error.Contains("must start by 22:00", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("must start by 20:00", StringComparison.Ordinal));
         Assert.DoesNotContain(errors, error => error.Contains("demand", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -75,11 +75,11 @@ public sealed partial class RosterSolverTests
     public void SolverProgressReportsTheHardLatestStartRule()
     {
         var employee = Driver();
-        var input = Input([employee], [Available(employee, Monday, 22, 1)], Demand(Monday, 22, 3));
+        var input = Input([employee], [Available(employee, Monday, 20, 2)], Demand(Monday, 20, 6));
         var messages = new List<RosterSolverProgress>();
 
         AssertExactRoster(input, solver.Solve(input, messages.Add));
 
-        Assert.Contains(messages, message => message.Message.Contains("hard 22:00 latest shift start", StringComparison.Ordinal));
+        Assert.Contains(messages, message => message.Message.Contains("hard 20:00 latest shift start", StringComparison.Ordinal));
     }
 }

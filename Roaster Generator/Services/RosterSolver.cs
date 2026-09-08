@@ -6,7 +6,7 @@ using Roaster_Generator.Entities;
 namespace Roaster_Generator.Services;
 
 /// <summary>
-/// Enumerates every legal 3–10 hour shift starting no later than 22:00, then solves exact coverage with CP-SAT.
+/// Enumerates every legal 3–10 hour shift starting no later than the configured latest start, then solves exact coverage with CP-SAT.
 /// Coverage, availability, supervision and minimum rest are hard constraints; only
 /// allocation fairness, shift shape and additional rest are weighted preferences.
 /// </summary>
@@ -15,7 +15,6 @@ public sealed class RosterSolver
     private const int MaxCandidates = 100_000;
     private const int MaxEmployees = 1_000;
     private const int PercentageScale = 10_000;
-    private const int LatestShiftStartHour = 22;
 
     public RosterSolverResult Solve(
         RosterSolverInput input,
@@ -25,7 +24,7 @@ public sealed class RosterSolver
         var clock = Stopwatch.StartNew();
         var reporter = new ProgressReporter(onProgress);
         cancellationToken.ThrowIfCancellationRequested();
-        reporter.Publish("validating", 5, "Checking demand, availability, employee targets, rest settings and the hard 22:00 latest shift start. Overnight finishes are allowed.");
+        reporter.Publish("validating", 5, $"Checking demand, availability, employee targets, rest settings and the hard {input.Options.LatestShiftStartHour:00}:00 latest shift start. Overnight finishes are allowed.");
         var inputErrors = ValidateInput(input);
         if (inputErrors.Count > 0)
             return Failure("invalid", "Roster inputs are invalid; no roster was generated.", inputErrors);
@@ -53,7 +52,7 @@ public sealed class RosterSolver
 
             var (windowStart, windowFinish) = AvailabilityWindow(availability);
             var existing = boundary.GetValueOrDefault(employee.Id) ?? [];
-            for (var start = windowStart; start <= Math.Min(LatestShiftStartHour, windowFinish - 3); start++)
+            for (var start = windowStart; start <= Math.Min(input.Options.LatestShiftStartHour, windowFinish - 3); start++)
             {
                 for (var length = 3; length <= 10 && start + length <= windowFinish; length++)
                 {
@@ -105,7 +104,7 @@ public sealed class RosterSolver
             var choices = coverage[AbsoluteHour(input.WeekStart, slot.Date, slot.Hour)];
             var available = choices.Select(candidate => candidate.EmployeeId).Distinct().Count();
             if (available < slot.RequiredDrivers)
-                shortages.Add($"{FormatSlot(slot)}: need {slot.RequiredDrivers - available} more driver(s). Demand {slot.RequiredDrivers}; only {available} can cover this hour in a legal 3–10 hour shift within availability, the 22:00 latest shift start and the {input.Options.MinimumRestHours}-hour rest rule. Shifts may finish overnight, but cannot start after 22:00 or after midnight.");
+                shortages.Add($"{FormatSlot(slot)}: need {slot.RequiredDrivers - available} more driver(s). Demand {slot.RequiredDrivers}; only {available} can cover this hour in a legal 3–10 hour shift within availability, the {input.Options.LatestShiftStartHour:00}:00 latest shift start and the {input.Options.MinimumRestHours}-hour rest rule. Shifts may finish overnight, but cannot start after {input.Options.LatestShiftStartHour:00}:00 or after midnight.");
             if (!choices.Any(candidate => candidate.CanWorkAlone))
                 shortages.Add($"{FormatSlot(slot)}: need at least one driver who can work alone to supervise this hour.");
         }
@@ -121,7 +120,7 @@ public sealed class RosterSolver
         if (!string.IsNullOrEmpty(modelError))
             return Failure("invalid", "The scheduling model could not be validated.", [modelError], candidates.Count);
 
-        reporter.Publish("solving", 25, $"Solving exact hourly coverage with one CPU worker and a {input.Options.MaxSolveSeconds}-second total budget. Coverage, minimum rest and the 22:00 latest shift start cannot be traded for a better score.");
+        reporter.Publish("solving", 25, $"Solving exact hourly coverage with one CPU worker and a {input.Options.MaxSolveSeconds}-second total budget. Coverage, minimum rest and the {input.Options.LatestShiftStartHour:00}:00 latest shift start cannot be traded for a better score.");
         var remaining = input.Options.MaxSolveSeconds - clock.Elapsed.TotalSeconds - diagnosticReserve;
         if (remaining <= 0)
             return Failure("timed-out", "The time budget expired while preparing the model. Feasibility has not been determined; increase the solve limit.", candidateCount: candidates.Count);
@@ -216,14 +215,14 @@ public sealed class RosterSolver
                     {
                         var missing = (int)diagnosticSolver.Value(item.Missing);
                         if (missing > 0)
-                            diagnostics.Add($"{FormatSlot(item.Slot)}: need {missing} more driver(s) in the diagnostic assignment (demand {item.Slot.RequiredDrivers}). Availability, the 22:00 latest shift start, one shift per day, supervision or the {input.Options.MinimumRestHours}-hour minimum rest prevents filling every hour together.");
+                            diagnostics.Add($"{FormatSlot(item.Slot)}: need {missing} more driver(s) in the diagnostic assignment (demand {item.Slot.RequiredDrivers}). Availability, the {input.Options.LatestShiftStartHour:00}:00 latest shift start, one shift per day, supervision or the {input.Options.MinimumRestHours}-hour minimum rest prevents filling every hour together.");
                     }
                 }
             }
         }
         cancellationToken.ThrowIfCancellationRequested();
         if (diagnostics.Count == 0)
-            diagnostics.Add("No diagnostic assignment was found within the remaining budget. Check availability, 3–10 hour shift continuity, the 22:00 latest shift start, supervision and neighboring-week rest, or increase the solve limit.");
+            diagnostics.Add($"No diagnostic assignment was found within the remaining budget. Check availability, 3–10 hour shift continuity, the {input.Options.LatestShiftStartHour:00}:00 latest shift start, supervision and neighboring-week rest, or increase the solve limit.");
         return Failure(provenImpossible ? "infeasible" : "timed-out", provenImpossible
             ? "Exact coverage is impossible under the current hard constraints. No roster was saved."
             : "The search time limit was reached without a complete roster. This does not prove the demand is impossible; increase the solve limit or adjust availability. No roster was saved.", diagnostics, candidates.Count);
@@ -272,8 +271,8 @@ public sealed class RosterSolver
                 errors.Add($"{shift.Date:dddd}: {Name(employee)} has an invalid date or shift length; shifts must last 3–10 hours.");
                 continue;
             }
-            if (shift.StartHour > LatestShiftStartHour)
-                errors.Add($"{shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}. Every generated shift must start by 22:00; after-midnight starts are also forbidden. Overnight finishes are allowed.");
+            if (shift.StartHour > input.Options.LatestShiftStartHour)
+                errors.Add($"{shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}. Every generated shift must start by {input.Options.LatestShiftStartHour:00}:00; after-midnight starts are also forbidden. Overnight finishes are allowed.");
             if (!availability.TryGetValue((employee.Id, shift.Date), out var windows) ||
                 !windows.Any(window => { var (start, finish) = AvailabilityWindow(window); return start <= shift.StartHour && finish >= shift.FinishHour; }))
                 errors.Add($"{shift.Date:dddd}: {Name(employee)} is scheduled outside their availability.");
@@ -731,6 +730,8 @@ public sealed class RosterSolver
             errors.Add("A valid week start date is required.");
         if (options.MinimumRestHours is < 0 or > 24 || options.PreferredRestHours < options.MinimumRestHours || options.PreferredRestHours > 48)
             errors.Add("Minimum rest must be 0–24 hours; preferred rest must be at least the minimum and at most 48 hours.");
+        if (options.LatestShiftStartHour is < 6 or > 22)
+            errors.Add("Latest shift start must be between 06:00 and 22:00.");
         if (options.MaxSolveSeconds is < 1 or > 120) errors.Add("Solve time must be between 1 and 120 seconds.");
         if (new[] { options.TargetHoursWeight, options.HistoryFairnessWeight, options.FairnessSpreadWeight, options.LongShiftBonus, options.ShortShiftPenalty, options.DailyShiftCountPenalty, options.ShortBreakPenalty }.Any(weight => weight is < 0 or > 10_000))
             errors.Add("Preference weights must be between 0 and 10000.");

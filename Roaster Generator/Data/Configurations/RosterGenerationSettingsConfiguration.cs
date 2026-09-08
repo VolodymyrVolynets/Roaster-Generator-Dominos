@@ -91,6 +91,10 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             ShortShiftPenalty = 10,
             DailyShiftCountPenalty = 25,
             ShortBreakPenalty = 100,
+            MinimumRestHours = 8,
+            PreferredRestHours = 12,
+            LatestShiftStartHour = 20,
+            MaxSolveSeconds = 20,
             DailyOptionPoolSize = 256,
             DailyOptionSearchNodeLimit = 100_000,
             PopulationSize = 24,
@@ -105,6 +109,8 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             .HasColumnName("minimum_rest_hours").HasDefaultValue(8).IsRequired();
         builder.Property(settings => settings.PreferredRestHours)
             .HasColumnName("preferred_rest_hours").HasDefaultValue(12).IsRequired();
+        builder.Property(settings => settings.LatestShiftStartHour)
+            .HasColumnName("latest_shift_start_hour").HasDefaultValue(20).IsRequired();
         builder.Property(settings => settings.MaxSolveSeconds)
             .HasColumnName("max_solve_seconds").HasDefaultValue(20).IsRequired();
         builder.Property(settings => settings.HistoryFairnessWeight)
