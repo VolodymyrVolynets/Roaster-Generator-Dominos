@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -1002,6 +1002,13 @@ function AdminConsole({
 }) {
   const [activeTab, setActiveTab] = useState('employees')
   const [savedWeekStart, setSavedWeekStart] = useState(null)
+  const employeeEditorRef = useRef(null)
+
+  useEffect(() => {
+    if (employeeEditorOpen) {
+      employeeEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [employeeEditorOpen])
 
   function switchTab(tab) {
     setActiveTab(tab)
@@ -1168,7 +1175,7 @@ function AdminConsole({
               )}
 
               {employeeEditorOpen && (
-                <section className="employee-editor-card">
+                <section ref={employeeEditorRef} className="employee-editor-card">
                   <div className="section-heading">
                     <div>
                       <span className="eyebrow">Employee card</span>
@@ -1179,40 +1186,56 @@ function AdminConsole({
                     </button>
                   </div>
 
+                  <p className="employee-editor-help">
+                    {isCreatingEmployee
+                      ? 'Create a profile with the details used for scheduling, availability, and payroll.'
+                      : 'Update this profile here. Changes are applied to future roster generation and availability.'}
+                  </p>
+
                   <form className="employee-form" onSubmit={saveEmployee}>
-                    <label htmlFor="admin-employee-number">Employee number</label>
-                    <input
-                      id="admin-employee-number"
-                      value={employeeForm.employeeNumber}
-                      onChange={(event) => updateEmployeeForm('employeeNumber', event.target.value)}
-                      required
-                    />
-                    <label htmlFor="admin-employee-first-name">First name</label>
-                    <input
-                      id="admin-employee-first-name"
-                      value={employeeForm.firstName}
-                      onChange={(event) => updateEmployeeForm('firstName', event.target.value)}
-                      required
-                    />
-                    <label htmlFor="admin-employee-last-name">Last name</label>
-                    <input
-                      id="admin-employee-last-name"
-                      value={employeeForm.lastName}
-                      onChange={(event) => updateEmployeeForm('lastName', event.target.value)}
-                      required
-                    />
-                    <label htmlFor="admin-employee-phone">Phone number</label>
-                    <input
-                      id="admin-employee-phone"
-                      value={employeeForm.phoneNumber}
-                      onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
-                    />
-                    <label htmlFor="admin-employee-payroll-number">Payroll number</label>
-                    <input
-                      id="admin-employee-payroll-number"
-                      value={employeeForm.payrollNumber}
-                      onChange={(event) => updateEmployeeForm('payrollNumber', event.target.value)}
-                    />
+                    <div className="employee-form-field">
+                      <label htmlFor="admin-employee-number">Employee number</label>
+                      <input
+                        id="admin-employee-number"
+                        value={employeeForm.employeeNumber}
+                        onChange={(event) => updateEmployeeForm('employeeNumber', event.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="employee-form-field">
+                      <label htmlFor="admin-employee-first-name">First name</label>
+                      <input
+                        id="admin-employee-first-name"
+                        value={employeeForm.firstName}
+                        onChange={(event) => updateEmployeeForm('firstName', event.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="employee-form-field">
+                      <label htmlFor="admin-employee-last-name">Last name</label>
+                      <input
+                        id="admin-employee-last-name"
+                        value={employeeForm.lastName}
+                        onChange={(event) => updateEmployeeForm('lastName', event.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="employee-form-field">
+                      <label htmlFor="admin-employee-phone">Phone number</label>
+                      <input
+                        id="admin-employee-phone"
+                        value={employeeForm.phoneNumber}
+                        onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
+                      />
+                    </div>
+                    <div className="employee-form-field">
+                      <label htmlFor="admin-employee-payroll-number">Payroll number</label>
+                      <input
+                        id="admin-employee-payroll-number"
+                        value={employeeForm.payrollNumber}
+                        onChange={(event) => updateEmployeeForm('payrollNumber', event.target.value)}
+                      />
+                    </div>
 
                     <fieldset className="employee-role-fieldset">
                       <legend>Roles</legend>
@@ -1237,28 +1260,32 @@ function AdminConsole({
 
                     {employeeForm.roles?.includes('Driver') && (
                       <>
-                        <label htmlFor="admin-employee-driver-type">Driver type</label>
-                        <select
-                          id="admin-employee-driver-type"
-                          value={employeeForm.driverType}
-                          onChange={(event) => updateEmployeeForm('driverType', event.target.value)}
-                        >
-                          <option value="Car">Car</option>
-                          <option value="Moped">Moped</option>
-                          <option value="EBike">E-bike</option>
-                        </select>
-                        <label htmlFor="admin-employee-target-hours">Target hours per week</label>
-                        <input
-                          id="admin-employee-target-hours"
-                          type="number"
-                          min="3"
-                          max="168"
-                          step="1"
-                          value={employeeForm.targetHours}
-                          onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
-                          required
-                        />
-                        <label className="checkbox-label" htmlFor="admin-employee-can-work-alone">
+                        <div className="employee-form-field">
+                          <label htmlFor="admin-employee-driver-type">Driver type</label>
+                          <select
+                            id="admin-employee-driver-type"
+                            value={employeeForm.driverType}
+                            onChange={(event) => updateEmployeeForm('driverType', event.target.value)}
+                          >
+                            <option value="Car">Car</option>
+                            <option value="Moped">Moped</option>
+                            <option value="EBike">E-bike</option>
+                          </select>
+                        </div>
+                        <div className="employee-form-field">
+                          <label htmlFor="admin-employee-target-hours">Target hours per week</label>
+                          <input
+                            id="admin-employee-target-hours"
+                            type="number"
+                            min="3"
+                            max="168"
+                            step="1"
+                            value={employeeForm.targetHours}
+                            onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
+                            required
+                          />
+                        </div>
+                        <label className="checkbox-label employee-work-alone" htmlFor="admin-employee-can-work-alone">
                           <input
                             id="admin-employee-can-work-alone"
                             type="checkbox"
