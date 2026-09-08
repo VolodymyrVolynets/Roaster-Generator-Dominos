@@ -495,7 +495,7 @@ function FairnessComparison({ roster, employeeGroups }) {
   </section>
 }
 
-export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart }) {
+export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, canEdit = true }) {
   const [history, setHistory] = useState([])
   const [selection, setSelection] = useState(initialWeekStart ? `date:${initialWeekStart}` : 'offset:1')
   const [roster, setRoster] = useState(null)
@@ -516,12 +516,17 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
   }, [fetchJson, setErrorPopup, refreshKey])
 
   useEffect(() => {
+    if (!canEdit) {
+      setAvailableEmployees([])
+      return undefined
+    }
+
     let active = true
     fetchJson('/api/admin/employees', { cache: 'no-store' })
       .then((payload) => { if (active) setAvailableEmployees(payload.filter((employee) => employee.isActive)) })
       .catch((error) => { if (active) setErrorPopup(error.message) })
     return () => { active = false }
-  }, [fetchJson, setErrorPopup])
+  }, [canEdit, fetchJson, setErrorPopup])
 
   useEffect(() => {
     let active = true
@@ -629,15 +634,16 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
       <div className="roster-generation-actions">
         <button type="button" className="secondary-button" disabled={status === 'loading'} onClick={() => setRefreshKey((value) => value + 1)}>Refresh saved roster</button>
         {roster && <button type="button" className="secondary-button" onClick={() => exportRosterCsv(roster, dates)}>Download CSV</button>}
-        {roster && <button type="button" className="secondary-button" onClick={() => { setEditing((value) => !value); setEditStatus({ status: 'idle', message: '' }) }}>{editing ? 'Close roster editor' : 'Edit roster'}</button>}
+        {canEdit && roster && <button type="button" className="secondary-button" onClick={() => { setEditing((value) => !value); setEditStatus({ status: 'idle', message: '' }) }}>{editing ? 'Close roster editor' : 'Edit roster'}</button>}
       </div>
       {editStatus.message && !editing && <p className={`save-message ${editStatus.status}`} role="status">{editStatus.message}</p>}
       {status === 'loading' && <p className="message info-message" role="status">Loading saved roster…</p>}
-      {status === 'empty' && <p className="message info-message">No roster has been saved for this week. Use Generate roster to create one.</p>}
+      {status === 'empty' && <p className="message info-message">No roster has been saved for this week. {canEdit ? 'Use Generate roster to create one.' : 'An administrator must generate one.'}</p>}
       {status === 'error' && <p className="message error-message" role="alert">The saved roster could not be loaded. Try refreshing.</p>}
       {roster && <>
+        {!canEdit && <p className="message info-message" role="status">Read-only view for managers. Only administrators can edit saved roster shifts.</p>}
         <p className="roster-footnote">Week starting {formatDate(roster.weekStart)} · Saved {new Date(roster.updatedAtUtc).toLocaleString()}</p>
-        {editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
+        {canEdit && editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
           <div className="section-heading">
             <div><span className="eyebrow">Administrator</span><h3>Edit generated shifts</h3></div>
             <button type="button" className="secondary-button" onClick={addDraftShift}>Add shift</button>

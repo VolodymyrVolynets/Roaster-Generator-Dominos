@@ -105,6 +105,8 @@ Enforce these rules in the API and validator/service layer; UI limits are only c
 
 The UI must not be treated as an authorization boundary. All data access still goes through protected API endpoints.
 
+Management permissions are role-scoped: managers can view the full availability roster, saved rosters, and demand plans, and can approve holiday requests. Demand imports/edits/deletes, roster generation/cancellation/settings, saved-roster edits, employee-level schedule access, and holiday CSV export require the `Admin` policy. The React controls mirror these restrictions, but the API and roster-generation hub enforce them independently.
+
 `frontend/nginx.conf` proxies `/api/` and `/hubs/` to the backend and serves the SPA for all other paths. Keep frontend API calls same-origin and use `credentials: 'include'` for Identity cookies.
 
 ## Roster generation invariants

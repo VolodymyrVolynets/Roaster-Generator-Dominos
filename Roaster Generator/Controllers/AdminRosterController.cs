@@ -50,6 +50,7 @@ public sealed class AdminRosterController(
     }
 
     [HttpPut]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Update(
         [FromBody] RosterPlanUpdateRequest request,
         CancellationToken cancellationToken)
@@ -82,6 +83,7 @@ public sealed class AdminRosterController(
     }
 
     [HttpGet("summary")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> GetSummary(
         [FromQuery] int? weekOffset,
         CancellationToken cancellationToken)
@@ -102,6 +104,7 @@ public sealed class AdminRosterController(
 
     [HttpPost("generate")]
     [HttpPost("timer")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> StartTimer(
         [FromBody] WeekSelectionRequest request,
         CancellationToken cancellationToken)
@@ -125,6 +128,7 @@ public sealed class AdminRosterController(
 
     [HttpPost("cancel")]
     [HttpPost("timer/cancel")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Cancel(
         [FromBody] RosterTimerCancelRequest request,
         CancellationToken cancellationToken)
@@ -146,9 +150,11 @@ public sealed class AdminRosterController(
     }
 
     [HttpGet("settings")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> GetSettings(CancellationToken ct) => Ok(await settings.GetAsync(ct));
 
     [HttpPut("settings")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> SaveSettings([FromBody] RosterSettingsRequest request, CancellationToken ct)
     {
         var validationResult = await ValidateRequestAsync(
@@ -164,6 +170,7 @@ public sealed class AdminRosterController(
     public async Task<IActionResult> History(CancellationToken ct) => Ok(await rosterPlans.GetHistoryAsync(ct));
 
     [HttpGet("jobs")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Jobs([FromQuery] int weekOffset, CancellationToken ct)
     {
         var validation = await weekValidator.ValidateAsync(new WeekSelectionRequest { WeekOffset = weekOffset }, ct);

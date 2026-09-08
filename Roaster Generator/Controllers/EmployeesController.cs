@@ -140,9 +140,14 @@ public sealed class EmployeesController(
         Guid employeeId,
         CancellationToken cancellationToken)
     {
-        if (User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.Manager))
+        if (User.IsInRole(RoleNames.Admin))
         {
             return null;
+        }
+
+        if (User.IsInRole(RoleNames.Manager))
+        {
+            return Forbid();
         }
 
         var user = await userManager.GetUserAsync(User);

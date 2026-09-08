@@ -32,6 +32,7 @@ public sealed class AdminDemandController(
     }
 
     [HttpPost("paste")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> ImportPaste(
         [FromBody] DemandImportRequest request,
         CancellationToken cancellationToken)
@@ -58,6 +59,7 @@ public sealed class AdminDemandController(
     }
 
     [HttpPost("upload")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportExcel(
         [FromForm(Name = "file")] IFormFile? file,
@@ -100,6 +102,7 @@ public sealed class AdminDemandController(
     }
 
     [HttpPut("{planId:guid}")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Update(
         Guid planId,
         [FromBody] DemandPlanUpdateRequest request,
@@ -127,6 +130,7 @@ public sealed class AdminDemandController(
     }
 
     [HttpDelete("{planId:guid}")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Delete(
         Guid planId,
         CancellationToken cancellationToken)

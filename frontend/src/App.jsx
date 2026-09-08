@@ -410,7 +410,7 @@ function HolidayTable({ holidays, showEmployee = false, showApprove = false, onA
   )
 }
 
-function AdminHolidayPanel({ setErrorPopup }) {
+function AdminHolidayPanel({ setErrorPopup, canExport = true }) {
   const [holidayState, setHolidayState] = useState({ status: 'loading', requested: [], used: [] })
   const [actionState, setActionState] = useState({ status: 'idle', message: '' })
 
@@ -467,9 +467,11 @@ function AdminHolidayPanel({ setErrorPopup }) {
           <h2>Holiday requests</h2>
         </div>
         <div className="holiday-admin-actions">
-          <a className="secondary-button" href="/api/admin/holidays/export" download="holiday-requests.csv">
-            Download CSV
-          </a>
+          {canExport && (
+            <a className="secondary-button" href="/api/admin/holidays/export" download="holiday-requests.csv">
+              Download CSV
+            </a>
+          )}
           <button
             type="button"
             onClick={approveAll}
@@ -521,7 +523,7 @@ function AdminHolidayPanel({ setErrorPopup }) {
   )
 }
 
-function DemandManager({ setErrorPopup }) {
+function DemandManager({ setErrorPopup, canEdit = true }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [plan, setPlan] = useState(null)
@@ -765,6 +767,12 @@ function DemandManager({ setErrorPopup }) {
         </div>
       </div>
 
+      {!canEdit && (
+        <p className="message info-message" role="status">
+          Read-only view for managers. Only administrators can create or change demand plans.
+        </p>
+      )}
+
       <p className="demand-help">
         Import the single weekly demand template as an Excel/CSV/table paste. Each pair of non-empty columns is a weekday: deliveries are imported
         and read-only, while demand is calculated from deliveries and can be edited below. Enter 0 when no drivers
@@ -773,32 +781,36 @@ function DemandManager({ setErrorPopup }) {
         keeping saved sales targets for matching weekdays.
       </p>
 
-      <label className="demand-paste-label">
-        Paste demand table
-        <textarea
-          value={pasteContent}
-          onChange={(event) => setPasteContent(event.target.value)}
-          placeholder="Paste rows from Excel, CSV, TSV, or a Markdown table…"
-          rows={6}
-        />
-      </label>
+      {canEdit && (
+        <>
+          <label className="demand-paste-label">
+            Paste demand table
+            <textarea
+              value={pasteContent}
+              onChange={(event) => setPasteContent(event.target.value)}
+              placeholder="Paste rows from Excel, CSV, TSV, or a Markdown table…"
+              rows={6}
+            />
+          </label>
 
-      <div className="demand-actions">
-        <button type="button" onClick={importPaste} disabled={!pasteContent || status.status === 'saving'}>
-          {status.status === 'saving' ? 'Importing…' : 'Import pasted table'}
-        </button>
-        <label className="secondary-button file-button">
-          Import Excel
-          <input type="file" accept=".xlsx,.xlsm" onChange={importFile} />
-        </label>
-      </div>
+          <div className="demand-actions">
+            <button type="button" onClick={importPaste} disabled={!pasteContent || status.status === 'saving'}>
+              {status.status === 'saving' ? 'Importing…' : 'Import pasted table'}
+            </button>
+            <label className="secondary-button file-button">
+              Import Excel
+              <input type="file" accept=".xlsx,.xlsm" onChange={importFile} />
+            </label>
+          </div>
+        </>
+      )}
 
       {status.message && (
         <p className={`save-message ${status.status}`}>{status.message}</p>
       )}
 
       {plan && (
-        <form onSubmit={savePlan}>
+        <form onSubmit={canEdit ? savePlan : (event) => event.preventDefault()}>
           <div className="demand-labour-settings">
             <div>
               <span className="eyebrow">Labour planning</span>
@@ -818,6 +830,8 @@ function DemandManager({ setErrorPopup }) {
                 step="0.01"
                 value={plan.hourlyRate ?? 0}
                 onChange={(event) => updateHourlyRate(event.target.value)}
+                readOnly={!canEdit}
+                aria-readonly={!canEdit}
               />
             </label>
           </div>
@@ -863,6 +877,8 @@ function DemandManager({ setErrorPopup }) {
                         step="0.01"
                         value={day.targetSales}
                         onChange={(event) => updateTargetSales(day.position, event.target.value)}
+                        readOnly={!canEdit}
+                        aria-readonly={!canEdit}
                         aria-label={`${day.label} target sales`}
                       />
                     </td>
@@ -938,6 +954,8 @@ function DemandManager({ setErrorPopup }) {
                               column.position,
                               event.target.value,
                             )}
+                            readOnly={!canEdit}
+                            aria-readonly={!canEdit}
                           />
                         </td>,
                       ]
@@ -987,6 +1005,8 @@ function DemandManager({ setErrorPopup }) {
                               selectedDemandDayPosition,
                               event.target.value,
                             )}
+                            readOnly={!canEdit}
+                            aria-readonly={!canEdit}
                           />
                         </td>
                       </tr>
@@ -997,10 +1017,12 @@ function DemandManager({ setErrorPopup }) {
             </div>
           </div>
 
-          <div className="demand-actions">
-            <button type="submit" disabled={status.status === 'saving'}>Save demand changes</button>
-            <button type="button" className="secondary-button" onClick={deletePlan}>Delete plan</button>
-          </div>
+          {canEdit && (
+            <div className="demand-actions">
+              <button type="submit" disabled={status.status === 'saving'}>Save demand changes</button>
+              <button type="button" className="secondary-button" onClick={deletePlan}>Delete plan</button>
+            </div>
+          )}
         </form>
       )}
     </section>
@@ -1172,13 +1194,15 @@ function AdminConsole({
             >
               Availability roster
             </button>
-            <button
-              type="button"
-              className={activeTab === 'employee-availability' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => switchTab('employee-availability')}
-            >
-              Employee availability
-            </button>
+            {authState.user.isAdmin && (
+              <button
+                type="button"
+                className={activeTab === 'employee-availability' ? 'admin-tab active' : 'admin-tab'}
+                onClick={() => switchTab('employee-availability')}
+              >
+                Employee availability
+              </button>
+            )}
             <button
               type="button"
               className={activeTab === 'demand' ? 'admin-tab active' : 'admin-tab'}
@@ -1186,13 +1210,15 @@ function AdminConsole({
             >
               Demand
             </button>
-            <button
-              type="button"
-              className={activeTab === 'generate-roster' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => switchTab('generate-roster')}
-            >
-              Generate roster
-            </button>
+            {authState.user.isAdmin && (
+              <button
+                type="button"
+                className={activeTab === 'generate-roster' ? 'admin-tab active' : 'admin-tab'}
+                onClick={() => switchTab('generate-roster')}
+              >
+                Generate roster
+              </button>
+            )}
             <button
               type="button"
               className={activeTab === 'saved-rosters' ? 'admin-tab active' : 'admin-tab'}
@@ -1455,7 +1481,10 @@ function AdminConsole({
           {activeTab === 'holiday' && (
             authState.user.isAdmin
               ? <AdminHolidayPanel setErrorPopup={setErrorPopup} />
-              : <HolidayPanel setErrorPopup={setErrorPopup} />
+              : <>
+                <AdminHolidayPanel setErrorPopup={setErrorPopup} canExport={false} />
+                <HolidayPanel setErrorPopup={setErrorPopup} />
+              </>
           )}
 
           {activeTab === 'roster' && (
@@ -1521,7 +1550,7 @@ function AdminConsole({
             </section>
           )}
 
-          {activeTab === 'employee-availability' && (
+          {activeTab === 'employee-availability' && authState.user.isAdmin && (
             <section className="admin-tools">
               <div className="section-heading">
                 <div>
@@ -1628,19 +1657,22 @@ function AdminConsole({
             </section>
           )}
 
-          {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} />}
+          {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} canEdit={authState.user.isAdmin} />}
 
-          <RosterGenerationPanel
-            fetchJson={fetchJson}
-            setErrorPopup={setErrorPopup}
-            isVisible={activeTab === 'generate-roster'}
-            onShowSaved={(weekStart) => { setSavedWeekStart(weekStart); switchTab('saved-rosters') }}
-          />
+          {authState.user.isAdmin && (
+            <RosterGenerationPanel
+              fetchJson={fetchJson}
+              setErrorPopup={setErrorPopup}
+              isVisible={activeTab === 'generate-roster'}
+              onShowSaved={(weekStart) => { setSavedWeekStart(weekStart); switchTab('saved-rosters') }}
+            />
+          )}
           {activeTab === 'saved-rosters' && <SavedRosterPanel
             key={savedWeekStart || 'upcoming'}
             fetchJson={fetchJson}
             setErrorPopup={setErrorPopup}
             initialWeekStart={savedWeekStart}
+            canEdit={authState.user.isAdmin}
           />}
         </section>
       </main>
@@ -2006,7 +2038,7 @@ function App() {
   }, [authState, isAuthenticated, isAdmin, dataRefreshKey])
 
   useEffect(() => {
-    if (!isAuthenticated || !selectedEmployeeId) {
+    if (!isAuthenticated || !isSystemAdmin || !selectedEmployeeId) {
       setSchedule(null)
       setScheduleState({ status: 'idle' })
       return
@@ -2026,7 +2058,7 @@ function App() {
         setScheduleState({ status: 'error', message: error.message })
         setErrorPopup(error.message)
       })
-  }, [isAuthenticated, selectedEmployeeId, weekOffset, dataRefreshKey])
+  }, [isAuthenticated, isSystemAdmin, selectedEmployeeId, weekOffset, dataRefreshKey])
 
   useEffect(() => {
     if (!isAdmin) {

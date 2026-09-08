@@ -13,7 +13,7 @@ using Roaster_Generator.Services;
 namespace Roaster_Generator.Controllers;
 
 [ApiController]
-[Authorize(Policy = AuthorizationPolicies.Admin)]
+[Authorize(Policy = AuthorizationPolicies.Manager)]
 [Route("api/admin/holidays")]
 public sealed class AdminHolidaysController(AppDbContext db) : ControllerBase
 {
@@ -25,6 +25,7 @@ public sealed class AdminHolidaysController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("export")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Export(CancellationToken cancellationToken)
     {
         var requests = await QueryRequests(cancellationToken);
