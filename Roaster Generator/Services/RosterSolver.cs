@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Google.OrTools.Sat;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Validation;
 
 namespace Roaster_Generator.Services;
@@ -61,10 +62,10 @@ public sealed class RosterSolver
                     var usable = true;
                     for (var hour = start; hour < finish; hour++)
                     {
-                        // Never create coverage at zero/unentered demand. A person who cannot
-                        // work alone cannot be selected for a slot requiring only one driver.
+                        // Never create coverage at zero/unentered demand. A non-car driver
+                        // cannot be selected for a slot requiring only one driver.
                         if (!demand.TryGetValue((availability.Date, hour), out var slot) ||
-                            slot.RequiredDrivers == 0 || (!CanWorkAlone(employee) && slot.RequiredDrivers == 1))
+                            slot.RequiredDrivers == 0 || (!IsCarDriver(employee) && slot.RequiredDrivers == 1))
                         {
                             usable = false;
                             break;
@@ -82,7 +83,7 @@ public sealed class RosterSolver
                     var next = existing.FirstOrDefault(shift => shift.Start >= actualFinish);
                     var previousRestPenalty = previous is null ? 0 : Math.Max(0, input.Options.PreferredRestHours - (actualStart - previous.Finish).TotalHours);
                     var nextRestPenalty = next is null ? 0 : Math.Max(0, input.Options.PreferredRestHours - (next.Start - actualFinish).TotalHours);
-                    candidates.Add(new Candidate(candidates.Count, employee.Id, CanWorkAlone(employee),
+                    candidates.Add(new Candidate(candidates.Count, employee.Id, IsCarDriver(employee),
                         availability.Date, start, finish, AbsoluteHour(input.WeekStart, availability.Date, start),
                         (long)Math.Ceiling(previousRestPenalty * 100), (long)Math.Ceiling(nextRestPenalty * 100)));
                     if (candidates.Count > MaxCandidates)
@@ -106,8 +107,8 @@ public sealed class RosterSolver
             var available = choices.Select(candidate => candidate.EmployeeId).Distinct().Count();
             if (available < slot.RequiredDrivers)
                 shortages.Add($"{FormatSlot(slot)}: need {slot.RequiredDrivers - available} more driver(s). Demand {slot.RequiredDrivers}; only {available} can cover this hour in a legal 3–10 hour shift within availability, the {input.Options.LatestShiftStartHour:00}:00 latest shift start and the {input.Options.MinimumRestHours}-hour rest rule. Shifts may finish overnight, but cannot start after {input.Options.LatestShiftStartHour:00}:00 or after midnight.");
-            if (!choices.Any(candidate => candidate.CanWorkAlone))
-                shortages.Add($"{FormatSlot(slot)}: need at least one driver who can work alone to supervise this hour.");
+            if (!choices.Any(candidate => candidate.IsCar))
+                shortages.Add($"{FormatSlot(slot)}: need at least one car driver to cover this hour alone.");
         }
         if (shortages.Count > 0)
             return Failure("infeasible", "Exact coverage is impossible with the current availability, supervision and shift limits.", shortages, candidates.Count);
@@ -296,8 +297,8 @@ public sealed class RosterSolver
             var label = slot is not null ? FormatSlot(slot) : input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour).ToString("dddd HH:mm", CultureInfo.InvariantCulture);
             if (assigned.Count != required)
                 errors.Add($"{label}: demand {required}, scheduled {assigned.Count}; {(assigned.Count < required ? $"need {required - assigned.Count} more driver(s)" : $"{assigned.Count - required} excess driver(s)")}.");
-            if (required > 0 && !assigned.Any(CanWorkAlone))
-                errors.Add($"{label}: no driver who can work alone is scheduled.");
+            if (required > 0 && !assigned.Any(IsCarDriver))
+                errors.Add($"{label}: no car driver is scheduled to cover this hour alone.");
         }
         foreach (var boundary in input.BoundaryShifts)
             if (times.TryGetValue(boundary.EmployeeId, out var entries))
@@ -390,12 +391,12 @@ public sealed class RosterSolver
             token.ThrowIfCancellationRequested();
             var options = coverage[AbsoluteHour(input.WeekStart, slot.Date, slot.Hour)];
             var assigned = LinearExpr.Sum(options.Select(candidate => selected[candidate.Index]));
-            var qualified = LinearExpr.Sum(options.Where(candidate => candidate.CanWorkAlone).Select(candidate => selected[candidate.Index]));
+            var qualified = LinearExpr.Sum(options.Where(candidate => candidate.IsCar).Select(candidate => selected[candidate.Index]));
             if (diagnostic)
             {
                 var deficit = model.NewIntVar(0, slot.RequiredDrivers, $"missing{missing.Count}");
                 model.Add(assigned + deficit == slot.RequiredDrivers);
-                // A partially covered hour still cannot leave inexperienced employees unsupervised.
+                // A partially covered hour still cannot be covered only by non-car drivers.
                 model.Add(assigned <= qualified * slot.RequiredDrivers);
                 missing.Add((slot, deficit));
                 objective.Add(deficit);
@@ -621,9 +622,9 @@ public sealed class RosterSolver
                         (addition.AbsoluteStart < other.AbsoluteFinish + input.Options.MinimumRestHours &&
                          other.AbsoluteStart < addition.AbsoluteFinish + input.Options.MinimumRestHours)) return false;
             }
-            // Coverage counts stay identical by construction; only qualified coverage can change.
+            // Coverage counts stay identical by construction; only car-driver coverage can change.
             foreach (var hour in removed.SelectMany(candidate => Enumerable.Range(candidate.AbsoluteStart, candidate.Length)).Distinct())
-                if (!remaining.Concat(added).Any(candidate => candidate.CanWorkAlone && candidate.AbsoluteStart <= hour && candidate.AbsoluteFinish > hour))
+                if (!remaining.Concat(added).Any(candidate => candidate.IsCar && candidate.AbsoluteStart <= hour && candidate.AbsoluteFinish > hour))
                     return false;
             proposal = remaining.Concat(added).ToList();
             return true;
@@ -739,10 +740,10 @@ public sealed class RosterSolver
 
     private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
 
-    private static bool CanWorkAlone(Employee employee) => employee.DriverProfile?.CanWorkAlone == true;
+    private static bool IsCarDriver(Employee employee) => employee.DriverProfile?.DriverType == DriverType.Car;
     private static string FormatSlot(RosterSolverDemand slot) => $"{slot.Date.ToString("dddd", CultureInfo.InvariantCulture)} {slot.Hour % 24:00}:00{(slot.Hour >= 24 ? " (+1 day)" : string.Empty)}";
 
-    private sealed record Candidate(int Index, Guid EmployeeId, bool CanWorkAlone, DateOnly Date,
+    private sealed record Candidate(int Index, Guid EmployeeId, bool IsCar, DateOnly Date,
         int Start, int Finish, int AbsoluteStart, long PreviousBoundaryRestPenalty, long NextBoundaryRestPenalty)
     {
         public int Length => Finish - Start;

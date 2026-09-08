@@ -127,7 +127,6 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 e.FirstName,
                 e.LastName,
                 TargetHours = TargetHours(e),
-                CanWorkAlone = CanWorkAlone(e),
                 e.DriverProfile?.DriverType
             }),
             Availability = availability.Select(s => new { s.EmployeeId, s.Date, s.StartTime, s.FinishTime }),
@@ -137,6 +136,4 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
     }
 
     private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
-
-    private static bool CanWorkAlone(Employee employee) => employee.DriverProfile?.CanWorkAlone == true;
 }

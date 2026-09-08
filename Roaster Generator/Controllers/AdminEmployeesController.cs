@@ -351,7 +351,6 @@ public sealed class AdminEmployeesController(
         {
             employee.DriverProfile ??= new DriverProfile { EmployeeId = employee.Id };
             employee.DriverProfile.TargetHours = request.TargetHours;
-            employee.DriverProfile.CanWorkAlone = request.CanWorkAlone;
             employee.DriverProfile.DriverType = request.DriverType;
         }
         else if (employee.DriverProfile is not null)

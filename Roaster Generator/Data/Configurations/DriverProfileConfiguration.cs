@@ -22,11 +22,6 @@ public sealed class DriverProfileConfiguration : IEntityTypeConfiguration<Driver
             .HasDefaultValue(20)
             .IsRequired();
 
-        builder.Property(profile => profile.CanWorkAlone)
-            .HasColumnName("can_work_alone")
-            .HasDefaultValue(true)
-            .IsRequired();
-
         builder.Property(profile => profile.DriverType)
             .HasColumnName("driver_type")
             .HasConversion<string>()

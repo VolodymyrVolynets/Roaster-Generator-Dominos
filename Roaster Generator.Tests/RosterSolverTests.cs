@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Services;
 using Xunit.Abstractions;
 
@@ -262,24 +263,25 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void RequiresAQualifiedEmployeeDuringEveryDemandHour()
+    public void RequiresACarDriverDuringEveryDemandHour()
     {
-        var employee = Driver(canWorkAlone: false);
+        var employee = Driver(driverType: DriverType.EBike);
         var input = Input([employee], [Available(employee, Monday, 12, 18)], Demand(Monday, 12, 6));
 
         var result = solver.Solve(input);
 
         AssertInfeasible(result);
         Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Contains("car", StringComparison.OrdinalIgnoreCase) ||
             diagnostic.Contains("alone", StringComparison.OrdinalIgnoreCase) ||
             diagnostic.Contains("qualified", StringComparison.OrdinalIgnoreCase) ||
             diagnostic.Contains("supervis", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void AllowsUnqualifiedEmployeeAlongsideAQualifiedEmployee()
+    public void AllowsEbikeAlongsideACarDriver()
     {
-        var employees = new[] { Driver(), Driver(canWorkAlone: false) };
+        var employees = new[] { Driver(), Driver(driverType: DriverType.EBike) };
         var input = Input(employees,
             employees.Select(employee => Available(employee, Monday, 12, 18)).ToArray(),
             Demand(Monday, 12, 6, requiredDrivers: 2));
@@ -573,7 +575,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     [Fact]
     public void IndependentValidationRejectsUnsupervisedCoverage()
     {
-        var employee = Driver(canWorkAlone: false);
+        var employee = Driver(driverType: DriverType.EBike);
         var input = Input([employee], [Available(employee, Monday, 12, 18)], Demand(Monday, 12, 6));
 
         Assert.NotEmpty(RosterSolver.Validate(input, [new(employee.Id, Monday, 12, 18)]));
@@ -632,7 +634,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             $"The current allocation exceeds a 30-point target percentage gap: {string.Join(", ", allocations.Order())}.");
     }
 
-    private static Employee Driver(int targetHours = 20, bool canWorkAlone = true) => new()
+    private static Employee Driver(int targetHours = 20, DriverType driverType = DriverType.Car) => new()
     {
         Id = Guid.NewGuid(),
         FirstName = "Test",
@@ -640,7 +642,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         DriverProfile = new DriverProfile
         {
             TargetHours = targetHours,
-            CanWorkAlone = canWorkAlone
+            DriverType = driverType
         }
     };
 
@@ -694,7 +696,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             var assigned = result.Shifts.Where(shift => shift.Date == date && shift.StartHour <= hour && shift.FinishHour > hour).ToArray();
             Assert.Equal(required, assigned.Length);
             if (required > 0)
-                Assert.Contains(assigned, shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.CanWorkAlone == true);
+                Assert.Contains(assigned, shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.DriverType == DriverType.Car);
         }
     }
 }

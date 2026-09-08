@@ -20,7 +20,7 @@ First read the repository `AGENTS.md` and `docs/PROJECT_CONTEXT.md`. Treat those
 
 ## Current UX boundary
 
-Drivers see availability and holiday workflows, but not driver type, target hours, or can-work-alone details. Admin management views may show and edit those fields.
+Drivers see availability and holiday workflows, but not driver type or target hours. Admin management views may show and edit those fields.
 
 ## Safe operational behavior
 

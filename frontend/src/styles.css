@@ -1319,15 +1319,6 @@ input:focus {
   accent-color: #7dd3fc;
 }
 
-.employee-form > .employee-work-alone {
-  grid-column: 1 / -1;
-  width: fit-content;
-  padding: 10px 13px;
-  border: 1px solid rgba(110, 231, 183, 0.22);
-  border-radius: 10px;
-  background: rgba(6, 78, 59, 0.2);
-}
-
 .employee-form-actions,
 .employee-form .save-message {
   grid-column: 1 / -1;

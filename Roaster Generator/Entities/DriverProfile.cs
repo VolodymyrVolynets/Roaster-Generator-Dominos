@@ -8,8 +8,6 @@ public sealed class DriverProfile
 
     public int TargetHours { get; set; } = 20;
 
-    public bool CanWorkAlone { get; set; } = true;
-
     public DriverType DriverType { get; set; } = DriverType.Car;
 
     public Employee Employee { get; set; } = null!;

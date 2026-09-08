@@ -67,7 +67,7 @@ must have at least one work role (`Driver`, `InStore`, or `Manager`), and only
 the system administrator can grant or remove the `Admin` role.
 
 The frontend selects a workspace from the signed-in roles. Drivers see their
-driver type, target hours, and can-work-alone setting alongside availability;
+availability and holiday workflows;
 in-store employees see an in-store availability workspace without driver data;
 employees without a specialized role see the shared employee workspace. Managers
 and admins use the management console.
@@ -81,14 +81,14 @@ one or all pending requests, and download all records as CSV.
 Every employee stores shared identity data on `Employee`: employee number, first
 name, last name, phone number, optional payroll number, and active status.
 Role-specific data is kept in profiles. `DriverProfile` currently contains
-weekly target hours, whether the driver can work alone, and `DriverType`
-(`Car`, `Moped`, or `EBike`, defaulting to `Car`). `InStoreProfile` and
+weekly target hours and `DriverType` (`Car`, `Moped`, or `EBike`, defaulting to
+`Car`). Car drivers can cover a staffed hour alone; other driver types require
+a car driver alongside them. `InStoreProfile` and
 `ManagerProfile` are intentionally empty placeholders for future fields.
 
 The employee migration backfills every existing employee as an active `Driver`
-with a `Car` profile and preserves the existing target-hours and can-work-alone
-values. The identity seeder also links existing employee users and gives legacy
-employee accounts the `Driver` role when they have no work role.
+with a `Car` profile. The identity seeder also links existing employee users and
+gives legacy employee accounts the `Driver` role when they have no work role.
 
 ## Roster generation
 
@@ -110,7 +110,7 @@ The default latest shift start is 20:00. Administrators can change it in
 generation preferences between 06:00 and 22:00 inclusive; later starts,
 including after midnight in the same business day, are forbidden. Shifts can
 still finish after midnight.
-At least one employee marked **Can work alone** must cover each staffed hour.
+At least one `Car` driver must cover each staffed hour.
 Rest is checked against other generated shifts and adjacent saved weeks.
 
 Saved admin preferences control:

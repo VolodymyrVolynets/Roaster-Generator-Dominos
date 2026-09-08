@@ -18,7 +18,6 @@ public static class EmployeeResponseMapper
         IsActive = employee.IsActive,
         Roles = roles.ToArray(),
         TargetHours = employee.DriverProfile?.TargetHours,
-        CanWorkAlone = employee.DriverProfile?.CanWorkAlone,
         DriverType = employee.DriverProfile?.DriverType
     };
 }

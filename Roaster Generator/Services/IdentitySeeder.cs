@@ -191,7 +191,6 @@ public static class IdentitySeeder
             {
                 EmployeeId = employee.Id,
                 TargetHours = 20,
-                CanWorkAlone = true,
                 DriverType = DriverType.Car
             });
         }

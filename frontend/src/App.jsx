@@ -18,7 +18,6 @@ const emptyEmployeeForm = {
   payrollNumber: '',
   roles: ['Driver'],
   targetHours: 20,
-  canWorkAlone: true,
   driverType: 'Car',
 }
 
@@ -1032,7 +1031,6 @@ function AdminConsole({
     updateEmployeeForm('payrollNumber', '')
     updateEmployeeForm('roles', ['Driver'])
     updateEmployeeForm('targetHours', 20)
-    updateEmployeeForm('canWorkAlone', true)
     updateEmployeeForm('driverType', 'Car')
   }
 
@@ -1160,7 +1158,6 @@ function AdminConsole({
                       <>
                         <span>Driver type: {employee.driverType || 'Car'}</span>
                         <span>Target hours: {employee.targetHours}</span>
-                        <span>Can work alone: {employee.canWorkAlone ? 'Yes' : 'No'}</span>
                       </>
                     )}
                     <span className="employee-card-status">
@@ -1285,15 +1282,6 @@ function AdminConsole({
                             required
                           />
                         </div>
-                        <label className="checkbox-label employee-work-alone" htmlFor="admin-employee-can-work-alone">
-                          <input
-                            id="admin-employee-can-work-alone"
-                            type="checkbox"
-                            checked={employeeForm.canWorkAlone}
-                            onChange={(event) => updateEmployeeForm('canWorkAlone', event.target.checked)}
-                          />
-                          Can work alone
-                        </label>
                       </>
                     )}
 
@@ -1907,7 +1895,6 @@ function App() {
         payrollNumber: employee.payrollNumber || '',
         roles: employee.roles?.length ? employee.roles : ['Driver'],
         targetHours: employee.targetHours ?? 20,
-        canWorkAlone: employee.canWorkAlone ?? true,
         driverType: employee.driverType || 'Car',
       })
     }

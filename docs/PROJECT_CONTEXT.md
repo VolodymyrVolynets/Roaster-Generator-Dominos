@@ -68,13 +68,13 @@ If existing credentials are unknown, the opt-in `RESET_ADMIN_PASSWORD_ON_STARTUP
 
 Role-specific information is kept in one-to-one profiles:
 
-- `DriverProfile`: target weekly hours, can-work-alone flag, and `DriverType` (`Car`, `Moped`, `EBike`, default `Car`).
+- `DriverProfile`: target weekly hours and `DriverType` (`Car`, `Moped`, `EBike`, default `Car`). Car drivers can cover a staffed hour alone; other driver types require a car driver alongside them.
 - `InStoreProfile`: currently empty placeholder.
 - `ManagerProfile`: currently empty placeholder.
 
 Use profile entities for future role-specific fields. Do not add driver-only, in-store-only, or manager-only nullable columns to `Employee`.
 
-The admin employee editor can create/update roles and profile data. It may display driver details for administrators. The driver workspace must not display driver type, target hours, or can-work-alone details; it only provides availability and holiday workflows.
+The admin employee editor can create/update roles and profile data. It may display driver details for administrators. The driver workspace must not display driver type or target hours; it only provides availability and holiday workflows.
 
 ## Holidays
 
@@ -114,7 +114,7 @@ Roster generation uses OR-Tools CP-SAT and is coordinated by the roster services
 - only active drivers with driver profiles are roster inputs;
 - generated shifts are continuous and 3–10 hours, inside availability;
 - exact hourly driver demand is required where demand is staffed;
-- at least one can-work-alone driver must cover each staffed hour;
+- at least one `Car` driver must cover each staffed hour;
 - minimum/preferred rest, latest start, fairness, and rolling history are enforced or scored according to saved settings;
 - generation and saving are protected against concurrent jobs and stale input;
 - failed or cancelled generation must not replace the saved roster.

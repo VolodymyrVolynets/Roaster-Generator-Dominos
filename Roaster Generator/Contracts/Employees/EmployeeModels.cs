@@ -18,8 +18,6 @@ public sealed class EmployeeRequest
 
     public int TargetHours { get; set; } = 20;
 
-    public bool CanWorkAlone { get; set; } = true;
-
     public DriverType DriverType { get; set; } = DriverType.Car;
 }
 
@@ -42,8 +40,6 @@ public sealed class EmployeeResponse
     public IReadOnlyList<string> Roles { get; init; } = [];
 
     public int? TargetHours { get; init; }
-
-    public bool? CanWorkAlone { get; init; }
 
     public DriverType? DriverType { get; init; }
 }
