@@ -296,7 +296,7 @@ public sealed class RosterSolver
             var assigned = actual.GetValueOrDefault(hour) ?? [];
             var label = slot is not null ? FormatSlot(slot) : input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour).ToString("dddd HH:mm", CultureInfo.InvariantCulture);
             if (assigned.Count != required)
-                errors.Add($"{label}: demand {required}, scheduled {assigned.Count}; {(assigned.Count < required ? $"need {required - assigned.Count} more driver(s)" : $"{assigned.Count - required} excess driver(s)")}.");
+                errors.Add($"Demand mismatch: {label}: demand {required}, scheduled {assigned.Count}; {(assigned.Count < required ? $"need {required - assigned.Count} more driver(s)" : $"{assigned.Count - required} excess driver(s)")}.");
             if (required > 0 && !assigned.Any(IsCarDriver))
                 errors.Add($"{label}: no car driver is scheduled to cover this hour alone.");
         }

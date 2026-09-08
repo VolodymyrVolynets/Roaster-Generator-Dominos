@@ -1038,6 +1038,39 @@ input:focus {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.roster-fairness-details {
+  margin-top: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.roster-fairness-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 16px;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-weight: 800;
+  list-style-position: inside;
+}
+
+.roster-fairness-details > summary small {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.roster-fairness-details[open] > summary {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.roster-fairness-details .roster-fairness-section {
+  padding: 0 16px 16px;
+}
+
 .roster-fairness-table {
   min-width: 960px;
 }
@@ -1051,46 +1084,70 @@ input:focus {
   color: #64748b;
 }
 
-.roster-coverage-heading {
-  margin-top: 32px;
-}
-
-.roster-coverage-heading h3 {
-  margin: 0 0 8px;
-}
-
-.roster-coverage-heading p {
-  margin-bottom: 0;
-}
-
-.roster-coverage-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-}
-
-.roster-coverage-slot {
+.roster-demand-warning {
   display: grid;
   gap: 6px;
-  padding: 12px;
-  border: 1px solid rgba(110, 231, 183, 0.22);
-  border-radius: 10px;
-  color: #cbd5e1;
-  background: rgba(6, 78, 59, 0.12);
+  margin: 18px 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.58);
+  border-radius: 12px;
+  color: #fee2e2;
+  background: rgba(127, 29, 29, 0.2);
   font-size: 0.85rem;
 }
 
-.roster-coverage-slot small {
-  color: #6ee7b7;
+.roster-demand-warning > strong {
+  color: #fecaca;
 }
 
-.roster-coverage-slot.mismatch {
-  border-color: rgba(248, 113, 113, 0.5);
-  background: rgba(127, 29, 29, 0.2);
+.roster-demand-warning p {
+  margin: 0;
+  line-height: 1.45;
 }
 
-.roster-coverage-slot.mismatch small {
+.roster-demand-warning ul {
+  max-height: 180px;
+  margin: 4px 0 0;
+  padding-left: 20px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+.roster-demand-warning li + li {
+  margin-top: 3px;
+}
+
+.roster-demand-warning li strong {
   color: #fca5a5;
+}
+
+.roster-demand-warning > small {
+  color: #fecaca;
+}
+
+.saved-roster-table thead th.demand-mismatch,
+.saved-roster-table td.demand-mismatch {
+  border-color: rgba(248, 113, 113, 0.58);
+  color: #fee2e2;
+  background: rgba(127, 29, 29, 0.42);
+}
+
+.saved-roster-table thead th.demand-mismatch {
+  color: #fecaca;
+}
+
+.saved-roster-table td.demand-mismatch .roster-shift,
+.saved-roster-table td.demand-mismatch .roster-day-off {
+  color: #fecaca;
+}
+
+.roster-mismatch-label {
+  display: block;
+  margin-top: 4px;
+  color: #fca5a5 !important;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .roster-snapshot-grid {

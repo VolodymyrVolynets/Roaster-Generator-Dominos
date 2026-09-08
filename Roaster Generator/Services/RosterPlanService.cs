@@ -87,15 +87,22 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
                 shift.FinishHour))
             .ToArray();
         var validation = RosterSolver.Validate(loaded.Input, shifts);
-        if (validation.Count > 0)
-            throw new RosterInputException("The edited roster is invalid and was not saved.", validation);
+        var demandWarnings = validation
+            .Where(IsDemandMismatch)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var blockingValidation = validation
+            .Where(error => !IsDemandMismatch(error))
+            .ToArray();
+        if (blockingValidation.Length > 0)
+            throw new RosterInputException("The edited roster is invalid and was not saved.", blockingValidation);
 
         var result = new RosterSolverResult
         {
             Status = "manual",
             Message = "Roster manually updated by an administrator.",
             Shifts = shifts,
-            Diagnostics = ["Roster manually updated by an administrator."],
+            Diagnostics = ["Roster manually updated by an administrator.", .. demandWarnings],
             TotalDemandHours = loaded.Input.Demand.Sum(demand => demand.RequiredDrivers),
             TotalScheduledHours = shifts.Sum(shift => shift.DurationHours)
         };
@@ -205,20 +212,24 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
             var most = employees.Where(e => e.TargetPercentage.HasValue).MaxBy(e => e.TargetPercentage)!;
             warnings.Add($"Fairness check: this week's target-percentage gap is {spread:F1} percentage points ({least.EmployeeName}: {least.TargetPercentage:F1}%; {most.EmployeeName}: {most.TargetPercentage:F1}%). Review unavailable drivers, prior-week compensation and shift/rest constraints. Increasing fairness weights or the solve budget may improve the gap; exact coverage remains mandatory.");
         }
+        var coverage = loaded.Input.Demand.OrderBy(d => d.Date).ThenBy(d => d.Hour).Select(d => new RosterCoverageResponse
+        {
+            Date = d.Date, StartTime = $"{d.Hour % 24:00}:00", StartDayOffset = d.Hour / 24, Required = d.RequiredDrivers,
+            Scheduled = result.Shifts.Count(s => s.Date == d.Date && s.StartHour <= d.Hour && s.FinishHour > d.Hour)
+        }).ToList();
+        var demandTotal = coverage.Sum(slot => slot.Required);
+        var coveredDemand = coverage.Sum(slot => Math.Min(slot.Required, slot.Scheduled));
+        var coveragePercent = demandTotal > 0 ? Math.Round(100d * coveredDemand / demandTotal, 2) : 100;
         return new RosterPlanResponse
         {
             Id = plan.Id, WeekStart = plan.WeekStart, UpdatedAtUtc = plan.UpdatedAtUtc,
             TotalDemandHours = loaded.Input.Demand.Sum(d => d.RequiredDrivers), TotalScheduledHours = result.Shifts.Sum(s => s.DurationHours),
-            CoveragePercent = 100, SolverStatus = result.Status, IsOptimal = result.Status == "optimal", SolveSeconds = result.WallTimeSeconds,
+            CoveragePercent = coveragePercent, SolverStatus = result.Status, IsOptimal = result.Status == "optimal", SolveSeconds = result.WallTimeSeconds,
             Settings = loaded.Settings, Employees = employees, Warnings = warnings,
             MinimumRestHours = rests.Count > 0 ? rests.Min() : null,
             FairnessSpreadPercentagePoints = spread,
             HistoricalFairnessSpreadPercentagePoints = cumulativePercentages.Count > 0 ? Math.Round(cumulativePercentages.Max() - cumulativePercentages.Min(), 2) : 0,
-            Coverage = loaded.Input.Demand.OrderBy(d => d.Date).ThenBy(d => d.Hour).Select(d => new RosterCoverageResponse
-            {
-                Date = d.Date, StartTime = $"{d.Hour % 24:00}:00", StartDayOffset = d.Hour / 24, Required = d.RequiredDrivers,
-                Scheduled = result.Shifts.Count(s => s.Date == d.Date && s.StartHour <= d.Hour && s.FinishHour > d.Hour)
-            }).ToList()
+            Coverage = coverage
         };
     }
 
@@ -251,4 +262,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
     private static int Duration(TimeOnly start, TimeOnly finish) => (finish.Hour - start.Hour + 24) % 24;
 
     private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
+
+    private static bool IsDemandMismatch(string diagnostic) =>
+        diagnostic.StartsWith("Demand mismatch:", StringComparison.Ordinal);
 }

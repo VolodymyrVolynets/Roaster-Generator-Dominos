@@ -445,54 +445,140 @@ function FairnessComparison({ roster, employeeGroups }) {
   if (currentSpread > 30) warnings.push(`This week’s target percentages differ by ${formatNumber(currentSpread)} percentage points, above the 30-point review threshold.`)
   if (hasHistory && cumulativeSpread > 30) warnings.push(`The cumulative target percentages differ by ${formatNumber(cumulativeSpread)} percentage points across the saved history and this week.`)
   if (warnings.length) warnings.push('Past-hour compensation, availability, exact demand, shift lengths, and rest limits may affect the gap. The search time budget can also limit improvement; review the individual percentages before using this roster.')
-  return <section className="roster-fairness-section" aria-label="Fairness across five weeks">
-    <h3 className="roster-section-title">Fairness across five weeks</h3>
-    <p className="demand-help">
-      Compare this week with up to four earlier saved weeks. Each percentage is scheduled hours divided by target hours;
-      the cumulative percentage uses the combined hours and targets. The history-adjusted goal gradually compensates for
-      the employee’s difference from the group’s previous percentage, divided across the saved weeks and capped at a
-      15-percentage-point correction this week. This reference goal is balanced with your weights and the shift rules.
-    </p>
-    <div className="roster-week-summary roster-fairness-metrics">
-      <Metric label="This week’s percentage gap" value={`${formatNumber(currentSpread)} pp`} />
-      <Metric label="Cumulative percentage gap" value={cumulativeSpread == null ? 'Not recorded' : `${formatNumber(cumulativeSpread)} pp`} />
+  return <details className="roster-fairness-details">
+    <summary>
+      <span>Fairness across five weeks</span>
+      <small>{formatNumber(currentSpread)} pp this week · {cumulativeSpread == null ? 'No cumulative history' : `${formatNumber(cumulativeSpread)} pp cumulative`}</small>
+    </summary>
+    <section className="roster-fairness-section" aria-label="Fairness across five weeks">
+      <p className="demand-help">
+        Compare this week with up to four earlier saved weeks. Each percentage is scheduled hours divided by target hours;
+        the cumulative percentage uses the combined hours and targets. The history-adjusted goal gradually compensates for
+        the employee’s difference from the group’s previous percentage, divided across the saved weeks and capped at a
+        15-percentage-point correction this week. This reference goal is balanced with your weights and the shift rules.
+      </p>
+      <div className="roster-week-summary roster-fairness-metrics">
+        <Metric label="This week’s percentage gap" value={`${formatNumber(currentSpread)} pp`} />
+        <Metric label="Cumulative percentage gap" value={cumulativeSpread == null ? 'Not recorded' : `${formatNumber(cumulativeSpread)} pp`} />
+      </div>
+      {!hasHistory && <p className="roster-footnote">No earlier saved employee history is available for this roster. Fairness starts with this week.</p>}
+      {warnings.length > 0 && <DiagnosticList entries={warnings} title="Review the remaining fairness gap" />}
+      <div className="demand-table-wrapper">
+        <table className="saved-roster-table roster-fairness-table">
+          <caption className="visually-hidden">Previous weeks, current week, and cumulative target-hour percentages</caption>
+          <thead><tr>
+            <th scope="col">Employee</th>
+            <th scope="col">Previous weeks</th>
+            <th scope="col">Previous hours / target</th>
+            <th scope="col">Previous target %</th>
+            <th scope="col">This week’s target %</th>
+            <th scope="col">History-adjusted goal</th>
+            <th scope="col">Cumulative target %</th>
+          </tr></thead>
+          <tbody>{groups.flatMap((group) => [
+            <tr className={`roster-group-divider roster-group-divider-${group.id}`} key={`${group.id}-heading`}>
+              <th colSpan="7" scope="rowgroup">{group.label}</th>
+            </tr>,
+            ...group.employees.map((employee) => {
+              const currentPercentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
+              const priorPercentage = employee.previousTargetPercentage
+              const cumulativePercentage = employee.cumulativeTargetPercentage
+              return <tr key={employee.employeeId}>
+                <th scope="row">{employee.employeeName}</th>
+                <td>{employee.historyWeeks || 0} / 4</td>
+                <td>{employee.historyWeeks ? `${formatNumber(employee.previousScheduledHours)} / ${formatNumber(employee.previousTargetHours)}h` : 'No history'}</td>
+                <td>{priorPercentage == null ? '—' : `${formatNumber(priorPercentage)}%`}</td>
+                <td><strong className="roster-target-percentage">{currentPercentage == null ? 'N/A' : `${formatNumber(currentPercentage)}%`}</strong><small>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h</small></td>
+                <td>{employee.balancedTargetHours == null ? '—' : `${formatNumber(employee.balancedTargetHours)}h`}</td>
+                <td><strong className="roster-target-percentage">{cumulativePercentage == null ? '—' : `${formatNumber(cumulativePercentage)}%`}</strong></td>
+              </tr>
+            }),
+          ])}</tbody>
+        </table>
+      </div>
+    </section>
+  </details>
+}
+
+function SavedRosterEmployeeTables({ roster, groupedRosterEmployees, dates, demandMismatchByDate }) {
+  const mismatchDetails = (date) => demandMismatchByDate.get(date)?.join(' · ')
+  const mismatchEntries = [...demandMismatchByDate.entries()].flatMap(([date, details]) => details.map((detail) => ({ date, detail })))
+
+  return <>
+    <h3 className="roster-section-title">Employee shifts and target hours</h3>
+    <p className="demand-help">Target percentage is scheduled hours divided by target hours. Red dates indicate an hourly demand mismatch; the roster remains saved so the administrator can review and correct it.</p>
+    {demandMismatchByDate.size > 0 && (
+      <div className="roster-demand-warning" role="alert">
+        <strong>Demand mismatch saved with this roster</strong>
+        <p>Availability and hard shift rules passed. Red dates show where scheduled drivers differ from the demand plan.</p>
+        <ul>
+          {mismatchEntries.slice(0, 12).map(({ date, detail }) => (
+            <li key={`${date}-${detail}`}><strong>{formatDate(date)}</strong> {detail}</li>
+          ))}
+        </ul>
+        {mismatchEntries.length > 12 && <small>Additional mismatched hours are highlighted in red in the tables.</small>}
+      </div>
+    )}
+    <div className="roster-role-groups saved-roster-role-groups">
+      {groupedRosterEmployees.map((group) => (
+        <section className={`roster-role-group roster-role-group-${group.id}`} key={group.id}>
+          <div className="roster-role-group-heading">
+            <div>
+              <h3>{group.label}</h3>
+              <p>{group.description}</p>
+            </div>
+            <span className="roster-role-group-count">
+              {group.employees.length} {group.employees.length === 1 ? 'employee' : 'employees'}
+            </span>
+          </div>
+          {group.employees.length > 0 ? (
+            <div className="demand-table-wrapper">
+              <table className="saved-roster-table">
+                <caption className="visually-hidden">{group.label} roster for the week starting {roster.weekStart}</caption>
+                <thead><tr>
+                  <th scope="col">Employee</th>
+                  <th scope="col">Hours / target</th>
+                  <th scope="col">Target %</th>
+                  {dates.map((date) => {
+                    const mismatch = mismatchDetails(date)
+                    return <th scope="col" key={date} className={mismatch ? 'demand-mismatch' : ''} title={mismatch || undefined}>
+                      {formatDate(date)}
+                      {mismatch && <small className="roster-mismatch-label">Demand mismatch</small>}
+                    </th>
+                  })}
+                  <th scope="col">Shortest rest*</th>
+                </tr></thead>
+                <tbody>{group.employees.map((employee) => {
+                  const percentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
+                  const rest = minimumEmployeeRest(employee.shifts)
+                  return <tr key={employee.employeeId}>
+                    <th scope="row">{employee.employeeName}</th>
+                    <td>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h
+                      <small>{employee.shifts.length ? `Avg ${averageFormatter.format(employee.averageHoursPerShift ?? averageShiftHours(employee.shifts))}h per shift` : 'No shifts'}</small>
+                    </td>
+                    <td><strong className="roster-target-percentage">{percentage == null ? 'N/A' : `${formatNumber(percentage)}%`}</strong>{percentage == null && <small>Zero target · reserve</small>}</td>
+                    {dates.map((date) => {
+                      const mismatch = mismatchDetails(date)
+                      return <td key={date} className={`roster-shift-cell${mismatch ? ' demand-mismatch' : ''}`} title={mismatch || undefined}>
+                        {employee.shifts.filter((shift) => shift.date === date).map((shift, index) => <span className="roster-shift" key={index}>
+                          <span>{shiftTime(shift.startTime, shift.startDayOffset)}–{shiftTime(shift.finishTime, shift.finishDayOffset)}</span><small>{formatNumber(shift.durationHours)}h</small>
+                        </span>)}
+                        {!employee.shifts.some((shift) => shift.date === date) && <span className="roster-day-off">Off</span>}
+                      </td>
+                    })}
+                    <td>{rest == null ? '—' : `${formatNumber(rest)}h`}</td>
+                  </tr>
+                })}</tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="roster-role-group-empty">No {group.label.toLowerCase()} are included in this roster.</p>
+          )}
+        </section>
+      ))}
     </div>
-    {!hasHistory && <p className="roster-footnote">No earlier saved employee history is available for this roster. Fairness starts with this week.</p>}
-    {warnings.length > 0 && <DiagnosticList entries={warnings} title="Review the remaining fairness gap" />}
-    <div className="demand-table-wrapper">
-      <table className="saved-roster-table roster-fairness-table">
-        <caption className="visually-hidden">Previous weeks, current week, and cumulative target-hour percentages</caption>
-        <thead><tr>
-          <th scope="col">Employee</th>
-          <th scope="col">Previous weeks</th>
-          <th scope="col">Previous hours / target</th>
-          <th scope="col">Previous target %</th>
-          <th scope="col">This week’s target %</th>
-          <th scope="col">History-adjusted goal</th>
-          <th scope="col">Cumulative target %</th>
-        </tr></thead>
-        <tbody>{groups.flatMap((group) => [
-          <tr className={`roster-group-divider roster-group-divider-${group.id}`} key={`${group.id}-heading`}>
-            <th colSpan="7" scope="rowgroup">{group.label}</th>
-          </tr>,
-          ...group.employees.map((employee) => {
-            const currentPercentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
-            const priorPercentage = employee.previousTargetPercentage
-            const cumulativePercentage = employee.cumulativeTargetPercentage
-            return <tr key={employee.employeeId}>
-              <th scope="row">{employee.employeeName}</th>
-              <td>{employee.historyWeeks || 0} / 4</td>
-              <td>{employee.historyWeeks ? `${formatNumber(employee.previousScheduledHours)} / ${formatNumber(employee.previousTargetHours)}h` : 'No history'}</td>
-              <td>{priorPercentage == null ? '—' : `${formatNumber(priorPercentage)}%`}</td>
-              <td><strong className="roster-target-percentage">{currentPercentage == null ? 'N/A' : `${formatNumber(currentPercentage)}%`}</strong><small>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h</small></td>
-              <td>{employee.balancedTargetHours == null ? '—' : `${formatNumber(employee.balancedTargetHours)}h`}</td>
-              <td><strong className="roster-target-percentage">{cumulativePercentage == null ? '—' : `${formatNumber(cumulativePercentage)}%`}</strong></td>
-            </tr>
-          }),
-        ])}</tbody>
-      </table>
-    </div>
-  </section>
+    <p className="roster-footnote">* Per-employee rest shown here is between shifts in this roster. The generator also checks adjacent saved weeks.</p>
+  </>
 }
 
 export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, canEdit = true }) {
@@ -505,7 +591,6 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
   const [editStatus, setEditStatus] = useState({ status: 'idle', message: '' })
   const [status, setStatus] = useState('loading')
   const [refreshKey, setRefreshKey] = useState(0)
-  const [coverageDay, setCoverageDay] = useState('')
 
   useEffect(() => {
     let active = true
@@ -536,7 +621,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
     const [kind, value] = selection.split(':')
     const query = kind === 'date' ? `weekStart=${encodeURIComponent(value)}` : `weekOffset=${value}`
     fetchJson(`/api/admin/roster?${query}`, { cache: 'no-store' }).then((payload) => {
-      if (active) { setRoster(payload); setCoverageDay(payload.weekStart); setStatus('success') }
+      if (active) { setRoster(payload); setStatus('success') }
     }).catch((error) => {
       if (!active) return
       setStatus(error.status === 404 ? 'empty' : 'error')
@@ -602,7 +687,13 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
   const dates = roster ? weekDates(roster.weekStart) : []
   const shifts = roster?.employees.flatMap((employee) => employee.shifts) || []
   const preferredShiftCount = shifts.filter((shift) => shift.durationHours >= 6 && shift.durationHours <= 8).length
-  const selectedCoverage = roster?.coverage?.filter((slot) => slot.date === coverageDay) || []
+  const demandMismatchByDate = new Map()
+  for (const slot of roster?.coverage || []) {
+    if (slot.required === slot.scheduled) continue
+    const details = demandMismatchByDate.get(slot.date) || []
+    details.push(`${shiftTime(slot.startTime, slot.startDayOffset)}: required ${slot.required}, scheduled ${slot.scheduled}`)
+    demandMismatchByDate.set(slot.date, details)
+  }
   const availableEmployeeById = new Map(availableEmployees.map((employee) => [String(employee.id), employee]))
   const groupedRosterEmployees = rosterRoleGroups.map((group) => ({
     ...group,
@@ -643,12 +734,18 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       {roster && <>
         {!canEdit && <p className="message info-message" role="status">Read-only view for managers. Only administrators can edit saved roster shifts.</p>}
         <p className="roster-footnote">Week starting {formatDate(roster.weekStart)} · Saved {new Date(roster.updatedAtUtc).toLocaleString()}</p>
+        <SavedRosterEmployeeTables
+          roster={roster}
+          groupedRosterEmployees={groupedRosterEmployees}
+          dates={dates}
+          demandMismatchByDate={demandMismatchByDate}
+        />
         {canEdit && editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
           <div className="section-heading">
             <div><span className="eyebrow">Administrator</span><h3>Edit generated shifts</h3></div>
             <button type="button" className="secondary-button" onClick={addDraftShift}>Add shift</button>
           </div>
-          <p className="demand-help">Change an employee, date or time, add a shift, or remove one. Saving runs the full demand, availability, shift length, start-time, supervision and rest validation again.</p>
+          <p className="demand-help">Change an employee, date or time, add a shift, or remove one. Availability and other hard shift rules block invalid edits. Demand mismatches are saved as warnings and highlighted in red for review.</p>
           <div className="roster-edit-list">
             {draftShifts.map((shift, index) => {
               const employee = roster.employees.find((item) => String(item.employeeId) === String(shift.employeeId))
@@ -692,7 +789,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
           </div>
         </form>}
         <div className="roster-week-summary roster-result-metrics">
-          <Metric label="Demand matched" value={roster.coveragePercent == null ? 'Unverified' : `${formatNumber(roster.coveragePercent)}%`} />
+          <Metric label="Demand coverage" value={roster.coveragePercent == null ? 'Unverified' : `${formatNumber(roster.coveragePercent)}%`} />
           <Metric label="Scheduled / needed" value={`${formatNumber(roster.totalScheduledHours)} / ${formatNumber(roster.totalDemandHours)}h`} />
           <Metric label="Target percentage spread" value={`${formatNumber(roster.fairnessSpreadPercentagePoints)} pp`} />
           <Metric label="Shortest rest" value={roster.minimumRestHours == null ? 'No shift pairs' : `${formatNumber(roster.minimumRestHours)}h`} />
@@ -706,63 +803,6 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
         </p>
         {!!roster.warnings?.length && <DiagnosticList entries={roster.warnings} title="Roster notes" />}
         <FairnessComparison roster={roster} employeeGroups={populatedRosterEmployeeGroups} />
-        <h3 className="roster-section-title">Employee shifts and target hours</h3>
-        <p className="demand-help">Target percentage is scheduled hours divided by target hours. The spread compares employees with positive targets; zero-target employees are reserves with no percentage. +1d means the following calendar day; business days run from 06:00 to 05:59.</p>
-        <div className="roster-role-groups saved-roster-role-groups">
-          {groupedRosterEmployees.map((group) => (
-            <section className={`roster-role-group roster-role-group-${group.id}`} key={group.id}>
-              <div className="roster-role-group-heading">
-                <div>
-                  <h3>{group.label}</h3>
-                  <p>{group.description}</p>
-                </div>
-                <span className="roster-role-group-count">
-                  {group.employees.length} {group.employees.length === 1 ? 'employee' : 'employees'}
-                </span>
-              </div>
-              {group.employees.length > 0 ? (
-                <div className="demand-table-wrapper">
-                  <table className="saved-roster-table">
-                    <caption className="visually-hidden">{group.label} roster for the week starting {roster.weekStart}</caption>
-                    <thead><tr><th scope="col">Employee</th><th scope="col">Hours / target</th><th scope="col">Target %</th>{dates.map((date) => <th scope="col" key={date}>{formatDate(date)}</th>)}<th scope="col">Shortest rest*</th></tr></thead>
-                    <tbody>{group.employees.map((employee) => {
-                      const percentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
-                      const rest = minimumEmployeeRest(employee.shifts)
-                      return <tr key={employee.employeeId}>
-                        <th scope="row">{employee.employeeName}</th>
-                        <td>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h
-                          <small>{employee.shifts.length ? `Avg ${averageFormatter.format(employee.averageHoursPerShift ?? averageShiftHours(employee.shifts))}h per shift` : 'No shifts'}</small>
-                        </td>
-                        <td><strong className="roster-target-percentage">{percentage == null ? 'N/A' : `${formatNumber(percentage)}%`}</strong>{percentage == null && <small>Zero target · reserve</small>}</td>
-                        {dates.map((date) => <td key={date} className="roster-shift-cell">
-                          {employee.shifts.filter((shift) => shift.date === date).map((shift, index) => <span className="roster-shift" key={index}>
-                            <span>{shiftTime(shift.startTime, shift.startDayOffset)}–{shiftTime(shift.finishTime, shift.finishDayOffset)}</span><small>{formatNumber(shift.durationHours)}h</small>
-                          </span>)}
-                          {!employee.shifts.some((shift) => shift.date === date) && <span className="roster-day-off">Off</span>}
-                        </td>)}
-                        <td>{rest == null ? '—' : `${formatNumber(rest)}h`}</td>
-                      </tr>
-                    })}</tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="roster-role-group-empty">No {group.label.toLowerCase()} are included in this roster.</p>
-              )}
-            </section>
-          ))}
-        </div>
-        <p className="roster-footnote">* Per-employee rest shown here is between shifts in this roster. The generator also checks adjacent saved weeks.</p>
-        <div className="section-heading roster-coverage-heading">
-          <div><h3>Hourly demand coverage</h3><p className="demand-help">Required drivers and assigned drivers for every hour.</p></div>
-          <label className="week-selector">Day<select value={coverageDay} onChange={(event) => setCoverageDay(event.target.value)}>{dates.map((date) => <option value={date} key={date}>{formatDate(date)}</option>)}</select></label>
-        </div>
-        <div className="roster-coverage-grid">
-          {selectedCoverage.map((slot) => <div key={slot.startTime} className={`roster-coverage-slot ${slot.required === slot.scheduled ? 'matched' : 'mismatch'}`}>
-            <strong>{shiftTime(slot.startTime, slot.startDayOffset)}</strong><span>{slot.scheduled} / {slot.required} drivers</span>
-            <small>{slot.required === slot.scheduled ? slot.required ? 'Matched' : 'No demand' : `${Math.abs(slot.required - slot.scheduled)} ${slot.required > slot.scheduled ? 'missing' : 'extra'}`}</small>
-          </div>)}
-          {!selectedCoverage.length && <p className="save-message">No hourly coverage snapshot is available for this saved roster.</p>}
-        </div>
         {roster.settings && <details className="roster-settings"><summary>Preferences used for this roster</summary>
           <dl className="roster-snapshot-grid">
             {weightFields.map(([field, label]) => <div key={field}><dt>{label}</dt><dd>{roster.settings[field] ?? 'Not recorded'}</dd></div>)}
