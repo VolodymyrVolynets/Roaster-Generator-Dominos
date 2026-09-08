@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/signalr'
 import { createRosterEventState, mergeRosterEvents } from './rosterEvents'
+import { compareRosterEmployees, getRosterRoleGroup, rosterRoleGroups } from './employeeGroups'
 
 const weightFields = [
   ['targetHoursWeight', 'Equal target percentages', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s target percentage; reduce it when availability or exact coverage needs more flexibility. Set to 0 to disable it.'],
@@ -433,10 +434,13 @@ function exportRosterCsv(roster, dates) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function FairnessComparison({ roster }) {
+function FairnessComparison({ roster, employeeGroups }) {
   const currentSpread = roster.fairnessSpreadPercentagePoints
   const cumulativeSpread = roster.historicalFairnessSpreadPercentagePoints
   const hasHistory = roster.employees.some((employee) => employee.historyWeeks > 0)
+  const groups = employeeGroups?.length
+    ? employeeGroups
+    : [{ id: 'all', label: 'Employees', employees: roster.employees }]
   const warnings = []
   if (currentSpread > 30) warnings.push(`This week’s target percentages differ by ${formatNumber(currentSpread)} percentage points, above the 30-point review threshold.`)
   if (hasHistory && cumulativeSpread > 30) warnings.push(`The cumulative target percentages differ by ${formatNumber(cumulativeSpread)} percentage points across the saved history and this week.`)
@@ -467,20 +471,25 @@ function FairnessComparison({ roster }) {
           <th scope="col">History-adjusted goal</th>
           <th scope="col">Cumulative target %</th>
         </tr></thead>
-        <tbody>{roster.employees.map((employee) => {
-          const currentPercentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
-          const priorPercentage = employee.previousTargetPercentage
-          const cumulativePercentage = employee.cumulativeTargetPercentage
-          return <tr key={employee.employeeId}>
-            <th scope="row">{employee.employeeName}</th>
-            <td>{employee.historyWeeks || 0} / 4</td>
-            <td>{employee.historyWeeks ? `${formatNumber(employee.previousScheduledHours)} / ${formatNumber(employee.previousTargetHours)}h` : 'No history'}</td>
-            <td>{priorPercentage == null ? '—' : `${formatNumber(priorPercentage)}%`}</td>
-            <td><strong className="roster-target-percentage">{currentPercentage == null ? 'N/A' : `${formatNumber(currentPercentage)}%`}</strong><small>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h</small></td>
-            <td>{employee.balancedTargetHours == null ? '—' : `${formatNumber(employee.balancedTargetHours)}h`}</td>
-            <td><strong className="roster-target-percentage">{cumulativePercentage == null ? '—' : `${formatNumber(cumulativePercentage)}%`}</strong></td>
-          </tr>
-        })}</tbody>
+        <tbody>{groups.flatMap((group) => [
+          <tr className={`roster-group-divider roster-group-divider-${group.id}`} key={`${group.id}-heading`}>
+            <th colSpan="7" scope="rowgroup">{group.label}</th>
+          </tr>,
+          ...group.employees.map((employee) => {
+            const currentPercentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
+            const priorPercentage = employee.previousTargetPercentage
+            const cumulativePercentage = employee.cumulativeTargetPercentage
+            return <tr key={employee.employeeId}>
+              <th scope="row">{employee.employeeName}</th>
+              <td>{employee.historyWeeks || 0} / 4</td>
+              <td>{employee.historyWeeks ? `${formatNumber(employee.previousScheduledHours)} / ${formatNumber(employee.previousTargetHours)}h` : 'No history'}</td>
+              <td>{priorPercentage == null ? '—' : `${formatNumber(priorPercentage)}%`}</td>
+              <td><strong className="roster-target-percentage">{currentPercentage == null ? 'N/A' : `${formatNumber(currentPercentage)}%`}</strong><small>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h</small></td>
+              <td>{employee.balancedTargetHours == null ? '—' : `${formatNumber(employee.balancedTargetHours)}h`}</td>
+              <td><strong className="roster-target-percentage">{cumulativePercentage == null ? '—' : `${formatNumber(cumulativePercentage)}%`}</strong></td>
+            </tr>
+          }),
+        ])}</tbody>
       </table>
     </div>
   </section>
@@ -589,6 +598,17 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
   const shifts = roster?.employees.flatMap((employee) => employee.shifts) || []
   const preferredShiftCount = shifts.filter((shift) => shift.durationHours >= 6 && shift.durationHours <= 8).length
   const selectedCoverage = roster?.coverage?.filter((slot) => slot.date === coverageDay) || []
+  const availableEmployeeById = new Map(availableEmployees.map((employee) => [String(employee.id), employee]))
+  const groupedRosterEmployees = rosterRoleGroups.map((group) => ({
+    ...group,
+    employees: (roster?.employees || [])
+      .filter((employee) => {
+        const employeeDirectoryEntry = availableEmployeeById.get(String(employee.employeeId)) || { roles: ['Driver'] }
+        return getRosterRoleGroup(employeeDirectoryEntry).id === group.id
+      })
+      .sort(compareRosterEmployees),
+  }))
+  const populatedRosterEmployeeGroups = groupedRosterEmployees.filter((group) => group.employees.length > 0)
   const savedDates = [...new Set([...(initialWeekStart ? [initialWeekStart] : []), ...history.map((item) => item.weekStart)])]
     .sort((left, right) => right.localeCompare(left))
 
@@ -679,32 +699,51 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart })
           {' '}Status: {formatStage(roster.solverStatus)}.
         </p>
         {!!roster.warnings?.length && <DiagnosticList entries={roster.warnings} title="Roster notes" />}
-        <FairnessComparison roster={roster} />
+        <FairnessComparison roster={roster} employeeGroups={populatedRosterEmployeeGroups} />
         <h3 className="roster-section-title">Employee shifts and target hours</h3>
         <p className="demand-help">Target percentage is scheduled hours divided by target hours. The spread compares employees with positive targets; zero-target employees are reserves with no percentage. +1d means the following calendar day; business days run from 06:00 to 05:59.</p>
-        <div className="demand-table-wrapper">
-          <table className="saved-roster-table">
-            <caption className="visually-hidden">Employee roster for the week starting {roster.weekStart}</caption>
-            <thead><tr><th scope="col">Employee</th><th scope="col">Hours / target</th><th scope="col">Target %</th>{dates.map((date) => <th scope="col" key={date}>{formatDate(date)}</th>)}<th scope="col">Shortest rest*</th></tr></thead>
-            <tbody>{roster.employees.map((employee) => {
-              const percentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
-              const rest = minimumEmployeeRest(employee.shifts)
-              return <tr key={employee.employeeId}>
-                <th scope="row">{employee.employeeName}</th>
-                <td>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h
-                  <small>{employee.shifts.length ? `Avg ${averageFormatter.format(employee.averageHoursPerShift ?? averageShiftHours(employee.shifts))}h per shift` : 'No shifts'}</small>
-                </td>
-                <td><strong className="roster-target-percentage">{percentage == null ? 'N/A' : `${formatNumber(percentage)}%`}</strong>{percentage == null && <small>Zero target · reserve</small>}</td>
-                {dates.map((date) => <td key={date} className="roster-shift-cell">
-                  {employee.shifts.filter((shift) => shift.date === date).map((shift, index) => <span className="roster-shift" key={index}>
-                    <span>{shiftTime(shift.startTime, shift.startDayOffset)}–{shiftTime(shift.finishTime, shift.finishDayOffset)}</span><small>{formatNumber(shift.durationHours)}h</small>
-                  </span>)}
-                  {!employee.shifts.some((shift) => shift.date === date) && <span className="roster-day-off">Off</span>}
-                </td>)}
-                <td>{rest == null ? '—' : `${formatNumber(rest)}h`}</td>
-              </tr>
-            })}</tbody>
-          </table>
+        <div className="roster-role-groups saved-roster-role-groups">
+          {groupedRosterEmployees.map((group) => (
+            <section className={`roster-role-group roster-role-group-${group.id}`} key={group.id}>
+              <div className="roster-role-group-heading">
+                <div>
+                  <h3>{group.label}</h3>
+                  <p>{group.description}</p>
+                </div>
+                <span className="roster-role-group-count">
+                  {group.employees.length} {group.employees.length === 1 ? 'employee' : 'employees'}
+                </span>
+              </div>
+              {group.employees.length > 0 ? (
+                <div className="demand-table-wrapper">
+                  <table className="saved-roster-table">
+                    <caption className="visually-hidden">{group.label} roster for the week starting {roster.weekStart}</caption>
+                    <thead><tr><th scope="col">Employee</th><th scope="col">Hours / target</th><th scope="col">Target %</th>{dates.map((date) => <th scope="col" key={date}>{formatDate(date)}</th>)}<th scope="col">Shortest rest*</th></tr></thead>
+                    <tbody>{group.employees.map((employee) => {
+                      const percentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
+                      const rest = minimumEmployeeRest(employee.shifts)
+                      return <tr key={employee.employeeId}>
+                        <th scope="row">{employee.employeeName}</th>
+                        <td>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h
+                          <small>{employee.shifts.length ? `Avg ${averageFormatter.format(employee.averageHoursPerShift ?? averageShiftHours(employee.shifts))}h per shift` : 'No shifts'}</small>
+                        </td>
+                        <td><strong className="roster-target-percentage">{percentage == null ? 'N/A' : `${formatNumber(percentage)}%`}</strong>{percentage == null && <small>Zero target · reserve</small>}</td>
+                        {dates.map((date) => <td key={date} className="roster-shift-cell">
+                          {employee.shifts.filter((shift) => shift.date === date).map((shift, index) => <span className="roster-shift" key={index}>
+                            <span>{shiftTime(shift.startTime, shift.startDayOffset)}–{shiftTime(shift.finishTime, shift.finishDayOffset)}</span><small>{formatNumber(shift.durationHours)}h</small>
+                          </span>)}
+                          {!employee.shifts.some((shift) => shift.date === date) && <span className="roster-day-off">Off</span>}
+                        </td>)}
+                        <td>{rest == null ? '—' : `${formatNumber(rest)}h`}</td>
+                      </tr>
+                    })}</tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="roster-role-group-empty">No {group.label.toLowerCase()} are included in this roster.</p>
+              )}
+            </section>
+          ))}
         </div>
         <p className="roster-footnote">* Per-employee rest shown here is between shifts in this roster. The generator also checks adjacent saved weeks.</p>
         <div className="section-heading roster-coverage-heading">

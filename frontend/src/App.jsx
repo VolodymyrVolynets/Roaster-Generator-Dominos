@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
+import {
+  compareEmployees,
+  employeeHasRole,
+  employeeRoleGroups,
+  getEmployeeRoleGroup,
+  getRosterRoleGroup,
+  rosterRoleGroups,
+} from './employeeGroups'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',
@@ -19,55 +27,6 @@ const emptyEmployeeForm = {
   roles: ['Driver'],
   targetHours: 20,
   driverType: 'Car',
-}
-
-const employeeRoleGroups = [
-  {
-    id: 'drivers',
-    label: 'Drivers',
-    roles: ['Driver'],
-    description: 'Delivery staff included in roster generation.',
-  },
-  {
-    id: 'instore',
-    label: 'In-store',
-    roles: ['InStore'],
-    description: 'Employees assigned to in-store work.',
-  },
-  {
-    id: 'managers',
-    label: 'Managers & admins',
-    roles: ['Manager', 'Admin'],
-    description: 'Employees with management or administration access.',
-  },
-  {
-    id: 'other',
-    label: 'Other employees',
-    roles: [],
-    description: 'Employees without one of the groups above.',
-  },
-]
-
-function employeeHasRole(employee, role) {
-  return (employee.roles || []).some((item) => item.toLowerCase() === role.toLowerCase())
-}
-
-function getEmployeeRoleGroup(employee) {
-  return employeeRoleGroups.find((group) =>
-    group.roles.some((role) => employeeHasRole(employee, role)),
-  ) || employeeRoleGroups.at(-1)
-}
-
-function compareEmployees(first, second) {
-  if (first.isActive !== second.isActive) {
-    return first.isActive ? -1 : 1
-  }
-
-  return `${first.lastName} ${first.firstName}`.localeCompare(
-    `${second.lastName} ${second.firstName}`,
-    undefined,
-    { sensitivity: 'base' },
-  )
 }
 
 function parseDate(dateValue) {
@@ -1105,6 +1064,17 @@ function AdminConsole({
         .sort(compareEmployees),
     }))
     .filter((group) => group.employees.length > 0)
+  const employeesById = new Map(employees.map((employee) => [String(employee.id), employee]))
+  const groupedAvailability = rosterRoleGroups
+    .map((group) => ({
+      ...group,
+      employees: (availability?.employees || [])
+        .filter((employeeSchedule) => {
+          const employee = employeesById.get(String(employeeSchedule.employeeId)) || { roles: ['Driver'] }
+          return getRosterRoleGroup(employee).id === group.id
+        })
+        .sort((first, second) => first.employeeName.localeCompare(second.employeeName, undefined, { sensitivity: 'base' })),
+    }))
   const editableRoles = authState.user.isAdmin
     ? ['Driver', 'InStore', 'Manager', 'Admin']
     : ['Driver', 'InStore', 'Manager']
@@ -1410,24 +1380,43 @@ function AdminConsole({
                     {dateFormatter.format(parseDate(availability.weekStart))} –{' '}
                     {dateFormatter.format(parseDate(availability.weekEnd))}
                   </div>
-                  <div className="availability-table" role="table">
-                    <div className="availability-row availability-header" role="row">
-                      <strong>Employee</strong>
-                      {availability.employees[0]?.days.map((day) => (
-                        <span key={day.date}>{day.dayOfWeek.slice(0, 3)}</span>
-                      ))}
-                    </div>
-                    {availability.employees.map((employeeSchedule) => (
-                      <div className="availability-row" role="row" key={employeeSchedule.employeeId}>
-                        <strong>{employeeSchedule.employeeName}</strong>
-                        {employeeSchedule.days.map((day) => (
-                          <span key={day.date}>
-                            {day.startTime && day.finishTime
-                              ? `${day.startTime}–${day.finishTime}`
-                              : 'Off'}
+                  <div className="roster-role-groups availability-role-groups">
+                    {groupedAvailability.map((group) => (
+                      <section className={`roster-role-group roster-role-group-${group.id}`} key={group.id}>
+                        <div className="roster-role-group-heading">
+                          <div>
+                            <h3>{group.label}</h3>
+                            <p>{group.description}</p>
+                          </div>
+                          <span className="roster-role-group-count">
+                            {group.employees.length} {group.employees.length === 1 ? 'employee' : 'employees'}
                           </span>
-                        ))}
-                      </div>
+                        </div>
+                        {group.employees.length > 0 ? (
+                          <div className="availability-table" role="table">
+                            <div className="availability-row availability-header" role="row">
+                              <strong>Employee</strong>
+                              {group.employees[0].days.map((day) => (
+                                <span key={day.date}>{day.dayOfWeek.slice(0, 3)}</span>
+                              ))}
+                            </div>
+                            {group.employees.map((employeeSchedule) => (
+                              <div className="availability-row" role="row" key={employeeSchedule.employeeId}>
+                                <strong>{employeeSchedule.employeeName}</strong>
+                                {employeeSchedule.days.map((day) => (
+                                  <span key={day.date}>
+                                    {day.startTime && day.finishTime
+                                      ? `${day.startTime}–${day.finishTime}`
+                                      : 'Off'}
+                                  </span>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="roster-role-group-empty">No active employees in this group for the selected week.</p>
+                        )}
+                      </section>
                     ))}
                   </div>
                   {availability.employees.length === 0 && (
