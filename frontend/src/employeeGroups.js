@@ -27,16 +27,16 @@ export const employeeRoleGroups = [
 
 export const rosterRoleGroups = [
   {
-    id: 'operations',
-    label: 'Drivers & in-store',
-    roles: ['Driver', 'InStore'],
-    description: 'Operational availability and rostered employees.',
+    id: 'drivers',
+    label: 'Drivers',
+    roles: ['Driver'],
+    description: 'Delivery drivers and their shifts.',
   },
   {
-    id: 'management',
-    label: 'Managers',
-    roles: ['Manager', 'Admin'],
-    description: 'Management availability and roster rows.',
+    id: 'inside',
+    label: 'In-store & managers',
+    roles: ['InStore', 'Manager'],
+    description: 'Shop staff, including managers who supervise every open hour.',
   },
 ]
 
@@ -51,6 +51,8 @@ export function getEmployeeRoleGroup(employee) {
 }
 
 export function getRosterRoleGroup(employee) {
+  // An employee with an inside role belongs to that roster even if they also drive.
+  if (rosterRoleGroups[1].roles.some((role) => employeeHasRole(employee, role))) return rosterRoleGroups[1]
   return rosterRoleGroups.find((group) =>
     group.roles.some((role) => employeeHasRole(employee, role)),
   ) || rosterRoleGroups[0]

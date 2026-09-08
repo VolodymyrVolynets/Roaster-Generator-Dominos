@@ -11,6 +11,12 @@ public sealed class DemandPlan
     // Hourly pay used to turn required driver-hours into an estimated labour cost.
     public decimal HourlyRate { get; set; }
 
+    public decimal InsideHourlyRate { get; set; }
+
+    public decimal DeliveriesPerDriverHour { get; set; } = 2.7m;
+
+    public decimal PizzasPerInsideHour { get; set; } = 20m;
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public DateTimeOffset UpdatedAtUtc { get; set; }
@@ -62,7 +68,11 @@ public sealed class DemandValue
 
     public decimal? Deliveries { get; set; }
 
+    public decimal? Pizzas { get; set; }
+
     public int? Demand { get; set; }
+
+    public int? InsideDemand { get; set; }
 
     public DemandRow Row { get; set; } = null!;
 
@@ -72,6 +82,8 @@ public sealed class DemandValue
 public sealed class RosterPlan
 {
     public Guid Id { get; set; }
+
+    public string RosterKind { get; set; } = "drivers";
 
     public DateOnly WeekStart { get; set; }
 

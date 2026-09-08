@@ -19,6 +19,11 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
             {
                 var options = input.Options;
 
+                if (!RosterKinds.IsValid(input.RosterKind))
+                {
+                    context.AddFailure("Select a valid roster kind: drivers or inside.");
+                }
+
                 if (input.WeekStart == DateOnly.MinValue || input.WeekStart > DateOnly.MaxValue.AddDays(-8))
                 {
                     context.AddFailure("A valid week start date is required.");
@@ -64,7 +69,7 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                     context.AddFailure("The employee list contains duplicate IDs.");
                 }
 
-                if (input.Employees.Any(employee => TargetHours(employee) is < 0 or > 168))
+                if (input.Employees.Any(employee => TargetHours(employee, input.RosterKind) is < 0 or > 168))
                 {
                     context.AddFailure("Employee target hours must be between 0 and 168.");
                 }
@@ -75,7 +80,7 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                         slot.Hour is < 0 or > 47 ||
                         slot.RequiredDrivers is < 0 or > MaxEmployees))
                 {
-                    context.AddFailure("Demand must contain hours 0–47 within the selected business week and 0–1000 drivers per hour.");
+                    context.AddFailure($"Demand must contain hours 0–47 within the selected business week and 0–1000 {(input.RosterKind == RosterKinds.Inside ? "inside employees" : "drivers")} per hour.");
                 }
 
                 if (input.Demand.GroupBy(slot => AbsoluteHour(input.WeekStart, slot.Date, slot.Hour))
@@ -137,5 +142,5 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
     private static int AbsoluteHour(DateOnly weekStart, DateOnly date, int hour) =>
         (date.DayNumber - weekStart.DayNumber) * 24 + hour;
 
-    private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
+    private static int TargetHours(Employee employee, string rosterKind) => RosterKinds.TargetHours(employee, rosterKind);
 }

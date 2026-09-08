@@ -39,6 +39,8 @@ public sealed class RosterPlanUpdateRequestValidator : AbstractValidator<RosterP
 {
     public RosterPlanUpdateRequestValidator()
     {
+        RuleFor(request => request.RosterKind).Must(RosterKinds.IsValid)
+            .WithMessage("Roster type must be drivers or inside.");
         RuleFor(request => request.WeekStart)
             .Must(date => date != DateOnly.MinValue && date.DayOfWeek == DayOfWeek.Monday)
             .WithMessage("Select the Monday of a saved roster week.");

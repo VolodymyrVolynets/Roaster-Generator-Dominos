@@ -1,5 +1,6 @@
 using FluentValidation;
 using Roaster_Generator.Contracts.Demand;
+using Roaster_Generator.Services;
 
 namespace Roaster_Generator.Validation;
 
@@ -46,6 +47,18 @@ public sealed class DemandPlanUpdateRequestValidator : AbstractValidator<DemandP
         RuleFor(request => request.HourlyRate)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Hourly rate cannot be negative.");
+
+        RuleFor(request => request.InsideHourlyRate)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Inside hourly rate cannot be negative.");
+
+        RuleFor(request => request.DeliveriesPerDriverHour)
+            .InclusiveBetween(0.01m, 1000m)
+            .WithMessage("Deliveries per driver-hour must be between 0.01 and 1000.");
+
+        RuleFor(request => request.PizzasPerInsideHour)
+            .InclusiveBetween(0.01m, 1000m)
+            .WithMessage("Pizzas per inside employee-hour must be between 0.01 and 1000.");
 
         RuleFor(request => request.Columns)
             .NotNull()
@@ -149,5 +162,20 @@ public sealed class DemandValueRequestValidator : AbstractValidator<DemandValueR
             .GreaterThanOrEqualTo(0)
             .When(value => value.Demand.HasValue)
             .WithMessage("Demand cannot be negative.");
+
+        RuleFor(value => value.InsideDemand)
+            .GreaterThanOrEqualTo(0)
+            .When(value => value.InsideDemand.HasValue)
+            .WithMessage("Inside demand cannot be negative.");
+
+        RuleFor(value => value.Deliveries)
+            .InclusiveBetween(0m, DemandStaffing.MaximumWorkload)
+            .When(value => value.Deliveries.HasValue)
+            .WithMessage("Hourly deliveries must be between 0 and 1000000.");
+
+        RuleFor(value => value.Pizzas)
+            .InclusiveBetween(0m, DemandStaffing.MaximumWorkload)
+            .When(value => value.Pizzas.HasValue)
+            .WithMessage("Hourly pizzas must be between 0 and 1000000.");
     }
 }

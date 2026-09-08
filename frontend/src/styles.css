@@ -494,7 +494,7 @@ input:focus {
 }
 
 .demand-labour-settings {
-  display: flex;
+  display: grid;
   align-items: flex-end;
   justify-content: space-between;
   gap: 18px;
@@ -841,6 +841,39 @@ input:focus {
   margin: 14px 0 0;
 }
 
+.demand-productivity-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.demand-productivity-grid label {
+  align-content: end;
+}
+
+.demand-productivity-grid input {
+  width: 100%;
+}
+
+.demand-table td.demand-missing-value input {
+  border-color: #fbbf24;
+  background: rgba(120, 53, 15, 0.16);
+}
+
+.demand-table.demand-desktop-table {
+  min-width: 2000px;
+}
+
+.demand-labour-table td small {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+}
+
+.roster-manager-label {
+  color: #fcd34d !important;
+}
+
 .roster-role-groups {
   display: grid;
   gap: 20px;
@@ -857,13 +890,13 @@ input:focus {
   background: var(--roster-group-surface);
 }
 
-.roster-role-group-operations {
+.roster-role-group-drivers {
   --roster-group-accent: #6ee7b7;
   --roster-group-border: rgba(110, 231, 183, 0.32);
   --roster-group-surface: rgba(6, 78, 59, 0.16);
 }
 
-.roster-role-group-management {
+.roster-role-group-inside {
   --roster-group-accent: #fcd34d;
   --roster-group-border: rgba(252, 211, 77, 0.34);
   --roster-group-surface: rgba(120, 53, 15, 0.16);
@@ -938,12 +971,12 @@ input:focus {
   text-transform: uppercase;
 }
 
-.roster-group-divider-operations th {
+.roster-group-divider-drivers th {
   color: #6ee7b7;
   background: rgba(6, 78, 59, 0.18) !important;
 }
 
-.roster-group-divider-management th {
+.roster-group-divider-inside th {
   color: #fcd34d;
   background: rgba(120, 53, 15, 0.18) !important;
 }
@@ -2149,6 +2182,9 @@ select:disabled {
 }
 
 @media (max-width: 768px) {
+  .demand-productivity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .roster-edit-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -2181,16 +2217,16 @@ select:disabled {
   }
 
   .demand-mobile-view .demand-table-wrapper {
-    overflow-x: hidden;
+    overflow-x: auto;
   }
 
   .demand-mobile-table {
-    min-width: 0;
+    min-width: 410px;
     table-layout: fixed;
   }
 
   .demand-mobile-table th,
   .demand-mobile-table td {
-    width: 33.333%;
+    width: 20%;
   }
 }

@@ -18,6 +18,8 @@ public sealed class EmployeeRequest
 
     public int TargetHours { get; set; } = 20;
 
+    public int InsideTargetHours { get; set; } = 20;
+
     public DriverType DriverType { get; set; } = DriverType.Car;
 }
 
@@ -40,6 +42,8 @@ public sealed class EmployeeResponse
     public IReadOnlyList<string> Roles { get; init; } = [];
 
     public int? TargetHours { get; init; }
+
+    public int? InsideTargetHours { get; init; }
 
     public DriverType? DriverType { get; init; }
 }

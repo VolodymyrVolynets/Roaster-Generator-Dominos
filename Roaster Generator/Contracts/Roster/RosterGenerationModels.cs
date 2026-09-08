@@ -2,6 +2,7 @@ namespace Roaster_Generator.Contracts.Roster;
 
 public sealed class RosterTimerStartResponse
 {
+    public string RosterKind { get; init; } = "drivers";
     public DateTimeOffset TimestampUtc { get; init; }
 
     public long Sequence { get; init; }
@@ -30,6 +31,7 @@ public sealed class RosterTimerCancelRequest
 
 public sealed class RosterPlanResponse
 {
+    public string RosterKind { get; init; } = "drivers";
     public Guid Id { get; init; }
 
     public DateOnly WeekStart { get; init; }
@@ -76,6 +78,7 @@ public sealed class RosterPlanResponse
 
 public sealed class RosterPlanUpdateRequest
 {
+    public string RosterKind { get; set; } = "drivers";
     public DateOnly WeekStart { get; init; }
 
     public List<RosterShiftUpdateRequest> Shifts { get; init; } = [];
@@ -96,6 +99,7 @@ public sealed class RosterShiftUpdateRequest
 
 public sealed class RosterWeekSummaryResponse
 {
+    public string RosterKind { get; init; } = "drivers";
     public DateOnly WeekStart { get; init; }
 
     public bool DemandPlanExists { get; init; }
@@ -109,6 +113,7 @@ public sealed class RosterWeekSummaryResponse
 
 public sealed class RosterEmployeeResponse
 {
+    public IReadOnlyList<string> Roles { get; init; } = [];
     public Guid EmployeeId { get; init; }
 
     public string EmployeeName { get; init; } = string.Empty;
@@ -158,6 +163,7 @@ public sealed class RosterShiftResponse
 
 public sealed class RosterTimerProgressResponse
 {
+    public string RosterKind { get; init; } = "drivers";
     public Guid JobId { get; init; }
 
     public int WeekOffset { get; init; }

@@ -34,6 +34,24 @@ public sealed class DemandPlanConfiguration : IEntityTypeConfiguration<DemandPla
             .HasDefaultValue(0m)
             .IsRequired();
 
+        builder.Property(plan => plan.InsideHourlyRate)
+            .HasColumnName("inside_hourly_rate")
+            .HasPrecision(12, 2)
+            .HasDefaultValue(0m)
+            .IsRequired();
+
+        builder.Property(plan => plan.DeliveriesPerDriverHour)
+            .HasColumnName("deliveries_per_driver_hour")
+            .HasPrecision(12, 4)
+            .HasDefaultValue(2.7m)
+            .IsRequired();
+
+        builder.Property(plan => plan.PizzasPerInsideHour)
+            .HasColumnName("pizzas_per_inside_hour")
+            .HasPrecision(12, 4)
+            .HasDefaultValue(20m)
+            .IsRequired();
+
         builder.Property(plan => plan.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .HasColumnType("timestamp with time zone")

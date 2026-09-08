@@ -17,11 +17,12 @@ export function createRosterEventState() {
   return { generation: null, logs: [], retiredJobs: new Set() }
 }
 
-export function mergeRosterEvents(state, events, weekOffset) {
+export function mergeRosterEvents(state, events, weekOffset, rosterKind = 'drivers') {
   let generation = state.generation
   let logs = [...state.logs]
   const retiredJobs = new Set(state.retiredJobs)
-  const ordered = events.filter((entry) => entry && entry.weekOffset === weekOffset && entry.jobId).sort(compareEvents)
+  const ordered = events.filter((entry) => entry && entry.weekOffset === weekOffset
+    && (entry.rosterKind || 'drivers') === rosterKind && entry.jobId).sort(compareEvents)
 
   for (const payload of ordered) {
     if (retiredJobs.has(payload.jobId)) continue

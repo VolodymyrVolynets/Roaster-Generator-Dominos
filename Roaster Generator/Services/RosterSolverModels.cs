@@ -10,7 +10,8 @@ public sealed record RosterSolverInput(
     IReadOnlyList<RosterSolverDemand> Demand,
     IReadOnlyList<RosterSolverBoundaryShift> BoundaryShifts,
     RosterSolverOptions Options,
-    IReadOnlyList<RosterSolverHistory>? History = null);
+    IReadOnlyList<RosterSolverHistory>? History = null,
+    string RosterKind = RosterKinds.Drivers);
 
 public sealed record RosterSolverHistory(Guid EmployeeId, DateOnly WeekStart, int ScheduledHours, int TargetHours,
     int? ShiftCount = null);

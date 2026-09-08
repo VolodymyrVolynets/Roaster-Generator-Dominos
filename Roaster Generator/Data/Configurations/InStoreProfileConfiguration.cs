@@ -12,6 +12,9 @@ public sealed class InStoreProfileConfiguration : IEntityTypeConfiguration<InSto
 
         builder.HasKey(profile => profile.EmployeeId);
 
+        builder.Property(profile => profile.TargetHours)
+            .HasColumnName("target_hours").HasDefaultValue(20).IsRequired();
+
         builder.Property(profile => profile.EmployeeId)
             .HasColumnName("employee_id")
             .HasColumnType("uuid");

@@ -19,15 +19,15 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
     ILogger<RosterTimerService> logger) : BackgroundService
 {
     private readonly object gate = new();
-    private readonly Dictionary<DateOnly, ActiveJob> latestJobs = new();
+    private readonly Dictionary<(DateOnly WeekStart, string RosterKind), ActiveJob> latestJobs = new();
     private readonly Channel<ActiveJob> jobs = Channel.CreateBounded<ActiveJob>(1);
     private readonly Channel<RosterTimerProgressResponse> broadcasts = Channel.CreateBounded<RosterTimerProgressResponse>(
         new BoundedChannelOptions(1024) { FullMode = BoundedChannelFullMode.DropOldest });
     private ActiveJob? active;
 
-    public IReadOnlyList<RosterTimerProgressResponse> GetLogs(DateOnly weekStart)
+    public IReadOnlyList<RosterTimerProgressResponse> GetLogs(DateOnly weekStart, string rosterKind = RosterKinds.Drivers)
     {
-        lock (gate) return latestJobs.TryGetValue(weekStart, out var job) ? job.Logs.ToArray() : [];
+        lock (gate) return latestJobs.TryGetValue((weekStart, rosterKind), out var job) ? job.Logs.ToArray() : [];
     }
 
     public async Task SendActiveLogsAsync(string connectionId)
@@ -38,29 +38,30 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             await hub.Clients.Client(connectionId).SendAsync("rosterGenerationProgress", log);
     }
 
-    public RosterTimerStartResponse Start(int weekOffset)
+    public RosterTimerStartResponse Start(int weekOffset, string rosterKind = RosterKinds.Drivers)
     {
+        if (!RosterKinds.IsValid(rosterKind)) throw new RosterInputException("Roster type must be drivers or inside.");
         ActiveJob job;
         lock (gate)
         {
             if (active is not null) throw new RosterTimerAlreadyRunningException();
-            job = new ActiveJob(Guid.NewGuid(), weekOffset, WeeklyScheduleService.GetWeekMonday(weekOffset));
+            job = new ActiveJob(Guid.NewGuid(), weekOffset, WeeklyScheduleService.GetWeekMonday(weekOffset), rosterKind);
             active = job;
-            latestJobs[job.WeekStart] = job;
+            latestJobs[(job.WeekStart, job.RosterKind)] = job;
             if (latestJobs.Count > 32)
                 latestJobs.Remove(latestJobs.Where(p => p.Value != job).MinBy(p => p.Value.StartedAt).Key);
-            Publish(job, "started", "queued", 0, "Roster generation queued. Only a roster with exact hourly coverage will be saved.");
+            Publish(job, "started", "queued", 0, $"{rosterKind} roster generation queued. Only a roster with exact hourly coverage will be saved.");
             jobs.Writer.TryWrite(job);
         }
-        return new RosterTimerStartResponse { JobId = job.JobId, WeekOffset = weekOffset, WeekStart = job.WeekStart,
+        return new RosterTimerStartResponse { JobId = job.JobId, WeekOffset = weekOffset, WeekStart = job.WeekStart, RosterKind = job.RosterKind,
             Status = "started", Stage = "queued", Progress = 0, Message = "Roster generation queued.", TimestampUtc = job.StartedAt, Sequence = 1 };
     }
 
-    public bool Cancel(int weekOffset, Guid? jobId = null)
+    public bool Cancel(int weekOffset, Guid? jobId = null, string rosterKind = RosterKinds.Drivers)
     {
         lock (gate)
         {
-            if (active is null || active.WeekStart != WeeklyScheduleService.GetWeekMonday(weekOffset)
+            if (active is null || active.WeekStart != WeeklyScheduleService.GetWeekMonday(weekOffset) || active.RosterKind != rosterKind
                 || (jobId.HasValue && active.JobId != jobId)) return false;
             active.Cancellation.Cancel();
             return true;
@@ -115,10 +116,12 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
             var ownsLock = await db.Database.SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock(724863910) AS \"Value\"").SingleAsync(ct);
             if (!ownsLock) throw new RosterInputException("Another server is generating a roster. Retry after that job finishes.");
-            var loaded = await inputs.LoadAsync(job.WeekStart, ct);
+            var loaded = await inputs.LoadAsync(job.WeekStart, ct, job.RosterKind);
             foreach (var warning in loaded.Warnings) Publish(job, "running", "input-check", 5, warning, "warning");
             Publish(job, "running", "input-check", 8,
-                $"Loaded {loaded.Input.Employees.Count} active employees and {loaded.Input.Demand.Sum(d => d.RequiredDrivers)} required driver-hours. Latest shift start {loaded.Settings.LatestShiftStartHour:00}:00 (overnight finishes allowed). Minimum rest {loaded.Settings.MinimumRestHours}h; preferred rest {loaded.Settings.PreferredRestHours}h; solver budget {loaded.Settings.MaxSolveSeconds}s, one CPU worker.");
+                $"Loaded {loaded.Input.Employees.Count} active employees and {loaded.Input.Demand.Sum(d => d.RequiredDrivers)} required {job.RosterKind} staff-hours. Latest shift start {loaded.Settings.LatestShiftStartHour:00}:00 (overnight finishes allowed). Minimum rest {loaded.Settings.MinimumRestHours}h; preferred rest {loaded.Settings.PreferredRestHours}h; solver budget {loaded.Settings.MaxSolveSeconds}s, one CPU worker.");
+            if (job.RosterKind == RosterKinds.Inside)
+                Publish(job, "running", "input-check", 8, "Inside roster includes in-store employees and managers. At least one manager must cover every open hour, including hours with zero pizzas.");
             var history = loaded.Input.History ?? [];
             Publish(job, "running", "fairness-history", 8,
                 $"Fairness uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Missing weeks are not counted as zero-hour work. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");
@@ -157,7 +160,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             Publish(job, "running", stage, 91, "Rechecking every demand hour, availability, shift duration, supervision and rest before saving.");
             var validation = RosterSolver.Validate(loaded.Input, result.Shifts);
             if (validation.Count > 0) throw new RosterInputException("Final roster validation failed; no roster was saved.", validation);
-            var current = await inputs.LoadAsync(job.WeekStart, ct);
+            var current = await inputs.LoadAsync(job.WeekStart, ct, job.RosterKind);
             if (current.Fingerprint != loaded.Fingerprint)
                 throw new RosterInputException("Demand, availability, employee targets, settings or an adjacent roster changed during generation. Run generation again using the updated inputs. The previous saved roster was kept.");
             stage = "saving";
@@ -170,7 +173,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             // Once committing starts, complete it and report the actual durable outcome, even if cancel arrives.
             await transaction.CommitAsync(CancellationToken.None);
             Publish(job, "completed", "saved", 100,
-                $"Roster saved: {saved.TotalScheduledHours}/{saved.TotalDemandHours} driver-hours, 100% exact coverage. Average {saved.AverageHoursPerShift:F2} hours per shift. {(saved.IsOptimal ? "Best weighted preference score proven." : "Valid roster found; preference optimization stopped at the time limit.")} Open Saved rosters to review.",
+                $"{job.RosterKind} roster saved: {saved.TotalScheduledHours}/{saved.TotalDemandHours} staff-hours, 100% exact coverage. Average {saved.AverageHoursPerShift:F2} hours per shift. {(saved.IsOptimal ? "Best weighted preference score proven." : "Valid roster found; preference optimization stopped at the time limit.")} Open Saved rosters to review.",
                 "info", saved.Warnings, saved.Id, saved.TotalScheduledHours);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -200,7 +203,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
         {
             var payload = new RosterTimerProgressResponse
             {
-                JobId = job.JobId, WeekOffset = job.WeekOffset, WeekStart = job.WeekStart, Status = status, Stage = stage,
+                JobId = job.JobId, WeekOffset = job.WeekOffset, WeekStart = job.WeekStart, RosterKind = job.RosterKind, Status = status, Stage = stage,
                 Progress = progress, Message = message, TimestampUtc = DateTimeOffset.UtcNow, Sequence = ++job.Sequence,
                 Severity = severity, Diagnostics = diagnostics ?? [], RosterPlanId = rosterPlanId, TotalScheduledHours = totalScheduledHours
             };
@@ -210,8 +213,9 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
         }
     }
 
-    private sealed class ActiveJob(Guid jobId, int weekOffset, DateOnly weekStart)
+    private sealed class ActiveJob(Guid jobId, int weekOffset, DateOnly weekStart, string rosterKind)
     {
+        public string RosterKind { get; } = rosterKind;
         public Guid JobId { get; } = jobId;
         public int WeekOffset { get; } = weekOffset;
         public DateOnly WeekStart { get; } = weekStart;

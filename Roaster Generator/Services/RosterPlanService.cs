@@ -9,44 +9,48 @@ namespace Roaster_Generator.Services;
 
 public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs)
 {
-    public async Task<RosterWeekSummaryResponse> GetSummaryAsync(int weekOffset, CancellationToken ct)
+    public async Task<RosterWeekSummaryResponse> GetSummaryAsync(int weekOffset, CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
         var weekStart = WeeklyScheduleService.GetWeekMonday(weekOffset);
-        var ids = await db.Employees.AsNoTracking().Where(e => e.IsActive).Select(e => e.Id).ToListAsync(ct);
+        var ids = await db.Employees.AsNoTracking().Where(e => e.IsActive && (rosterKind == RosterKinds.Inside
+            ? e.ManagerProfile != null || e.InStoreProfile != null
+            : e.DriverProfile != null && e.ManagerProfile == null && e.InStoreProfile == null)).Select(e => e.Id).ToListAsync(ct);
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekStart.AddDays(7)).ToListAsync(ct);
         var demandExists = await db.DemandPlans.AnyAsync(ct);
         var required = 0;
         if (demandExists)
         {
-            try { required = (await inputs.LoadAsync(weekStart, ct)).Input.Demand.Sum(d => d.RequiredDrivers); }
+            try { required = (await inputs.LoadAsync(weekStart, ct, rosterKind)).Input.Demand.Sum(d => d.RequiredDrivers); }
             catch (RosterInputException) { /* Generation supplies the detailed demand validation errors. */ }
         }
         return new RosterWeekSummaryResponse
         {
-            WeekStart = weekStart, DemandPlanExists = demandExists, RequiredDriverHours = required,
+            RosterKind = rosterKind, WeekStart = weekStart, DemandPlanExists = demandExists, RequiredDriverHours = required,
             EnteredAvailabilityHours = availability.Sum(s => Duration(s.StartTime, s.FinishTime)),
             DriversWithoutAvailability = ids.Count - availability.Select(s => s.EmployeeId).Distinct().Count()
         };
     }
 
-    public Task<RosterPlanResponse?> GetAsync(int weekOffset, CancellationToken ct) =>
-        GetAsync(WeeklyScheduleService.GetWeekMonday(weekOffset), ct);
+    public Task<RosterPlanResponse?> GetAsync(int weekOffset, CancellationToken ct, string rosterKind = RosterKinds.Drivers) =>
+        GetAsync(WeeklyScheduleService.GetWeekMonday(weekOffset), ct, rosterKind);
 
-    public async Task<RosterPlanResponse?> GetAsync(DateOnly weekStart, CancellationToken ct)
+    public async Task<RosterPlanResponse?> GetAsync(DateOnly weekStart, CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
         var plan = await db.RosterPlans.AsNoTracking().Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.DriverProfile)
-            .SingleOrDefaultAsync(p => p.WeekStart == weekStart, ct);
+            .Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.InStoreProfile)
+            .Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.ManagerProfile)
+            .SingleOrDefaultAsync(p => p.WeekStart == weekStart && p.RosterKind == rosterKind, ct);
         return plan is null ? null : ToResponse(plan);
     }
 
-    public async Task<object> GetHistoryAsync(CancellationToken ct)
+    public async Task<object> GetHistoryAsync(CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
-        var plans = await db.RosterPlans.AsNoTracking().OrderByDescending(p => p.WeekStart)
-            .Select(p => new { p.Id, p.WeekStart, p.UpdatedAtUtc, p.SnapshotJson }).Take(156).ToListAsync(ct);
+        var plans = await db.RosterPlans.AsNoTracking().Where(p => p.RosterKind == rosterKind).OrderByDescending(p => p.WeekStart)
+            .Select(p => new { p.Id, p.WeekStart, p.RosterKind, p.UpdatedAtUtc, p.SnapshotJson }).Take(156).ToListAsync(ct);
         return plans.Select(p =>
         {
             var snapshot = p.SnapshotJson is null ? null : JsonSerializer.Deserialize<RosterPlanResponse>(p.SnapshotJson);
-            return new { p.Id, p.WeekStart, p.UpdatedAtUtc, TotalDemandHours = snapshot?.TotalDemandHours,
+            return new { p.Id, p.WeekStart, p.RosterKind, p.UpdatedAtUtc, TotalDemandHours = snapshot?.TotalDemandHours,
                 TotalScheduledHours = snapshot?.TotalScheduledHours, AverageHoursPerShift = snapshot?.AverageHoursPerShift,
                 SolverStatus = snapshot?.SolverStatus ?? "legacy" };
         }).ToList();
@@ -74,11 +78,11 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
         var exists = await db.RosterPlans
             .AsNoTracking()
-            .AnyAsync(plan => plan.WeekStart == request.WeekStart, ct);
+            .AnyAsync(plan => plan.WeekStart == request.WeekStart && plan.RosterKind == request.RosterKind, ct);
         if (!exists)
             throw new RosterInputException("A roster has not been generated for this week.");
 
-        var loaded = await inputs.LoadAsync(request.WeekStart, ct);
+        var loaded = await inputs.LoadAsync(request.WeekStart, ct, request.RosterKind);
         var shifts = (request.Shifts ?? [])
             .Select(shift => new RosterSolverShift(
                 shift.EmployeeId,
@@ -116,11 +120,11 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         RosterSolverResult result,
         CancellationToken ct)
     {
-        var plan = await db.RosterPlans.Include(p => p.Shifts).SingleOrDefaultAsync(p => p.WeekStart == loaded.Input.WeekStart, ct);
+        var plan = await db.RosterPlans.Include(p => p.Shifts).SingleOrDefaultAsync(p => p.WeekStart == loaded.Input.WeekStart && p.RosterKind == loaded.Input.RosterKind, ct);
         var now = DateTimeOffset.UtcNow;
         if (plan is null)
         {
-            plan = new RosterPlan { Id = Guid.NewGuid(), WeekStart = loaded.Input.WeekStart, CreatedAtUtc = now };
+            plan = new RosterPlan { Id = Guid.NewGuid(), WeekStart = loaded.Input.WeekStart, RosterKind = loaded.Input.RosterKind, CreatedAtUtc = now };
             db.RosterPlans.Add(plan);
         }
         else
@@ -151,6 +155,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
     private static RosterPlanResponse BuildResponse(RosterPlan plan, LoadedRosterInput loaded, RosterSolverResult result)
     {
+        int TargetHours(Employee employee) => RosterKinds.TargetHours(employee, loaded.Input.RosterKind);
         var recentHistory = (loaded.Input.History ?? [])
             .Where(h => h.WeekStart >= loaded.Input.WeekStart.AddDays(-28) && h.WeekStart < loaded.Input.WeekStart)
             .ToList();
@@ -175,7 +180,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
                 ? Math.Clamp((historicalRatio - pastHours / (double)pastTargets) / past.Count, -0.15, 0.15) : 0;
             return new RosterEmployeeResponse
             {
-                EmployeeId = e.Id, EmployeeName = $"{e.FirstName} {e.LastName}".Trim(), TargetHours = TargetHours(e),
+                EmployeeId = e.Id, EmployeeName = $"{e.FirstName} {e.LastName}".Trim(), TargetHours = TargetHours(e), Roles = RosterKinds.Roles(e),
                 ScheduledHours = hours, TargetPercentage = TargetHours(e) > 0 ? Math.Round(100d * hours / TargetHours(e), 2) : null,
                 PreviousScheduledHours = pastHours, PreviousTargetHours = pastTargets, HistoryWeeks = past.Count,
                 PreviousShiftCount = pastShiftCount,
@@ -231,7 +236,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         var coveragePercent = demandTotal > 0 ? Math.Round(100d * coveredDemand / demandTotal, 2) : 100;
         return new RosterPlanResponse
         {
-            Id = plan.Id, WeekStart = plan.WeekStart, UpdatedAtUtc = plan.UpdatedAtUtc,
+            Id = plan.Id, WeekStart = plan.WeekStart, RosterKind = plan.RosterKind, UpdatedAtUtc = plan.UpdatedAtUtc,
             TotalDemandHours = loaded.Input.Demand.Sum(d => d.RequiredDrivers), TotalScheduledHours = result.Shifts.Sum(s => s.DurationHours),
             CoveragePercent = coveragePercent, SolverStatus = result.Status, IsOptimal = result.Status == "optimal", SolveSeconds = result.WallTimeSeconds,
             Settings = loaded.Settings, Employees = employees, Warnings = warnings,
@@ -244,12 +249,13 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
     private static RosterPlanResponse ToResponse(RosterPlan plan)
     {
+        int TargetHours(Employee employee) => RosterKinds.TargetHours(employee, plan.RosterKind);
         if (plan.SnapshotJson is not null)
             return JsonSerializer.Deserialize<RosterPlanResponse>(plan.SnapshotJson)
                 ?? throw new InvalidOperationException("The saved roster snapshot cannot be read.");
         var employees = plan.Shifts.GroupBy(s => s.Employee).OrderBy(g => g.Key.LastName).Select(g => new RosterEmployeeResponse
         {
-            EmployeeId = g.Key.Id, EmployeeName = $"{g.Key.FirstName} {g.Key.LastName}".Trim(), TargetHours = TargetHours(g.Key),
+            EmployeeId = g.Key.Id, EmployeeName = $"{g.Key.FirstName} {g.Key.LastName}".Trim(), TargetHours = TargetHours(g.Key), Roles = RosterKinds.Roles(g.Key),
             ScheduledHours = g.Sum(s => Duration(s.StartTime, s.FinishTime)),
             TargetPercentage = TargetHours(g.Key) > 0 ? 100d * g.Sum(s => Duration(s.StartTime, s.FinishTime)) / TargetHours(g.Key) : null,
             Shifts = g.OrderBy(s => s.Date).Select(s => new RosterShiftResponse
@@ -262,15 +268,13 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         }).ToList();
         return new RosterPlanResponse
         {
-            Id = plan.Id, WeekStart = plan.WeekStart, UpdatedAtUtc = plan.UpdatedAtUtc,
+            Id = plan.Id, WeekStart = plan.WeekStart, RosterKind = plan.RosterKind, UpdatedAtUtc = plan.UpdatedAtUtc,
             TotalScheduledHours = employees.Sum(e => e.ScheduledHours), Employees = employees,
             Warnings = ["Demand snapshot unavailable for this older roster; coverage cannot be verified."]
         };
     }
 
     private static int Duration(TimeOnly start, TimeOnly finish) => (finish.Hour - start.Hour + 24) % 24;
-
-    private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
 
     private static bool IsDemandMismatch(string diagnostic) =>
         diagnostic.StartsWith("Demand mismatch:", StringComparison.Ordinal);

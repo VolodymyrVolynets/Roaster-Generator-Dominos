@@ -33,7 +33,10 @@ public sealed class RosterPlanConfiguration : IEntityTypeConfiguration<RosterPla
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        builder.HasIndex(plan => plan.WeekStart)
+        builder.Property(plan => plan.RosterKind)
+            .HasColumnName("roster_kind").HasMaxLength(16).HasDefaultValue("drivers").IsRequired();
+
+        builder.HasIndex(plan => new { plan.WeekStart, plan.RosterKind })
             .IsUnique();
 
         builder.Property(plan => plan.SnapshotJson)

@@ -58,3 +58,32 @@ test('other weeks are ignored and duplicate events retain diagnostics', () => {
   assert.equal(state.logs.length, 1)
   assert.deepEqual(state.logs[0].diagnostics, ['Sunday 13:00 needs one more driver.'])
 })
+
+test('inside and driver jobs in the same week cannot overwrite each other', () => {
+  const driver = event('driver-job', 1, '2026-09-14T12:00:01Z', 'started', { rosterKind: 'drivers' })
+  const inside = event('inside-job', 2, '2026-09-14T12:00:10Z', 'completed', { rosterKind: 'inside' })
+  const driverState = mergeRosterEvents(createRosterEventState(), [driver, inside], 1, 'drivers')
+  const insideState = mergeRosterEvents(createRosterEventState(), [driver, inside], 1, 'inside')
+  assert.equal(driverState.generation.jobId, 'driver-job')
+  assert.deepEqual(driverState.logs, [driver])
+  assert.equal(insideState.generation.jobId, 'inside-job')
+  assert.deepEqual(insideState.logs, [inside])
+})
+
+test('legacy driver events are accepted for drivers and excluded from inside logs', () => {
+  const legacy = event('legacy', 1, '2026-09-14T12:00:01Z')
+  assert.equal(mergeRosterEvents(createRosterEventState(), [legacy], 1).generation.jobId, 'legacy')
+  assert.equal(mergeRosterEvents(createRosterEventState(), [legacy], 1, 'inside').generation, null)
+})
+
+test('inside replay preserves terminal status and filters other weeks and roster types', () => {
+  const completed = event('inside', 3, '2026-09-14T12:00:03Z', 'completed', { rosterKind: 'inside' })
+  let state = mergeRosterEvents(createRosterEventState(), [completed], 1, 'inside')
+  state = mergeRosterEvents(state, [
+    event('inside', 1, '2026-09-14T12:00:01Z', 'started', { rosterKind: 'inside' }),
+    event('other-week', 8, '2026-09-14T12:00:05Z', 'failed', { rosterKind: 'inside', weekOffset: 2 }),
+    event('driver', 9, '2026-09-14T12:00:06Z', 'failed', { rosterKind: 'drivers' }),
+  ], 1, 'inside')
+  assert.equal(state.generation, completed)
+  assert.deepEqual(state.logs.map((log) => log.sequence), [1, 3])
+})

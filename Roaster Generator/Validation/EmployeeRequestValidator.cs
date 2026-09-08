@@ -31,6 +31,13 @@ public sealed class EmployeeRequestValidator : AbstractValidator<EmployeeRequest
             .When(request => request.PayrollNumber is not null)
             .WithMessage("Payroll number cannot exceed 64 characters.");
 
+        RuleFor(request => request.InsideTargetHours)
+            .InclusiveBetween(3, 168)
+            .When(request => request.Roles?.Any(role =>
+                string.Equals(role, RoleNames.InStore, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(role, RoleNames.Manager, StringComparison.OrdinalIgnoreCase)) == true)
+            .WithMessage("Inside target hours must be between 3 and 168 per week.");
+
         RuleFor(request => request.Roles)
             .NotNull()
             .Must(roles => roles is not null && roles.Count > 0)
