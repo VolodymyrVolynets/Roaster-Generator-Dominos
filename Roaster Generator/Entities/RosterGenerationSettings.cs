@@ -11,6 +11,8 @@ public sealed class RosterGenerationSettings
 
     public int HistoryFairnessWeight { get; set; } = 100;
 
+    public int HistoryShiftLengthWeight { get; set; } = 100;
+
     public int FairnessSpreadWeight { get; set; } = 1000;
 
     public int LongShiftBonus { get; set; } = 25;

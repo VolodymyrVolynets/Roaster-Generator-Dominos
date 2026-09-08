@@ -114,7 +114,8 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             var snapshot = JsonSerializer.Deserialize<RosterPlanResponse>(historicalPlan.SnapshotJson)
                 ?? throw new RosterInputException($"The saved fairness history for week {historicalPlan.WeekStart:yyyy-MM-dd} could not be read.");
             history.AddRange(snapshot.Employees.Where(e => ids.Contains(e.EmployeeId))
-                .Select(e => new RosterSolverHistory(e.EmployeeId, historicalPlan.WeekStart, e.ScheduledHours, e.TargetHours)));
+                .Select(e => new RosterSolverHistory(e.EmployeeId, historicalPlan.WeekStart, e.ScheduledHours,
+                    e.TargetHours, ReadHistoryShiftCount(e))));
         }
         var input = new RosterSolverInput(weekStart, employees, availability, demand, boundaries, RosterSettingsService.ToOptions(settings), history);
         // Scalars only: stable fingerprint catches changed availability, targets, demand or adjacent rosters before saving.
@@ -133,6 +134,18 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             boundaries, settings, history
         }))));
         return new LoadedRosterInput(input, settings, fingerprint, warnings);
+    }
+
+    // Older snapshots may have scheduled totals without usable per-shift durations.
+    // Keep their shift count unknown so they cannot distort the historical average.
+    public static int? ReadHistoryShiftCount(RosterEmployeeResponse employee)
+    {
+        if (employee.Shifts is null) return null;
+        if (employee.Shifts.Count == 0) return employee.ScheduledHours == 0 ? 0 : null;
+        return employee.Shifts.All(shift => shift is not null && shift.DurationHours > 0)
+            && employee.Shifts.Sum(shift => (long)shift.DurationHours) == employee.ScheduledHours
+                ? employee.Shifts.Count
+                : null;
     }
 
     private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;

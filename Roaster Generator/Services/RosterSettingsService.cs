@@ -17,6 +17,7 @@ public sealed class RosterSettingsService(AppDbContext db)
             .SingleAsync(s => s.Id == RosterGenerationSettings.SingletonId, ct);
         settings.TargetHoursWeight = request.TargetHoursWeight;
         settings.HistoryFairnessWeight = request.HistoryFairnessWeight;
+        settings.HistoryShiftLengthWeight = request.HistoryShiftLengthWeight;
         settings.FairnessSpreadWeight = request.FairnessSpreadWeight;
         settings.LongShiftBonus = request.LongShiftBonus;
         settings.ShortShiftPenalty = request.ShortShiftPenalty;
@@ -34,6 +35,7 @@ public sealed class RosterSettingsService(AppDbContext db)
     {
         TargetHoursWeight = settings.TargetHoursWeight,
         HistoryFairnessWeight = settings.HistoryFairnessWeight,
+        HistoryShiftLengthWeight = settings.HistoryShiftLengthWeight,
         FairnessSpreadWeight = settings.FairnessSpreadWeight,
         LongShiftBonus = settings.LongShiftBonus,
         ShortShiftPenalty = settings.ShortShiftPenalty,
@@ -49,6 +51,7 @@ public sealed class RosterSettingsService(AppDbContext db)
     {
         TargetHoursWeight = settings.TargetHoursWeight,
         HistoryFairnessWeight = settings.HistoryFairnessWeight,
+        HistoryShiftLengthWeight = settings.HistoryShiftLengthWeight,
         FairnessSpreadWeight = settings.FairnessSpreadWeight,
         LongShiftBonus = settings.LongShiftBonus,
         ShortShiftPenalty = settings.ShortShiftPenalty,

@@ -115,6 +115,8 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             .HasColumnName("max_solve_seconds").HasDefaultValue(20).IsRequired();
         builder.Property(settings => settings.HistoryFairnessWeight)
             .HasColumnName("history_fairness_weight").HasDefaultValue(100).IsRequired();
+        builder.Property(settings => settings.HistoryShiftLengthWeight)
+            .HasColumnName("history_shift_length_weight").HasDefaultValue(100).IsRequired();
         builder.Property(settings => settings.FairnessSpreadWeight)
             .HasColumnName("fairness_spread_weight").HasDefaultValue(1000).IsRequired();
     }

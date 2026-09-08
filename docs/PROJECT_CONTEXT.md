@@ -68,7 +68,7 @@ If existing credentials are unknown, the opt-in `RESET_ADMIN_PASSWORD_ON_STARTUP
 
 Role-specific information is kept in one-to-one profiles:
 
-- `DriverProfile`: target weekly hours and `DriverType` (`Car`, `Moped`, `EBike`, default `Car`). Car drivers can cover a staffed hour alone; other driver types require a car driver alongside them.
+- `DriverProfile`: target weekly hours and `DriverType` (`Car`, `Moped`, `EBike`, default `Car`). Car and moped drivers can work alone. Any number of e-bike drivers requires at least one car or moped driver alongside them throughout their shifts.
 - `InStoreProfile`: currently empty placeholder.
 - `ManagerProfile`: currently empty placeholder.
 
@@ -116,10 +116,14 @@ Roster generation uses OR-Tools CP-SAT and is coordinated by the roster services
 - only active drivers with driver profiles are roster inputs;
 - generated shifts are continuous and 3–10 hours, inside availability;
 - exact hourly driver demand is required where demand is staffed;
-- at least one `Car` driver must cover each staffed hour;
+- at least one `Car` or `Moped` driver must cover each staffed hour; multiple `EBike` drivers cannot substitute for that support;
 - minimum/preferred rest, latest start, fairness, and rolling history are enforced or scored according to saved settings;
 - generation and saving are protected against concurrent jobs and stale input;
 - failed or cancelled generation must not replace the saved roster.
+
+Fairness uses the previous four saved weeks for both hours versus targets and average shift duration. Historical duration is total scheduled hours divided by actual shift count, pooled across valid saved shifts (not an average of weekly averages). Missing or inconsistent legacy shift details do not contribute to duration history. The independent `HistoryShiftLengthWeight` preference defaults to `100`; administrators can set it from `0` (disabled) to `1000`. It prefers a duration of `clamp(7 + group historical average - employee historical average, 6, 8)` hours for employees with valid history, using a squared duration penalty. This gives drivers with shorter past shifts a stronger preference for longer shifts, while exact demand, availability, supervision and rest remain mandatory and target-hour fairness remains separately weighted. The solver precomputes eight costs per employee, adding no search variables for this preference.
+
+Manual roster edits validate availability, shift rules, rest and e-bike support on the server. Hourly demand-count mismatches are saved as warnings and highlighted in the saved roster; generated rosters still require exact coverage. The saved shift tables lead the page, and the historical fairness details are collapsed by default.
 
 Do not change solver constraints or scoring casually while fixing unrelated API/UI behavior. Update the relevant tests when changing scheduling rules.
 

@@ -62,10 +62,10 @@ public sealed class RosterSolver
                     var usable = true;
                     for (var hour = start; hour < finish; hour++)
                     {
-                        // Never create coverage at zero/unentered demand. A non-car driver
-                        // cannot be selected for a slot requiring only one driver.
+                        // Never create coverage at zero/unentered demand. E-bikes need
+                        // a car or moped alongside them, so cannot fill a one-driver slot.
                         if (!demand.TryGetValue((availability.Date, hour), out var slot) ||
-                            slot.RequiredDrivers == 0 || (!IsCarDriver(employee) && slot.RequiredDrivers == 1))
+                            slot.RequiredDrivers == 0 || (!CanWorkIndependently(employee) && slot.RequiredDrivers == 1))
                         {
                             usable = false;
                             break;
@@ -83,7 +83,7 @@ public sealed class RosterSolver
                     var next = existing.FirstOrDefault(shift => shift.Start >= actualFinish);
                     var previousRestPenalty = previous is null ? 0 : Math.Max(0, input.Options.PreferredRestHours - (actualStart - previous.Finish).TotalHours);
                     var nextRestPenalty = next is null ? 0 : Math.Max(0, input.Options.PreferredRestHours - (next.Start - actualFinish).TotalHours);
-                    candidates.Add(new Candidate(candidates.Count, employee.Id, IsCarDriver(employee),
+                    candidates.Add(new Candidate(candidates.Count, employee.Id, CanWorkIndependently(employee),
                         availability.Date, start, finish, AbsoluteHour(input.WeekStart, availability.Date, start),
                         (long)Math.Ceiling(previousRestPenalty * 100), (long)Math.Ceiling(nextRestPenalty * 100)));
                     if (candidates.Count > MaxCandidates)
@@ -107,8 +107,8 @@ public sealed class RosterSolver
             var available = choices.Select(candidate => candidate.EmployeeId).Distinct().Count();
             if (available < slot.RequiredDrivers)
                 shortages.Add($"{FormatSlot(slot)}: need {slot.RequiredDrivers - available} more driver(s). Demand {slot.RequiredDrivers}; only {available} can cover this hour in a legal 3–10 hour shift within availability, the {input.Options.LatestShiftStartHour:00}:00 latest shift start and the {input.Options.MinimumRestHours}-hour rest rule. Shifts may finish overnight, but cannot start after {input.Options.LatestShiftStartHour:00}:00 or after midnight.");
-            if (!choices.Any(candidate => candidate.IsCar))
-                shortages.Add($"{FormatSlot(slot)}: need at least one car driver to cover this hour alone.");
+            if (!choices.Any(candidate => candidate.CanWorkIndependently))
+                shortages.Add($"{FormatSlot(slot)}: need at least one car or moped driver. E-bike drivers cannot work without a car or moped driver alongside them.");
         }
         if (shortages.Count > 0)
             return Failure("infeasible", "Exact coverage is impossible with the current availability, supervision and shift limits.", shortages, candidates.Count);
@@ -136,7 +136,7 @@ public sealed class RosterSolver
             var errors = Validate(input, shifts);
             if (errors.Count > 0)
                 return Failure("invalid", "Generated shifts failed independent validation; nothing may be saved.", errors, candidates.Count);
-            if (new[] { input.Options.TargetHoursWeight, input.Options.HistoryFairnessWeight, input.Options.FairnessSpreadWeight, input.Options.LongShiftBonus, input.Options.ShortShiftPenalty,
+            if (new[] { input.Options.TargetHoursWeight, input.Options.HistoryFairnessWeight, input.Options.HistoryShiftLengthWeight, input.Options.FairnessSpreadWeight, input.Options.LongShiftBonus, input.Options.ShortShiftPenalty,
                 input.Options.DailyShiftCountPenalty, input.Options.ShortBreakPenalty }.All(weight => weight == 0))
                 return Result("optimal", "Exact demand is covered. All preference weights are disabled.", shifts, [], candidates.Count, 0);
 
@@ -297,8 +297,9 @@ public sealed class RosterSolver
             var label = slot is not null ? FormatSlot(slot) : input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour).ToString("dddd HH:mm", CultureInfo.InvariantCulture);
             if (assigned.Count != required)
                 errors.Add($"Demand mismatch: {label}: demand {required}, scheduled {assigned.Count}; {(assigned.Count < required ? $"need {required - assigned.Count} more driver(s)" : $"{assigned.Count - required} excess driver(s)")}.");
-            if (required > 0 && !assigned.Any(IsCarDriver))
-                errors.Add($"{label}: no car driver is scheduled to cover this hour alone.");
+            if (assigned.Any(employee => employee.DriverProfile?.DriverType == DriverType.EBike) &&
+                !assigned.Any(CanWorkIndependently))
+                errors.Add($"{label}: e-bike drivers are scheduled without a car or moped driver alongside them.");
         }
         foreach (var boundary in input.BoundaryShifts)
             if (times.TryGetValue(boundary.EmployeeId, out var entries))
@@ -391,20 +392,20 @@ public sealed class RosterSolver
             token.ThrowIfCancellationRequested();
             var options = coverage[AbsoluteHour(input.WeekStart, slot.Date, slot.Hour)];
             var assigned = LinearExpr.Sum(options.Select(candidate => selected[candidate.Index]));
-            var qualified = LinearExpr.Sum(options.Where(candidate => candidate.IsCar).Select(candidate => selected[candidate.Index]));
+            var independent = LinearExpr.Sum(options.Where(candidate => candidate.CanWorkIndependently).Select(candidate => selected[candidate.Index]));
             if (diagnostic)
             {
                 var deficit = model.NewIntVar(0, slot.RequiredDrivers, $"missing{missing.Count}");
                 model.Add(assigned + deficit == slot.RequiredDrivers);
-                // A partially covered hour still cannot be covered only by non-car drivers.
-                model.Add(assigned <= qualified * slot.RequiredDrivers);
+                // Even partial coverage cannot leave any number of e-bikes without a car or moped.
+                model.Add(assigned <= independent * slot.RequiredDrivers);
                 missing.Add((slot, deficit));
                 objective.Add(deficit);
             }
             else
             {
                 model.Add(assigned == slot.RequiredDrivers);
-                model.Add(qualified >= 1);
+                model.Add(independent >= 1);
             }
         }
 
@@ -464,7 +465,8 @@ public sealed class RosterSolver
                 var shapePenalty = candidate.Length <= 8
                     ? (8 - candidate.Length) * (long)input.Options.LongShiftBonus + Math.Max(0, 6 - candidate.Length) * (long)input.Options.ShortShiftPenalty
                     : (candidate.Length - 6) * (long)input.Options.LongShiftBonus + (candidate.Length - 8) * (long)input.Options.ShortShiftPenalty;
-                var cost = (shapePenalty + input.Options.DailyShiftCountPenalty) * 100;
+                var cost = (shapePenalty + input.Options.DailyShiftCountPenalty) * 100
+                    + fairness.HistoricalShiftCost(candidate.EmployeeId, candidate.Length);
                 // A zero target has no defined utilization percentage. These employees remain
                 // available as reserves, with a cost rather than being silently excluded from coverage.
                 if (TargetHours(employeesById[candidate.EmployeeId]) == 0)
@@ -607,7 +609,8 @@ public sealed class RosterSolver
         {
             var employee = employeeById[candidate.EmployeeId];
             var prior = hours.GetValueOrDefault(employee.Id);
-            return fairness.EmployeeCost(employee, prior + candidate.Length) - fairness.EmployeeCost(employee, prior);
+            return fairness.EmployeeCost(employee, prior + candidate.Length) - fairness.EmployeeCost(employee, prior)
+                + fairness.HistoricalShiftCost(candidate.EmployeeId, candidate.Length);
         }
 
         bool TryChange(Candidate[] removed, Candidate[] added, out List<Candidate> proposal)
@@ -622,9 +625,9 @@ public sealed class RosterSolver
                         (addition.AbsoluteStart < other.AbsoluteFinish + input.Options.MinimumRestHours &&
                          other.AbsoluteStart < addition.AbsoluteFinish + input.Options.MinimumRestHours)) return false;
             }
-            // Coverage counts stay identical by construction; only car-driver coverage can change.
+            // Coverage counts stay identical by construction; car/moped support can still change.
             foreach (var hour in removed.SelectMany(candidate => Enumerable.Range(candidate.AbsoluteStart, candidate.Length)).Distinct())
-                if (!remaining.Concat(added).Any(candidate => candidate.IsCar && candidate.AbsoluteStart <= hour && candidate.AbsoluteFinish > hour))
+                if (!remaining.Concat(added).Any(candidate => candidate.CanWorkIndependently && candidate.AbsoluteStart <= hour && candidate.AbsoluteFinish > hour))
                     return false;
             proposal = remaining.Concat(added).ToList();
             return true;
@@ -666,7 +669,8 @@ public sealed class RosterSolver
                 var shape = shift.Length <= 8
                     ? (8 - shift.Length) * (long)input.Options.LongShiftBonus + Math.Max(0, 6 - shift.Length) * (long)input.Options.ShortShiftPenalty
                     : (shift.Length - 6) * (long)input.Options.LongShiftBonus + (shift.Length - 8) * (long)input.Options.ShortShiftPenalty;
-                score += (shape + input.Options.DailyShiftCountPenalty) * 100;
+                score += (shape + input.Options.DailyShiftCountPenalty) * 100
+                    + fairness.HistoricalShiftCost(shift.EmployeeId, shift.Length);
                 if (TargetHours(employeeById[shift.EmployeeId]) == 0)
                     score += shift.Length * (long)input.Options.TargetHoursWeight * PercentageScale;
             }
@@ -677,8 +681,12 @@ public sealed class RosterSolver
     }
 
     private sealed record FairnessContext(RosterSolverOptions Options, double CommonPercentage,
-        IReadOnlyDictionary<Guid, double> HistoryAdjustedPercentages)
+        IReadOnlyDictionary<Guid, double> HistoryAdjustedPercentages,
+        IReadOnlyDictionary<Guid, long[]> HistoricalShiftCosts)
     {
+        public long HistoricalShiftCost(Guid employeeId, int length) =>
+            HistoricalShiftCosts.TryGetValue(employeeId, out var costs) ? costs[length - 3] : 0;
+
         public double EmployeeCost(Employee employee, int hours)
         {
             if (TargetHours(employee) <= 0) return 0;
@@ -705,7 +713,32 @@ public sealed class RosterSolver
                 var weeks = group.Select(item => item.WeekStart).Distinct().Count();
                 return common + Math.Clamp((pastPercentage - ownPercentage) / weeks, -15, 15);
             });
-            return new FairnessContext(input.Options, common, adjusted);
+            var shiftCosts = new Dictionary<Guid, long[]>();
+            if (input.Options.HistoryShiftLengthWeight > 0)
+            {
+                var allEmployeeIds = employees.Select(employee => employee.Id).ToHashSet();
+                var shiftHistory = (input.History ?? []).Where(item => allEmployeeIds.Contains(item.EmployeeId) &&
+                    item.ShiftCount is > 0 && item.ScheduledHours > 0 && item.WeekStart < input.WeekStart &&
+                    item.WeekStart.DayNumber >= input.WeekStart.DayNumber - 28).ToArray();
+                var totalShiftCount = shiftHistory.Sum(item => (long)item.ShiftCount!.Value);
+                if (totalShiftCount > 0)
+                {
+                    // Pool individual shifts: averaging weekly averages would overvalue quiet weeks.
+                    var groupAverage = shiftHistory.Sum(item => (long)item.ScheduledHours) / (double)totalShiftCount;
+                    foreach (var group in shiftHistory.GroupBy(item => item.EmployeeId))
+                    {
+                        var ownAverage = group.Sum(item => (long)item.ScheduledHours) /
+                            (double)group.Sum(item => (long)item.ShiftCount!.Value);
+                        // Correct around seven hours within the existing preferred 6–8 hour range.
+                        // Eight precomputed coefficients per employee add no search variables.
+                        var preferredLength = Math.Clamp(7 + groupAverage - ownAverage, 6, 8);
+                        shiftCosts[group.Key] = Enumerable.Range(3, 8).Select(length =>
+                            (long)Math.Round(input.Options.HistoryShiftLengthWeight * 100d *
+                                Math.Pow(length - preferredLength, 2))).ToArray();
+                    }
+                }
+            }
+            return new FairnessContext(input.Options, common, adjusted, shiftCosts);
         }
     }
 
@@ -740,10 +773,11 @@ public sealed class RosterSolver
 
     private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
 
-    private static bool IsCarDriver(Employee employee) => employee.DriverProfile?.DriverType == DriverType.Car;
+    private static bool CanWorkIndependently(Employee employee) =>
+        employee.DriverProfile?.DriverType is DriverType.Car or DriverType.Moped;
     private static string FormatSlot(RosterSolverDemand slot) => $"{slot.Date.ToString("dddd", CultureInfo.InvariantCulture)} {slot.Hour % 24:00}:00{(slot.Hour >= 24 ? " (+1 day)" : string.Empty)}";
 
-    private sealed record Candidate(int Index, Guid EmployeeId, bool IsCar, DateOnly Date,
+    private sealed record Candidate(int Index, Guid EmployeeId, bool CanWorkIndependently, DateOnly Date,
         int Start, int Finish, int AbsoluteStart, long PreviousBoundaryRestPenalty, long NextBoundaryRestPenalty)
     {
         public int Length => Finish - Start;

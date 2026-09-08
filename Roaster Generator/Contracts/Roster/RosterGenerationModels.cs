@@ -124,6 +124,10 @@ public sealed class RosterEmployeeResponse
 
     public int PreviousScheduledHours { get; init; }
 
+    public int? PreviousShiftCount { get; init; }
+
+    public double? PreviousAverageHoursPerShift { get; init; }
+
     public int PreviousTargetHours { get; init; }
 
     public double? PreviousTargetPercentage { get; init; }
@@ -194,6 +198,7 @@ public sealed class RosterSettingsRequest
 {
     public int TargetHoursWeight { get; set; } = 100;
     public int HistoryFairnessWeight { get; set; } = 100;
+    public int HistoryShiftLengthWeight { get; set; } = 100;
     public int FairnessSpreadWeight { get; set; } = 1000;
     public int LongShiftBonus { get; set; } = 25;
     public int ShortShiftPenalty { get; set; } = 10;

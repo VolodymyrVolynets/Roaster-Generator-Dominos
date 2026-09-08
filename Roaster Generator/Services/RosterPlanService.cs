@@ -151,7 +151,10 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
     private static RosterPlanResponse BuildResponse(RosterPlan plan, LoadedRosterInput loaded, RosterSolverResult result)
     {
-        var history = (loaded.Input.History ?? []).Where(h => h.TargetHours > 0).ToList();
+        var recentHistory = (loaded.Input.History ?? [])
+            .Where(h => h.WeekStart >= loaded.Input.WeekStart.AddDays(-28) && h.WeekStart < loaded.Input.WeekStart)
+            .ToList();
+        var history = recentHistory.Where(h => h.TargetHours > 0).ToList();
         var eligible = loaded.Input.Employees.Where(e => TargetHours(e) > 0).Select(e => e.Id).ToHashSet();
         var historyTargetTotal = history.Where(h => eligible.Contains(h.EmployeeId)).Sum(h => h.TargetHours);
         var historyHoursTotal = history.Where(h => eligible.Contains(h.EmployeeId)).Sum(h => h.ScheduledHours);
@@ -165,6 +168,9 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
             var past = history.Where(h => h.EmployeeId == e.Id).ToList();
             var pastHours = past.Sum(h => h.ScheduledHours);
             var pastTargets = past.Sum(h => h.TargetHours);
+            var knownShiftHistory = recentHistory.Where(h => h.EmployeeId == e.Id && h.ShiftCount.HasValue &&
+                (h.ShiftCount == 0 && h.ScheduledHours == 0 || h.ShiftCount > 0 && h.ScheduledHours >= h.ShiftCount)).ToList();
+            int? pastShiftCount = knownShiftHistory.Count > 0 ? knownShiftHistory.Sum(h => h.ShiftCount!.Value) : null;
             var correction = loaded.Settings.HistoryFairnessWeight > 0 && pastTargets > 0
                 ? Math.Clamp((historicalRatio - pastHours / (double)pastTargets) / past.Count, -0.15, 0.15) : 0;
             return new RosterEmployeeResponse
@@ -172,6 +178,9 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
                 EmployeeId = e.Id, EmployeeName = $"{e.FirstName} {e.LastName}".Trim(), TargetHours = TargetHours(e),
                 ScheduledHours = hours, TargetPercentage = TargetHours(e) > 0 ? Math.Round(100d * hours / TargetHours(e), 2) : null,
                 PreviousScheduledHours = pastHours, PreviousTargetHours = pastTargets, HistoryWeeks = past.Count,
+                PreviousShiftCount = pastShiftCount,
+                PreviousAverageHoursPerShift = pastShiftCount > 0
+                    ? Math.Round(knownShiftHistory.Sum(h => h.ScheduledHours) / (double)pastShiftCount.Value, 2) : null,
                 PreviousTargetPercentage = pastTargets > 0 ? Math.Round(100d * pastHours / pastTargets, 2) : null,
                 BalancedTargetHours = TargetHours(e) > 0 ? Math.Round(Math.Max(0, TargetHours(e) * (currentRatio + correction)), 2) : null,
                 CumulativeTargetPercentage = TargetHours(e) > 0 ? Math.Round(100d * (pastHours + hours) / (pastTargets + TargetHours(e)), 2) : null,

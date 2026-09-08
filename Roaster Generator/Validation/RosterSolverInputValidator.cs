@@ -46,6 +46,7 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                 {
                     options.TargetHoursWeight,
                     options.HistoryFairnessWeight,
+                    options.HistoryShiftLengthWeight,
                     options.FairnessSpreadWeight,
                     options.LongShiftBonus,
                     options.ShortShiftPenalty,
@@ -106,6 +107,13 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                         item.TargetHours is < 0 or > 168 || item.ScheduledHours is < 0 or > 168))
                 {
                     context.AddFailure("Saved historical target and scheduled hours must be between 0 and 168.");
+                }
+
+                if ((input.History ?? []).Any(item => item.ShiftCount is < 0 ||
+                    item.ShiftCount == 0 && item.ScheduledHours != 0 ||
+                    item.ShiftCount > 0 && (item.ScheduledHours == 0 || item.ShiftCount > item.ScheduledHours)))
+                {
+                    context.AddFailure("Saved historical shift counts must match non-negative scheduled hours.");
                 }
 
                 if ((input.History ?? [])

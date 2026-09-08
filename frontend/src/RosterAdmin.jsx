@@ -6,6 +6,7 @@ import { compareRosterEmployees, getRosterRoleGroup, rosterRoleGroups } from './
 const weightFields = [
   ['targetHoursWeight', 'Equal target percentages', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s target percentage; reduce it when availability or exact coverage needs more flexibility. Set to 0 to disable it.'],
   ['historyFairnessWeight', 'Compensate previous weeks', 'Uses up to four saved weeks. Increase it to give more hours to employees who have been below the group percentage and fewer to those above it; reduce it to focus mostly on this week.'],
+  ['historyShiftLengthWeight', 'Compensate previous short shifts', 'Uses actual shift lengths from the previous four saved weeks. Increase it to prefer longer shifts for drivers whose earlier shifts were shorter than the group average, with a preferred length between 6 and 8 hours. This is balanced against availability, demand and target-hour fairness. Set to 0 to disable; default: 100.'],
   ['fairnessSpreadWeight', 'Avoid gaps above 30 percentage points', 'Adds a strong penalty when target-percentage spread exceeds 30 points. Increase it to close large gaps; reduce it if coverage, availability, or shift shape needs more flexibility.'],
   ['longShiftBonus', 'Longer shifts', 'Rewards shifts in the preferred 6–8 hour range, with longer legal shifts scoring better. Increase it to join adjacent demand into longer shifts; very high values can make target balancing harder.'],
   ['shortShiftPenalty', 'Avoid short shifts', 'Penalises shifts below 6 hours while the hard minimum remains 3 hours. Increase it to avoid 3–5 hour shifts; reduce it when sparse demand makes short coverage useful.'],
@@ -19,7 +20,7 @@ const formatNumber = (value) => numberFormatter.format(Number(value ?? 0))
 const formatStage = (stage) => (stage || 'starting').replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 const parseDate = (value) => new Date(`${value}T12:00:00`)
 const formatDate = (value) => value ? dateFormatter.format(parseDate(value)) : ''
-const withSettingsDefaults = (settings) => ({ historyFairnessWeight: 100, fairnessSpreadWeight: 1000, latestShiftStartHour: 20, ...settings })
+const withSettingsDefaults = (settings) => ({ historyFairnessWeight: 100, historyShiftLengthWeight: 100, fairnessSpreadWeight: 1000, latestShiftStartHour: 20, ...settings })
 const averageFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 const averageShiftHours = (shifts) => shifts.length ? Math.round(shifts.reduce((total, shift) => total + shift.durationHours, 0) * 100 / shifts.length) / 100 : 0
 
@@ -411,13 +412,14 @@ function minimumEmployeeRest(shifts) {
 
 function exportRosterCsv(roster, dates) {
   const rows = [['Employee', 'Target hours', 'Scheduled hours', 'Average hours per shift', 'Target %', 'Previous saved weeks',
-    'Previous scheduled hours', 'Previous target hours', 'Previous target %', 'History-adjusted goal hours this week', 'Cumulative target %', ...dates]]
+    'Previous scheduled hours', 'Previous target hours', 'Previous target %', 'Previous shifts with known durations', 'Previous average hours per shift', 'History-adjusted goal hours this week', 'Cumulative target %', ...dates]]
   for (const employee of roster.employees) {
     rows.push([employee.employeeName, employee.targetHours, employee.scheduledHours,
       employee.averageHoursPerShift ?? averageShiftHours(employee.shifts),
       employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : ''),
       employee.historyWeeks ?? '', employee.previousScheduledHours ?? '', employee.previousTargetHours ?? '',
-      employee.previousTargetPercentage ?? '', employee.balancedTargetHours ?? '', employee.cumulativeTargetPercentage ?? '',
+      employee.previousTargetPercentage ?? '', employee.previousShiftCount ?? '', employee.previousAverageHoursPerShift ?? '',
+      employee.balancedTargetHours ?? '', employee.cumulativeTargetPercentage ?? '',
       ...dates.map((date) => employee.shifts.filter((shift) => shift.date === date)
         .map((shift) => `${shiftTime(shift.startTime, shift.startDayOffset)}–${shiftTime(shift.finishTime, shift.finishDayOffset)} (${shift.durationHours}h)`).join('; '))])
   }
@@ -456,6 +458,9 @@ function FairnessComparison({ roster, employeeGroups }) {
         the cumulative percentage uses the combined hours and targets. The history-adjusted goal gradually compensates for
         the employee’s difference from the group’s previous percentage, divided across the saved weeks and capped at a
         15-percentage-point correction this week. This reference goal is balanced with your weights and the shift rules.
+        Previous average shift length uses recorded shift durations from those four weeks; older weeks without duration
+        details are excluded. The short-shift compensation preference uses this average to favour longer shifts for drivers
+        who previously had shorter shifts, while preserving availability and demand coverage.
       </p>
       <div className="roster-week-summary roster-fairness-metrics">
         <Metric label="This week’s percentage gap" value={`${formatNumber(currentSpread)} pp`} />
@@ -471,13 +476,15 @@ function FairnessComparison({ roster, employeeGroups }) {
             <th scope="col">Previous weeks</th>
             <th scope="col">Previous hours / target</th>
             <th scope="col">Previous target %</th>
+            <th scope="col">Previous average shift</th>
+            <th scope="col">This week’s average shift</th>
             <th scope="col">This week’s target %</th>
             <th scope="col">History-adjusted goal</th>
             <th scope="col">Cumulative target %</th>
           </tr></thead>
           <tbody>{groups.flatMap((group) => [
             <tr className={`roster-group-divider roster-group-divider-${group.id}`} key={`${group.id}-heading`}>
-              <th colSpan="7" scope="rowgroup">{group.label}</th>
+              <th colSpan="9" scope="rowgroup">{group.label}</th>
             </tr>,
             ...group.employees.map((employee) => {
               const currentPercentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
@@ -488,6 +495,9 @@ function FairnessComparison({ roster, employeeGroups }) {
                 <td>{employee.historyWeeks || 0} / 4</td>
                 <td>{employee.historyWeeks ? `${formatNumber(employee.previousScheduledHours)} / ${formatNumber(employee.previousTargetHours)}h` : 'No history'}</td>
                 <td>{priorPercentage == null ? '—' : `${formatNumber(priorPercentage)}%`}</td>
+                <td>{employee.previousAverageHoursPerShift == null ? 'No recorded shifts' : `${averageFormatter.format(employee.previousAverageHoursPerShift)}h`}
+                  {employee.previousShiftCount != null && <small>{employee.previousShiftCount} recorded shifts</small>}</td>
+                <td>{averageFormatter.format(employee.averageHoursPerShift ?? averageShiftHours(employee.shifts))}h</td>
                 <td><strong className="roster-target-percentage">{currentPercentage == null ? 'N/A' : `${formatNumber(currentPercentage)}%`}</strong><small>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h</small></td>
                 <td>{employee.balancedTargetHours == null ? '—' : `${formatNumber(employee.balancedTargetHours)}h`}</td>
                 <td><strong className="roster-target-percentage">{cumulativePercentage == null ? '—' : `${formatNumber(cumulativePercentage)}%`}</strong></td>

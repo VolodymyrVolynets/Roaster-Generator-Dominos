@@ -12,7 +12,8 @@ public sealed record RosterSolverInput(
     RosterSolverOptions Options,
     IReadOnlyList<RosterSolverHistory>? History = null);
 
-public sealed record RosterSolverHistory(Guid EmployeeId, DateOnly WeekStart, int ScheduledHours, int TargetHours);
+public sealed record RosterSolverHistory(Guid EmployeeId, DateOnly WeekStart, int ScheduledHours, int TargetHours,
+    int? ShiftCount = null);
 
 public sealed record RosterSolverDemand(DateOnly Date, int Hour, int RequiredDrivers);
 
@@ -29,6 +30,7 @@ public sealed class RosterSolverOptions
 {
     public int TargetHoursWeight { get; init; } = 100;
     public int HistoryFairnessWeight { get; init; } = 100;
+    public int HistoryShiftLengthWeight { get; init; } = 100;
     public int FairnessSpreadWeight { get; init; } = 1000;
     public int LongShiftBonus { get; init; } = 25;
     public int ShortShiftPenalty { get; init; } = 10;

@@ -122,12 +122,27 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             var history = loaded.Input.History ?? [];
             Publish(job, "running", "fairness-history", 8,
                 $"Fairness uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Missing weeks are not counted as zero-hour work. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");
-            foreach (var employee in loaded.Input.Employees.Where(e => (e.DriverProfile?.TargetHours ?? 0) > 0))
+            var shiftHistory = history.Where(h => h.ShiftCount > 0 && h.ScheduledHours > 0).ToList();
+            var historyShiftCount = shiftHistory.Sum(h => h.ShiftCount!.Value);
+            var groupAverageShiftHours = historyShiftCount > 0
+                ? shiftHistory.Sum(h => h.ScheduledHours) / (double)historyShiftCount : 0;
+            Publish(job, "running", "fairness-history", 8,
+                $"Historical shift-length weight {loaded.Settings.HistoryShiftLengthWeight}: uses actual shift counts from the previous four weeks to prefer longer 6–8h shifts for drivers whose earlier shifts were shorter than the group average. A weight of 0 disables this preference. Availability, exact demand and hour fairness still apply; snapshots without valid shift durations are excluded from this average.");
+            foreach (var employee in loaded.Input.Employees)
             {
                 var previous = history.Where(h => h.EmployeeId == employee.Id && h.TargetHours > 0).ToList();
                 if (previous.Count > 0)
                     Publish(job, "running", "fairness-history", 8,
                         $"{employee.FirstName} {employee.LastName}: previous {previous.Count} saved week(s), {previous.Sum(h => h.ScheduledHours)}/{previous.Sum(h => h.TargetHours)} target hours ({100d * previous.Sum(h => h.ScheduledHours) / previous.Sum(h => h.TargetHours):F1}%). This history is balanced against this week's allocation.");
+                var previousShifts = shiftHistory.Where(h => h.EmployeeId == employee.Id).ToList();
+                if (previousShifts.Count > 0)
+                {
+                    var shiftCount = previousShifts.Sum(h => h.ShiftCount!.Value);
+                    var averageShiftHours = previousShifts.Sum(h => h.ScheduledHours) / (double)shiftCount;
+                    var preferredShiftHours = Math.Clamp(7 + groupAverageShiftHours - averageShiftHours, 6, 8);
+                    Publish(job, "running", "fairness-history", 8,
+                        $"{employee.FirstName} {employee.LastName}: previous average {averageShiftHours:F2}h across {shiftCount} shift(s); group average {groupAverageShiftHours:F2}h. Historical shift-length preference {(loaded.Settings.HistoryShiftLengthWeight == 0 ? "disabled" : $"aims for {preferredShiftHours:F2}h shifts")}.");
+                }
             }
             stage = "solving";
             var result = await Task.Run(() => new RosterSolver().Solve(loaded.Input,

@@ -263,7 +263,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void RequiresACarDriverDuringEveryDemandHour()
+    public void AnEbikeCannotCoverDemandAlone()
     {
         var employee = Driver(driverType: DriverType.EBike);
         var input = Input([employee], [Available(employee, Monday, 12, 18)], Demand(Monday, 12, 6));
@@ -695,8 +695,8 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             var required = demand.GetValueOrDefault((date, hour));
             var assigned = result.Shifts.Where(shift => shift.Date == date && shift.StartHour <= hour && shift.FinishHour > hour).ToArray();
             Assert.Equal(required, assigned.Length);
-            if (required > 0)
-                Assert.Contains(assigned, shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.DriverType == DriverType.Car);
+            if (assigned.Any(shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.DriverType == DriverType.EBike))
+                Assert.Contains(assigned, shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.DriverType is DriverType.Car or DriverType.Moped);
         }
     }
 }
