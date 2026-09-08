@@ -1,3 +1,5 @@
+using Roaster_Generator.Enums;
+
 namespace Roaster_Generator.Contracts.Employees;
 
 public sealed class EmployeeRequest
@@ -10,9 +12,15 @@ public sealed class EmployeeRequest
 
     public string PhoneNumber { get; set; } = string.Empty;
 
+    public string? PayrollNumber { get; set; }
+
+    public List<string> Roles { get; set; } = ["Driver"];
+
     public int TargetHours { get; set; } = 20;
 
     public bool CanWorkAlone { get; set; } = true;
+
+    public DriverType DriverType { get; set; } = DriverType.Car;
 }
 
 public sealed class EmployeeResponse
@@ -27,9 +35,15 @@ public sealed class EmployeeResponse
 
     public string PhoneNumber { get; init; } = string.Empty;
 
+    public string? PayrollNumber { get; init; }
+
     public bool IsActive { get; init; }
 
-    public int TargetHours { get; init; }
+    public IReadOnlyList<string> Roles { get; init; } = [];
 
-    public bool CanWorkAlone { get; init; }
+    public int? TargetHours { get; init; }
+
+    public bool? CanWorkAlone { get; init; }
+
+    public DriverType? DriverType { get; init; }
 }

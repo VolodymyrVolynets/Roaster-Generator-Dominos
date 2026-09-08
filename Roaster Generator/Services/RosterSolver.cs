@@ -32,7 +32,7 @@ public sealed class RosterSolver
 
         var employees = input.Employees.Where(employee => employee.IsActive).OrderBy(employee => employee.Id).ToArray();
         var totalDemand = input.Demand.Sum(slot => slot.RequiredDrivers);
-        var totalTargets = employees.Where(employee => employee.TargetHours > 0).Sum(employee => employee.TargetHours);
+        var totalTargets = employees.Where(employee => TargetHours(employee) > 0).Sum(TargetHours);
         var utilization = totalTargets == 0 ? 0 : 100.0 * totalDemand / totalTargets;
         if (employees.Length > MaxEmployees)
             return Failure("capacity-exceeded", $"This server supports at most {MaxEmployees} active employees per solve.");
@@ -64,7 +64,7 @@ public sealed class RosterSolver
                         // Never create coverage at zero/unentered demand. A person who cannot
                         // work alone cannot be selected for a slot requiring only one driver.
                         if (!demand.TryGetValue((availability.Date, hour), out var slot) ||
-                            slot.RequiredDrivers == 0 || (!employee.CanWorkAlone && slot.RequiredDrivers == 1))
+                            slot.RequiredDrivers == 0 || (!CanWorkAlone(employee) && slot.RequiredDrivers == 1))
                         {
                             usable = false;
                             break;
@@ -82,7 +82,7 @@ public sealed class RosterSolver
                     var next = existing.FirstOrDefault(shift => shift.Start >= actualFinish);
                     var previousRestPenalty = previous is null ? 0 : Math.Max(0, input.Options.PreferredRestHours - (actualStart - previous.Finish).TotalHours);
                     var nextRestPenalty = next is null ? 0 : Math.Max(0, input.Options.PreferredRestHours - (next.Start - actualFinish).TotalHours);
-                    candidates.Add(new Candidate(candidates.Count, employee.Id, employee.CanWorkAlone,
+                    candidates.Add(new Candidate(candidates.Count, employee.Id, CanWorkAlone(employee),
                         availability.Date, start, finish, AbsoluteHour(input.WeekStart, availability.Date, start),
                         (long)Math.Ceiling(previousRestPenalty * 100), (long)Math.Ceiling(nextRestPenalty * 100)));
                     if (candidates.Count > MaxCandidates)
@@ -296,7 +296,7 @@ public sealed class RosterSolver
             var label = slot is not null ? FormatSlot(slot) : input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour).ToString("dddd HH:mm", CultureInfo.InvariantCulture);
             if (assigned.Count != required)
                 errors.Add($"{label}: demand {required}, scheduled {assigned.Count}; {(assigned.Count < required ? $"need {required - assigned.Count} more driver(s)" : $"{assigned.Count - required} excess driver(s)")}.");
-            if (required > 0 && !assigned.Any(employee => employee.CanWorkAlone))
+            if (required > 0 && !assigned.Any(CanWorkAlone))
                 errors.Add($"{label}: no driver who can work alone is scheduled.");
         }
         foreach (var boundary in input.BoundaryShifts)
@@ -415,7 +415,7 @@ public sealed class RosterSolver
             // Convex costs also balance the remaining employees when somebody cannot work.
             // Absolute deviation alone has flat regions that make 5/15 hours tie with 10/10.
             // A 71-value table avoids nonlinear integer multiplication during native search.
-            var fairnessTables = employees.Where(employee => employee.TargetHours > 0).ToDictionary(employee => employee.Id, employee =>
+        var fairnessTables = employees.Where(employee => TargetHours(employee) > 0).ToDictionary(employee => employee.Id, employee =>
                 Enumerable.Range(0, 71).Select(hours => fairness.EmployeeCost(employee, hours)).ToArray());
             foreach (var costs in fairnessTables.Values)
             {
@@ -429,7 +429,7 @@ public sealed class RosterSolver
             foreach (var employee in employees)
             {
                 token.ThrowIfCancellationRequested();
-                if (employee.TargetHours <= 0) continue;
+                if (TargetHours(employee) <= 0) continue;
                 var choices = byEmployee.GetValueOrDefault(employee.Id) ?? [];
                 var hours = model.NewIntVar(0, 70, $"hours{employee.Id}");
                 model.Add(hours == LinearExpr.WeightedSum(choices.Select(candidate => selected[candidate.Index]), choices.Select(candidate => (long)candidate.Length)));
@@ -440,7 +440,7 @@ public sealed class RosterSolver
                 if (input.Options.FairnessSpreadWeight > 0)
                 {
                     var percentage = model.NewIntVar(0, 700_000, $"utilization{employee.Id}");
-                    model.AddDivisionEquality(percentage, hours * PercentageScale, employee.TargetHours);
+                    model.AddDivisionEquality(percentage, hours * PercentageScale, TargetHours(employee));
                     percentages.Add(percentage);
                 }
             }
@@ -466,7 +466,7 @@ public sealed class RosterSolver
                 var cost = (shapePenalty + input.Options.DailyShiftCountPenalty) * 100;
                 // A zero target has no defined utilization percentage. These employees remain
                 // available as reserves, with a cost rather than being silently excluded from coverage.
-                if (employeesById[candidate.EmployeeId].TargetHours == 0)
+                if (TargetHours(employeesById[candidate.EmployeeId]) == 0)
                     cost += candidate.Length * (long)input.Options.TargetHoursWeight * PercentageScale;
                 if (cost > 0) objective.Add(selected[candidate.Index] * cost);
             }
@@ -648,7 +648,7 @@ public sealed class RosterSolver
                 var shifts = grouped.GetValueOrDefault(employee.Id) ?? [];
                 var hours = shifts.Sum(shift => shift.Length);
                 score += fairness.EmployeeCost(employee, hours);
-                if (employee.TargetHours > 0) percentages.Add(hours * 100.0 / employee.TargetHours);
+                if (TargetHours(employee) > 0) percentages.Add(hours * 100.0 / TargetHours(employee));
                 if (input.Options.ShortBreakPenalty > 0 && shifts.Length > 0)
                 {
                     var dates = shifts.Select(shift => (Start: input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(shift.AbsoluteStart),
@@ -666,7 +666,7 @@ public sealed class RosterSolver
                     ? (8 - shift.Length) * (long)input.Options.LongShiftBonus + Math.Max(0, 6 - shift.Length) * (long)input.Options.ShortShiftPenalty
                     : (shift.Length - 6) * (long)input.Options.LongShiftBonus + (shift.Length - 8) * (long)input.Options.ShortShiftPenalty;
                 score += (shape + input.Options.DailyShiftCountPenalty) * 100;
-                if (employeeById[shift.EmployeeId].TargetHours == 0)
+                if (TargetHours(employeeById[shift.EmployeeId]) == 0)
                     score += shift.Length * (long)input.Options.TargetHoursWeight * PercentageScale;
             }
             if (percentages.Count > 1)
@@ -680,8 +680,8 @@ public sealed class RosterSolver
     {
         public double EmployeeCost(Employee employee, int hours)
         {
-            if (employee.TargetHours <= 0) return 0;
-            var percentage = hours * 100.0 / employee.TargetHours;
+            if (TargetHours(employee) <= 0) return 0;
+            var percentage = hours * 100.0 / TargetHours(employee);
             var cost = Options.TargetHoursWeight * Math.Pow(percentage - CommonPercentage, 2) * 100;
             if (HistoryAdjustedPercentages.TryGetValue(employee.Id, out var adjusted))
                 cost += Options.HistoryFairnessWeight * Math.Pow(percentage - adjusted, 2) * 100;
@@ -690,8 +690,8 @@ public sealed class RosterSolver
 
         public static FairnessContext Create(RosterSolverInput input, Employee[] employees)
         {
-            var positive = employees.Where(employee => employee.TargetHours > 0).ToArray();
-            var totalTargets = positive.Sum(employee => (long)employee.TargetHours);
+            var positive = employees.Where(employee => TargetHours(employee) > 0).ToArray();
+            var totalTargets = positive.Sum(employee => (long)TargetHours(employee));
             var common = totalTargets == 0 ? 0 : input.Demand.Sum(slot => (long)slot.RequiredDrivers) * 100.0 / totalTargets;
             var employeeIds = positive.Select(employee => employee.Id).ToHashSet();
             var history = (input.History ?? []).Where(item => employeeIds.Contains(item.EmployeeId) && item.TargetHours > 0 &&
@@ -711,8 +711,8 @@ public sealed class RosterSolver
     private static IEnumerable<string> FairnessWarnings(RosterSolverInput input, IReadOnlyList<RosterSolverShift> shifts)
     {
         var scheduled = shifts.GroupBy(shift => shift.EmployeeId).ToDictionary(group => group.Key, group => group.Sum(shift => shift.DurationHours));
-        var ratios = input.Employees.Where(employee => employee.IsActive && employee.TargetHours > 0)
-            .Select(employee => (Employee: employee, Percentage: scheduled.GetValueOrDefault(employee.Id) * 100.0 / employee.TargetHours)).ToArray();
+        var ratios = input.Employees.Where(employee => employee.IsActive && TargetHours(employee) > 0)
+            .Select(employee => (Employee: employee, Percentage: scheduled.GetValueOrDefault(employee.Id) * 100.0 / TargetHours(employee))).ToArray();
         if (ratios.Length > 1)
         {
             var minimum = ratios.MinBy(item => item.Percentage);
@@ -736,6 +736,10 @@ public sealed class RosterSolver
         finish <= otherStart ? (otherStart - finish).TotalHours : otherFinish <= start ? (start - otherFinish).TotalHours : -1;
     private static int AbsoluteHour(DateOnly weekStart, DateOnly date, int hour) => (date.DayNumber - weekStart.DayNumber) * 24 + hour;
     private static string Name(Employee employee) => $"{employee.FirstName} {employee.LastName}".Trim();
+
+    private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
+
+    private static bool CanWorkAlone(Employee employee) => employee.DriverProfile?.CanWorkAlone == true;
     private static string FormatSlot(RosterSolverDemand slot) => $"{slot.Date.ToString("dddd", CultureInfo.InvariantCulture)} {slot.Hour % 24:00}:00{(slot.Hour >= 24 ? " (+1 day)" : string.Empty)}";
 
     private sealed record Candidate(int Index, Guid EmployeeId, bool CanWorkAlone, DateOnly Date,

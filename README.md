@@ -43,16 +43,59 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=replace-with-a-long-random-password
 ```
 
-Employee accounts use their `EmployeeNumber` as the username and are created with
-the initial password `12345`. Change this flow before production use if employees
-need to choose their own passwords.
+Employee accounts use their `EmployeeNumber` as the username and new employee
+accounts are created with the initial password `12345`. Existing passwords are
+not reset on startup. Change this flow before production use if employees need
+to choose their own passwords.
+
+Authentication keys are persisted in Docker so a normal container replacement
+does not invalidate active sessions. For one-time recovery of an existing
+deployment, temporarily add `RESET_ADMIN_PASSWORD_ON_STARTUP=true` and/or
+`RESET_EMPLOYEE_PASSWORDS_ON_STARTUP=true` to the VPS `.env`, then recreate the
+backend. This sets the admin password to `ADMIN_PASSWORD` and employee
+passwords to `12345`. Remove both reset flags and recreate the backend again
+immediately after the reset; leaving them enabled overwrites passwords on every
+restart.
+
+## Employees and roles
+
+The system has four roles: `Admin`, `Manager`, `InStore`, and `Driver`. The
+configured administrator is a standalone `Admin` account. Employee accounts
+can have one or more work roles; `Manager` accounts can use the administration
+console, while `Driver` accounts are included in roster generation. An employee
+must have at least one work role (`Driver`, `InStore`, or `Manager`), and only
+the system administrator can grant or remove the `Admin` role.
+
+The frontend selects a workspace from the signed-in roles. Drivers see their
+driver type, target hours, and can-work-alone setting alongside availability;
+in-store employees see an in-store availability workspace without driver data;
+employees without a specialized role see the shared employee workspace. Managers
+and admins use the management console.
+
+Drivers, in-store employees, and managers also have a **Holiday** tab. Each can
+submit, edit, or remove one pending holiday request for up to 80 hours. After an
+administrator approves it, the request is marked `Used` and remains in the
+employee's history. Administrators can review pending and used requests, approve
+one or all pending requests, and download all records as CSV.
+
+Every employee stores shared identity data on `Employee`: employee number, first
+name, last name, phone number, optional payroll number, and active status.
+Role-specific data is kept in profiles. `DriverProfile` currently contains
+weekly target hours, whether the driver can work alone, and `DriverType`
+(`Car`, `Moped`, or `EBike`, defaulting to `Car`). `InStoreProfile` and
+`ManagerProfile` are intentionally empty placeholders for future fields.
+
+The employee migration backfills every existing employee as an active `Driver`
+with a `Car` profile and preserves the existing target-hours and can-work-alone
+values. The identity seeder also links existing employee users and gives legacy
+employee accounts the `Driver` role when they have no work role.
 
 ## Roster generation
 
-Administrators can use **Generate roster** to generate one of the next three weeks,
+Administrators and managers can use **Generate roster** to generate one of the next three weeks,
 and **Saved rosters** to review the result or browse previously saved weeks. The
 latest imported Monday–Sunday demand template is reused for the selected week.
-Admins can edit a saved roster by adding, removing, reassigning, or retiming shifts;
+Admins and managers can edit a saved roster by adding, removing, reassigning, or retiming shifts;
 the complete edited set is revalidated before it replaces the saved week, and the
 updated hours, percentages, coverage, rest, and warnings are displayed immediately.
 Enter demand for every open hour; explicit zero demand is respected. Hours outside
@@ -127,7 +170,7 @@ History uses **scheduled hours**; the application has no attendance or timesheet
 to verify hours actually worked. Regenerating a week replaces that week only and
 never includes its old roster in its own four-week fairness history.
 
-The new migration is applied automatically at API startup. Rebuild/restart both
+The new migrations are applied automatically at API startup. Rebuild/restart both
 API and frontend to use the new generator. No production deployment is required
 to run the checks below:
 
@@ -144,4 +187,10 @@ Admin endpoints: `GET/PUT /api/admin/roster/settings`,
 `GET /api/admin/roster?weekStart=YYYY-MM-DD`, and `GET /api/admin/roster/history`.
 The SignalR endpoint is `/hubs/roster-generation`, event `rosterGenerationProgress`.
 Generation/cancellation bodies include `weekOffset`; cancellation may also include
-`jobId` to avoid cancelling a different job. All these endpoints require Admin.
+`jobId` to avoid cancelling a different job. These endpoints require `Admin` or
+`Manager`.
+
+Holiday endpoints are `GET/POST /api/holidays`, `PUT/DELETE /api/holidays/{id}`
+for the signed-in employee, and `GET /api/admin/holidays`,
+`GET /api/admin/holidays/export`, `POST /api/admin/holidays/{id}/approve`, and
+`POST /api/admin/holidays/approve-all` for the system administrator.

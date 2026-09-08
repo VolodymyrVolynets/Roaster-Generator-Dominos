@@ -27,7 +27,7 @@ public sealed class EmployeesController(
     {
         var query = db.Employees.AsNoTracking();
 
-        if (!User.IsInRole(RoleNames.Admin))
+        if (!User.IsInRole(RoleNames.Admin) && !User.IsInRole(RoleNames.Manager))
         {
             var user = await userManager.GetUserAsync(User);
 
@@ -39,12 +39,25 @@ public sealed class EmployeesController(
             query = query.Where(employee => employee.Id == employeeId && employee.IsActive);
         }
 
-        var employees = (await query
+        var employeeEntities = await query
+                .Include(employee => employee.DriverProfile)
+                .Include(employee => employee.InStoreProfile)
+                .Include(employee => employee.ManagerProfile)
                 .OrderBy(employee => employee.LastName)
                 .ThenBy(employee => employee.FirstName)
-                .ToListAsync(cancellationToken))
-            .Select(ToEmployeeResponse)
-            .ToList();
+                .ToListAsync(cancellationToken);
+
+        var employees = new List<EmployeeResponse>(employeeEntities.Count);
+
+        foreach (var employee in employeeEntities)
+        {
+            var user = await userManager.Users
+                .SingleOrDefaultAsync(item => item.EmployeeId == employee.Id, cancellationToken);
+            var roles = user is null
+                ? []
+                : await userManager.GetRolesAsync(user);
+            employees.Add(EmployeeResponseMapper.ToResponse(employee, roles));
+        }
 
         return Ok(employees);
     }
@@ -127,7 +140,7 @@ public sealed class EmployeesController(
         Guid employeeId,
         CancellationToken cancellationToken)
     {
-        if (User.IsInRole(RoleNames.Admin))
+        if (User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.Manager))
         {
             return null;
         }
@@ -142,15 +155,4 @@ public sealed class EmployeesController(
             : null;
     }
 
-    private static EmployeeResponse ToEmployeeResponse(Employee employee) => new()
-    {
-        Id = employee.Id,
-        EmployeeNumber = employee.EmployeeNumber,
-        FirstName = employee.FirstName,
-        LastName = employee.LastName,
-        PhoneNumber = employee.PhoneNumber,
-        IsActive = employee.IsActive,
-        TargetHours = employee.TargetHours,
-        CanWorkAlone = employee.CanWorkAlone
-    };
 }

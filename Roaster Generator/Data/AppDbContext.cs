@@ -10,6 +10,14 @@ public sealed class AppDbContext(
 {
     public DbSet<Employee> Employees => Set<Employee>();
 
+    public DbSet<DriverProfile> DriverProfiles => Set<DriverProfile>();
+
+    public DbSet<InStoreProfile> InStoreProfiles => Set<InStoreProfile>();
+
+    public DbSet<ManagerProfile> ManagerProfiles => Set<ManagerProfile>();
+
+    public DbSet<HolidayRequest> HolidayRequests => Set<HolidayRequest>();
+
     public DbSet<Shift> Shifts => Set<Shift>();
 
     public DbSet<DemandPlan> DemandPlans => Set<DemandPlan>();

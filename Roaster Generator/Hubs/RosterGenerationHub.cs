@@ -5,7 +5,7 @@ using Roaster_Generator.Services;
 
 namespace Roaster_Generator.Hubs;
 
-[Authorize(Roles = RoleNames.Admin)]
+[Authorize(Policy = AuthorizationPolicies.Manager)]
 public sealed class RosterTimerHub(RosterTimerService rosterTimer) : Hub
 {
     public override async Task OnConnectedAsync()

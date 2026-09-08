@@ -8,7 +8,7 @@ using Roaster_Generator.Services;
 namespace Roaster_Generator.Controllers;
 
 [ApiController]
-[Authorize(Roles = RoleNames.Admin)]
+[Authorize(Policy = AuthorizationPolicies.Manager)]
 [Route("api/admin/availability")]
 public sealed class AdminAvailabilityController(
     IValidator<WeekSelectionRequest> weekValidator,

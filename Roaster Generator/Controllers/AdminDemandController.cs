@@ -9,7 +9,7 @@ using Roaster_Generator.Services;
 namespace Roaster_Generator.Controllers;
 
 [ApiController]
-[Authorize(Roles = RoleNames.Admin)]
+[Authorize(Policy = AuthorizationPolicies.Manager)]
 [Route("api/admin/demand")]
 public sealed class AdminDemandController(
     DemandService demand,

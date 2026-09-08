@@ -6,6 +6,8 @@ using Microsoft.Extensions.Options;
 using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Data;
+using Roaster_Generator.Entities;
+using Roaster_Generator.Security;
 
 namespace Roaster_Generator.Services;
 
@@ -56,7 +58,24 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         if (diagnostics.Count > 0)
             throw new RosterInputException("The demand template is incomplete. Enter demand for every open hour (use 0 when no drivers are needed).", diagnostics);
 
-        var employees = await db.Employees.AsNoTracking().Where(e => e.IsActive).OrderBy(e => e.Id).ToListAsync(ct);
+        var driverRoleId = await db.Roles
+            .Where(role => role.Name == RoleNames.Driver)
+            .Select(role => role.Id)
+            .SingleOrDefaultAsync(ct);
+        var driverEmployeeIds = await db.UserRoles
+            .Where(userRole => userRole.RoleId == driverRoleId)
+            .Join(
+                db.Users.Where(user => user.EmployeeId.HasValue),
+                userRole => userRole.UserId,
+                user => user.Id,
+                (_, user) => user.EmployeeId!.Value)
+            .ToListAsync(ct);
+        var employees = await db.Employees
+            .AsNoTracking()
+            .Include(employee => employee.DriverProfile)
+            .Where(employee => employee.IsActive && driverEmployeeIds.Contains(employee.Id))
+            .OrderBy(employee => employee.Id)
+            .ToListAsync(ct);
         var ids = employees.Select(e => e.Id).ToArray();
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekEnd)
             .OrderBy(s => s.EmployeeId).ThenBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync(ct);
@@ -76,7 +95,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         var settings = await settingsService.GetAsync(ct);
         foreach (var employee in employees)
         {
-            if (employee.TargetHours == 0)
+            if (TargetHours(employee) == 0)
                 warnings.Add($"{employee.FirstName} {employee.LastName}: target hours are 0; available as a reserve, excluded from percentage balancing (percentage is undefined).");
             else if (!availability.Any(s => s.EmployeeId == employee.Id))
                 warnings.Add($"{employee.FirstName} {employee.LastName}: no availability entered; target percentage will be 0%.");
@@ -102,10 +121,22 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
         {
             DemandId = plan.Id, plan.UpdatedAtUtc, demand,
-            Employees = employees.Select(e => new { e.Id, e.FirstName, e.LastName, e.TargetHours, e.CanWorkAlone }),
+            Employees = employees.Select(e => new
+            {
+                e.Id,
+                e.FirstName,
+                e.LastName,
+                TargetHours = TargetHours(e),
+                CanWorkAlone = CanWorkAlone(e),
+                e.DriverProfile?.DriverType
+            }),
             Availability = availability.Select(s => new { s.EmployeeId, s.Date, s.StartTime, s.FinishTime }),
             boundaries, settings, history
         }))));
         return new LoadedRosterInput(input, settings, fingerprint, warnings);
     }
+
+    private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
+
+    private static bool CanWorkAlone(Employee employee) => employee.DriverProfile?.CanWorkAlone == true;
 }

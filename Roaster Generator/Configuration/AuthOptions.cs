@@ -8,5 +8,10 @@ public sealed class AuthOptions
 
     public string AdminPassword { get; set; } = string.Empty;
 
+    // One-time recovery switches. Keep these disabled during normal operation.
+    public bool ResetAdminPasswordOnStartup { get; set; }
+
+    public bool ResetEmployeePasswordsOnStartup { get; set; }
+
     public const string DefaultEmployeePassword = "12345";
 }

@@ -9,7 +9,7 @@ using Roaster_Generator.Services;
 namespace Roaster_Generator.Controllers;
 
 [ApiController]
-[Authorize(Roles = RoleNames.Admin)]
+[Authorize(Policy = AuthorizationPolicies.Manager)]
 [Route("api/admin/roster")]
 public sealed class AdminRosterController(
     IValidator<WeekSelectionRequest> weekValidator,

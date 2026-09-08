@@ -1,4 +1,5 @@
 using FluentValidation;
+using Roaster_Generator.Entities;
 using Roaster_Generator.Services;
 
 namespace Roaster_Generator.Validation;
@@ -62,7 +63,7 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                     context.AddFailure("The employee list contains duplicate IDs.");
                 }
 
-                if (input.Employees.Any(employee => employee.TargetHours is < 0 or > 168))
+                if (input.Employees.Any(employee => TargetHours(employee) is < 0 or > 168))
                 {
                     context.AddFailure("Employee target hours must be between 0 and 168.");
                 }
@@ -127,4 +128,6 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
 
     private static int AbsoluteHour(DateOnly weekStart, DateOnly date, int hour) =>
         (date.DayNumber - weekStart.DayNumber) * 24 + hour;
+
+    private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
 }

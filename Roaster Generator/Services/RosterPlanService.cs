@@ -34,7 +34,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
     public async Task<RosterPlanResponse?> GetAsync(DateOnly weekStart, CancellationToken ct)
     {
-        var plan = await db.RosterPlans.AsNoTracking().Include(p => p.Shifts).ThenInclude(s => s.Employee)
+        var plan = await db.RosterPlans.AsNoTracking().Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.DriverProfile)
             .SingleOrDefaultAsync(p => p.WeekStart == weekStart, ct);
         return plan is null ? null : ToResponse(plan);
     }
@@ -145,10 +145,10 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
     private static RosterPlanResponse BuildResponse(RosterPlan plan, LoadedRosterInput loaded, RosterSolverResult result)
     {
         var history = (loaded.Input.History ?? []).Where(h => h.TargetHours > 0).ToList();
-        var eligible = loaded.Input.Employees.Where(e => e.TargetHours > 0).Select(e => e.Id).ToHashSet();
+        var eligible = loaded.Input.Employees.Where(e => TargetHours(e) > 0).Select(e => e.Id).ToHashSet();
         var historyTargetTotal = history.Where(h => eligible.Contains(h.EmployeeId)).Sum(h => h.TargetHours);
         var historyHoursTotal = history.Where(h => eligible.Contains(h.EmployeeId)).Sum(h => h.ScheduledHours);
-        var currentTargetTotal = loaded.Input.Employees.Where(e => e.TargetHours > 0).Sum(e => e.TargetHours);
+        var currentTargetTotal = loaded.Input.Employees.Where(e => TargetHours(e) > 0).Sum(TargetHours);
         var currentRatio = currentTargetTotal > 0 ? loaded.Input.Demand.Sum(d => d.RequiredDrivers) / (double)currentTargetTotal : 0;
         var historicalRatio = historyTargetTotal > 0 ? historyHoursTotal / (double)historyTargetTotal : 0;
         var employees = loaded.Input.Employees.OrderBy(e => e.LastName).ThenBy(e => e.FirstName).Select(e =>
@@ -162,12 +162,12 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
                 ? Math.Clamp((historicalRatio - pastHours / (double)pastTargets) / past.Count, -0.15, 0.15) : 0;
             return new RosterEmployeeResponse
             {
-                EmployeeId = e.Id, EmployeeName = $"{e.FirstName} {e.LastName}".Trim(), TargetHours = e.TargetHours,
-                ScheduledHours = hours, TargetPercentage = e.TargetHours > 0 ? Math.Round(100d * hours / e.TargetHours, 2) : null,
+                EmployeeId = e.Id, EmployeeName = $"{e.FirstName} {e.LastName}".Trim(), TargetHours = TargetHours(e),
+                ScheduledHours = hours, TargetPercentage = TargetHours(e) > 0 ? Math.Round(100d * hours / TargetHours(e), 2) : null,
                 PreviousScheduledHours = pastHours, PreviousTargetHours = pastTargets, HistoryWeeks = past.Count,
                 PreviousTargetPercentage = pastTargets > 0 ? Math.Round(100d * pastHours / pastTargets, 2) : null,
-                BalancedTargetHours = e.TargetHours > 0 ? Math.Round(Math.Max(0, e.TargetHours * (currentRatio + correction)), 2) : null,
-                CumulativeTargetPercentage = e.TargetHours > 0 ? Math.Round(100d * (pastHours + hours) / (pastTargets + e.TargetHours), 2) : null,
+                BalancedTargetHours = TargetHours(e) > 0 ? Math.Round(Math.Max(0, TargetHours(e) * (currentRatio + correction)), 2) : null,
+                CumulativeTargetPercentage = TargetHours(e) > 0 ? Math.Round(100d * (pastHours + hours) / (pastTargets + TargetHours(e)), 2) : null,
                 Shifts = shifts.Select(s => new RosterShiftResponse
                 {
                     Date = s.Date, StartTime = $"{s.StartHour % 24:00}:00", FinishTime = $"{s.FinishHour % 24:00}:00",
@@ -229,9 +229,9 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
                 ?? throw new InvalidOperationException("The saved roster snapshot cannot be read.");
         var employees = plan.Shifts.GroupBy(s => s.Employee).OrderBy(g => g.Key.LastName).Select(g => new RosterEmployeeResponse
         {
-            EmployeeId = g.Key.Id, EmployeeName = $"{g.Key.FirstName} {g.Key.LastName}".Trim(), TargetHours = g.Key.TargetHours,
+            EmployeeId = g.Key.Id, EmployeeName = $"{g.Key.FirstName} {g.Key.LastName}".Trim(), TargetHours = TargetHours(g.Key),
             ScheduledHours = g.Sum(s => Duration(s.StartTime, s.FinishTime)),
-            TargetPercentage = g.Key.TargetHours > 0 ? 100d * g.Sum(s => Duration(s.StartTime, s.FinishTime)) / g.Key.TargetHours : null,
+            TargetPercentage = TargetHours(g.Key) > 0 ? 100d * g.Sum(s => Duration(s.StartTime, s.FinishTime)) / TargetHours(g.Key) : null,
             Shifts = g.OrderBy(s => s.Date).Select(s => new RosterShiftResponse
             {
                 Date = s.Date, StartTime = s.StartTime.ToString("HH:mm", CultureInfo.InvariantCulture),
@@ -249,4 +249,6 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
     }
 
     private static int Duration(TimeOnly start, TimeOnly finish) => (finish.Hour - start.Hour + 24) % 24;
+
+    private static int TargetHours(Employee employee) => employee.DriverProfile?.TargetHours ?? 0;
 }

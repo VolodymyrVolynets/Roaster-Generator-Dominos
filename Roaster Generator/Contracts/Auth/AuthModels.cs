@@ -6,6 +6,8 @@ public sealed class CurrentUserResponse
 {
     public string Username { get; init; } = string.Empty;
 
+    public IReadOnlyList<string> Roles { get; init; } = [];
+
     public bool IsAdmin { get; init; }
 
     public Guid? EmployeeId { get; init; }

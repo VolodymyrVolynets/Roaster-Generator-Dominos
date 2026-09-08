@@ -12,11 +12,15 @@ public sealed class Employee
 
     public string PhoneNumber { get; set; } = string.Empty;
 
+    public string? PayrollNumber { get; set; }
+
     public bool IsActive { get; set; } = true;
 
-    public int TargetHours { get; set; } = 20;
+    public DriverProfile? DriverProfile { get; set; }
 
-    public bool CanWorkAlone { get; set; } = true;
+    public InStoreProfile? InStoreProfile { get; set; }
+
+    public ManagerProfile? ManagerProfile { get; set; }
 
     public ICollection<Shift> Shifts { get; set; } = new List<Shift>();
 

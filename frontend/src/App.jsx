@@ -15,8 +15,11 @@ const emptyEmployeeForm = {
   firstName: '',
   lastName: '',
   phoneNumber: '',
+  payrollNumber: '',
+  roles: ['Driver'],
   targetHours: 20,
   canWorkAlone: true,
+  driverType: 'Car',
 }
 
 function parseDate(dateValue) {
@@ -74,6 +77,7 @@ async function fetchJson(url, options) {
 
     if (response.status === 401 &&
         requestPath !== '/api/auth/login' &&
+        requestPath !== '/api/auth/me' &&
         requestPath !== '/api/auth/logout') {
       window.dispatchEvent(new CustomEvent('auth-expired', {
         detail: { showMessage: requestPath !== '/api/auth/me' },
@@ -157,6 +161,309 @@ function LoginView({ onLogin, error, isSubmitting }) {
         </form>
       </section>
     </main>
+  )
+}
+
+const holidayDateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
+function formatHolidayDate(value) {
+  return value ? holidayDateFormatter.format(new Date(value)) : '—'
+}
+
+function HolidayPanel({ setErrorPopup }) {
+  const [holidayState, setHolidayState] = useState({
+    status: 'loading',
+    requested: null,
+    used: [],
+  })
+  const [hours, setHours] = useState('')
+  const [saveState, setSaveState] = useState({ status: 'idle', message: '' })
+
+  async function loadHolidays() {
+    try {
+      const payload = await fetchJson('/api/holidays')
+      setHolidayState({ status: 'success', requested: payload.requested, used: payload.used || [] })
+      setHours(payload.requested ? String(payload.requested.hours) : '')
+    } catch (error) {
+      setHolidayState((current) => ({ ...current, status: 'error' }))
+      setErrorPopup(error.message)
+    }
+  }
+
+  useEffect(() => {
+    void loadHolidays()
+  }, [])
+
+  async function saveHoliday(event) {
+    event.preventDefault()
+    setSaveState({ status: 'saving', message: '' })
+
+    const endpoint = holidayState.requested
+      ? `/api/holidays/${holidayState.requested.id}`
+      : '/api/holidays'
+
+    try {
+      const saved = await fetchJson(endpoint, {
+        method: holidayState.requested ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hours: Number(hours) }),
+      })
+      setHolidayState((current) => ({ ...current, status: 'success', requested: saved }))
+      setHours(String(saved.hours))
+      setSaveState({ status: 'success', message: holidayState.requested ? 'Holiday request updated.' : 'Holiday request submitted.' })
+    } catch (error) {
+      setSaveState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function removeHoliday() {
+    if (!holidayState.requested || !window.confirm('Remove this holiday request?')) {
+      return
+    }
+
+    try {
+      await fetchJson(`/api/holidays/${holidayState.requested.id}`, { method: 'DELETE' })
+      setHolidayState((current) => ({ ...current, requested: null }))
+      setHours('')
+      setSaveState({ status: 'success', message: 'Holiday request removed.' })
+    } catch (error) {
+      setSaveState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  return (
+    <section className="holiday-panel role-details">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Holiday</span>
+          <h2>Holiday hours</h2>
+        </div>
+        <span className="holiday-limit">Maximum 80 hours</span>
+      </div>
+      <p className="holiday-help">
+        Submit one active holiday request. You can edit or remove it until an administrator approves it.
+        Approved requests move to your used holiday history.
+      </p>
+
+      {holidayState.status === 'loading' && (
+        <p className="message info-message">Loading holiday hours…</p>
+      )}
+
+      {holidayState.status === 'error' && (
+        <p className="message error-message">Unable to load your holiday hours.</p>
+      )}
+
+      {holidayState.status !== 'loading' && (
+        <form className="holiday-form" onSubmit={saveHoliday}>
+          <label htmlFor="holiday-hours">Holiday hours requested</label>
+          <div className="holiday-form-row">
+            <input
+              id="holiday-hours"
+              type="number"
+              min="1"
+              max="80"
+              step="1"
+              value={hours}
+              onChange={(event) => setHours(event.target.value)}
+              required
+            />
+            <button type="submit" disabled={saveState.status === 'saving'}>
+              {saveState.status === 'saving'
+                ? 'Saving…'
+                : holidayState.requested
+                  ? 'Save changes'
+                  : 'Submit request'}
+            </button>
+            {holidayState.requested && (
+              <button type="button" className="danger-button" onClick={removeHoliday}>
+                Remove
+              </button>
+            )}
+          </div>
+          {holidayState.requested && (
+            <p className="holiday-request-meta">
+              Status: <strong>Requested</strong> · Last updated {formatHolidayDate(holidayState.requested.updatedAtUtc)}
+            </p>
+          )}
+          {saveState.message && (
+            <p className={`save-message ${saveState.status}`}>{saveState.message}</p>
+          )}
+        </form>
+      )}
+
+      <section className="holiday-history">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">History</span>
+            <h3>Used holiday hours</h3>
+          </div>
+          <strong className="holiday-total">{holidayState.used.reduce((total, item) => total + item.hours, 0)} hours</strong>
+        </div>
+        {holidayState.used.length === 0 ? (
+          <p className="message info-message">No used holiday hours yet.</p>
+        ) : (
+          <HolidayTable holidays={holidayState.used} />
+        )}
+      </section>
+    </section>
+  )
+}
+
+function HolidayTable({ holidays, showEmployee = false, showApprove = false, onApprove }) {
+  return (
+    <div className="holiday-table-wrapper">
+      <table className="holiday-table">
+        <thead>
+          <tr>
+            {showEmployee && <th>Employee</th>}
+            <th>Hours</th>
+            <th>Status</th>
+            <th>Requested</th>
+            <th>Used</th>
+            {showApprove && <th>Action</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {holidays.map((holiday) => (
+            <tr key={holiday.id}>
+              {showEmployee && (
+                <td>
+                  <strong>{holiday.employeeName}</strong>
+                  <small>#{holiday.employeeNumber}</small>
+                </td>
+              )}
+              <td>{holiday.hours}</td>
+              <td><span className={`holiday-status ${holiday.status.toLowerCase()}`}>{holiday.status}</span></td>
+              <td>{formatHolidayDate(holiday.createdAtUtc)}</td>
+              <td>{formatHolidayDate(holiday.usedAtUtc)}</td>
+              {showApprove && (
+                <td>
+                  <button type="button" className="secondary-button" onClick={() => onApprove(holiday.id)}>
+                    Approve
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function AdminHolidayPanel({ setErrorPopup }) {
+  const [holidayState, setHolidayState] = useState({ status: 'loading', requested: [], used: [] })
+  const [actionState, setActionState] = useState({ status: 'idle', message: '' })
+
+  async function loadHolidays() {
+    try {
+      const payload = await fetchJson('/api/admin/holidays')
+      setHolidayState({ status: 'success', requested: payload.requested || [], used: payload.used || [] })
+    } catch (error) {
+      setHolidayState((current) => ({ ...current, status: 'error' }))
+      setErrorPopup(error.message)
+    }
+  }
+
+  useEffect(() => {
+    void loadHolidays()
+  }, [])
+
+  async function approveHoliday(holidayId) {
+    setActionState({ status: 'saving', message: '' })
+    try {
+      await fetchJson(`/api/admin/holidays/${holidayId}/approve`, { method: 'POST' })
+      setActionState({ status: 'success', message: 'Holiday request approved and marked as used.' })
+      await loadHolidays()
+    } catch (error) {
+      setActionState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  async function approveAll() {
+    if (holidayState.requested.length === 0 || !window.confirm('Approve all requested holiday hours?')) {
+      return
+    }
+
+    setActionState({ status: 'saving', message: '' })
+    try {
+      const result = await fetchJson('/api/admin/holidays/approve-all', { method: 'POST' })
+      setActionState({ status: 'success', message: `${result.approvedCount} request${result.approvedCount === 1 ? '' : 's'} approved and marked as used.` })
+      await loadHolidays()
+    } catch (error) {
+      setActionState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
+  const requestedHours = holidayState.requested.reduce((total, holiday) => total + holiday.hours, 0)
+  const usedHours = holidayState.used.reduce((total, holiday) => total + holiday.hours, 0)
+
+  return (
+    <section className="admin-tools holiday-admin-panel">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Administration</span>
+          <h2>Holiday requests</h2>
+        </div>
+        <div className="holiday-admin-actions">
+          <a className="secondary-button" href="/api/admin/holidays/export" download="holiday-requests.csv">
+            Download CSV
+          </a>
+          <button
+            type="button"
+            onClick={approveAll}
+            disabled={holidayState.status !== 'success' || holidayState.requested.length === 0 || actionState.status === 'saving'}
+          >
+            {actionState.status === 'saving' ? 'Approving…' : 'Approve all'}
+          </button>
+        </div>
+      </div>
+
+      {holidayState.status === 'loading' && <p className="message info-message">Loading holiday requests…</p>}
+      {holidayState.status === 'error' && <p className="message error-message">Unable to load holiday requests.</p>}
+
+      <div className="holiday-summary">
+        <div><span>Requested</span><strong>{requestedHours} hours</strong><small>{holidayState.requested.length} request{holidayState.requested.length === 1 ? '' : 's'}</small></div>
+        <div><span>Used</span><strong>{usedHours} hours</strong><small>{holidayState.used.length} record{holidayState.used.length === 1 ? '' : 's'}</small></div>
+      </div>
+
+      {actionState.message && <p className={`save-message ${actionState.status}`}>{actionState.message}</p>}
+
+      <section className="holiday-history">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Pending</span>
+            <h3>Requested holiday hours</h3>
+          </div>
+        </div>
+        {holidayState.requested.length === 0 ? (
+          <p className="message info-message">No holiday requests are waiting for approval.</p>
+        ) : (
+          <HolidayTable holidays={holidayState.requested} showEmployee showApprove onApprove={approveHoliday} />
+        )}
+      </section>
+
+      <section className="holiday-history">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Completed</span>
+            <h3>Used holiday hours</h3>
+          </div>
+        </div>
+        {holidayState.used.length === 0 ? (
+          <p className="message info-message">No holiday hours have been approved yet.</p>
+        ) : (
+          <HolidayTable holidays={holidayState.used} showEmployee />
+        )}
+      </section>
+    </section>
   )
 }
 
@@ -715,8 +1022,11 @@ function AdminConsole({
     updateEmployeeForm('firstName', '')
     updateEmployeeForm('lastName', '')
     updateEmployeeForm('phoneNumber', '')
+    updateEmployeeForm('payrollNumber', '')
+    updateEmployeeForm('roles', ['Driver'])
     updateEmployeeForm('targetHours', 20)
     updateEmployeeForm('canWorkAlone', true)
+    updateEmployeeForm('driverType', 'Car')
   }
 
   function closeEmployeeEditor() {
@@ -733,6 +1043,9 @@ function AdminConsole({
     (employee) => String(employee.id) === selectedEmployeeId,
   )
   const activeEmployeeCount = employees.filter((employee) => employee.isActive).length
+  const editableRoles = authState.user.isAdmin
+    ? ['Driver', 'InStore', 'Manager', 'Admin']
+    : ['Driver', 'InStore', 'Manager']
 
   return (
     <>
@@ -746,7 +1059,7 @@ function AdminConsole({
           </header>
 
           <div className="app-toolbar">
-            <span className="role-badge">Admin</span>
+            <span className="role-badge">{authState.user.isAdmin ? 'Admin' : 'Manager'}</span>
             <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
           </div>
 
@@ -757,6 +1070,13 @@ function AdminConsole({
               onClick={() => switchTab('employees')}
             >
               Employees
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'holiday' ? 'admin-tab active' : 'admin-tab'}
+              onClick={() => switchTab('holiday')}
+            >
+              Holiday
             </button>
             <button
               type="button"
@@ -826,9 +1146,16 @@ function AdminConsole({
                   >
                     <strong>{employee.firstName} {employee.lastName}</strong>
                     <span>Employee number: {employee.employeeNumber}</span>
+                    <span>Payroll number: {employee.payrollNumber || 'Not set'}</span>
                     <span>Phone: {employee.phoneNumber || 'Not set'}</span>
-                    <span>Target hours: {employee.targetHours}</span>
-                    <span>Can work alone: {employee.canWorkAlone ? 'Yes' : 'No'}</span>
+                    <span>Roles: {(employee.roles || []).join(', ') || 'Not set'}</span>
+                    {employee.roles?.includes('Driver') && (
+                      <>
+                        <span>Driver type: {employee.driverType || 'Car'}</span>
+                        <span>Target hours: {employee.targetHours}</span>
+                        <span>Can work alone: {employee.canWorkAlone ? 'Yes' : 'No'}</span>
+                      </>
+                    )}
                     <span className="employee-card-status">
                       {employee.isActive ? 'Active' : 'Inactive'}
                     </span>
@@ -880,26 +1207,68 @@ function AdminConsole({
                       value={employeeForm.phoneNumber}
                       onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
                     />
-                    <label htmlFor="admin-employee-target-hours">Target hours per week</label>
+                    <label htmlFor="admin-employee-payroll-number">Payroll number</label>
                     <input
-                      id="admin-employee-target-hours"
-                      type="number"
-                      min="3"
-                      max="168"
-                      step="1"
-                      value={employeeForm.targetHours}
-                      onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
-                      required
+                      id="admin-employee-payroll-number"
+                      value={employeeForm.payrollNumber}
+                      onChange={(event) => updateEmployeeForm('payrollNumber', event.target.value)}
                     />
-                    <label className="checkbox-label" htmlFor="admin-employee-can-work-alone">
-                      <input
-                        id="admin-employee-can-work-alone"
-                        type="checkbox"
-                        checked={employeeForm.canWorkAlone}
-                        onChange={(event) => updateEmployeeForm('canWorkAlone', event.target.checked)}
-                      />
-                      Can work alone
-                    </label>
+
+                    <fieldset className="employee-role-fieldset">
+                      <legend>Roles</legend>
+                      {editableRoles.map((role) => (
+                        <label className="checkbox-label" htmlFor={`admin-employee-role-${role}`} key={role}>
+                          <input
+                            id={`admin-employee-role-${role}`}
+                            type="checkbox"
+                            checked={employeeForm.roles?.includes(role) || false}
+                            onChange={(event) => {
+                              const currentRoles = employeeForm.roles || []
+                              const nextRoles = event.target.checked
+                                ? [...new Set([...currentRoles, role])]
+                                : currentRoles.filter((item) => item !== role)
+                              updateEmployeeForm('roles', nextRoles)
+                            }}
+                          />
+                          {role}
+                        </label>
+                      ))}
+                    </fieldset>
+
+                    {employeeForm.roles?.includes('Driver') && (
+                      <>
+                        <label htmlFor="admin-employee-driver-type">Driver type</label>
+                        <select
+                          id="admin-employee-driver-type"
+                          value={employeeForm.driverType}
+                          onChange={(event) => updateEmployeeForm('driverType', event.target.value)}
+                        >
+                          <option value="Car">Car</option>
+                          <option value="Moped">Moped</option>
+                          <option value="EBike">E-bike</option>
+                        </select>
+                        <label htmlFor="admin-employee-target-hours">Target hours per week</label>
+                        <input
+                          id="admin-employee-target-hours"
+                          type="number"
+                          min="3"
+                          max="168"
+                          step="1"
+                          value={employeeForm.targetHours}
+                          onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
+                          required
+                        />
+                        <label className="checkbox-label" htmlFor="admin-employee-can-work-alone">
+                          <input
+                            id="admin-employee-can-work-alone"
+                            type="checkbox"
+                            checked={employeeForm.canWorkAlone}
+                            onChange={(event) => updateEmployeeForm('canWorkAlone', event.target.checked)}
+                          />
+                          Can work alone
+                        </label>
+                      </>
+                    )}
 
                     <div className="employee-form-actions">
                       <button type="submit" disabled={employeeSaveState.status === 'saving'}>
@@ -929,6 +1298,12 @@ function AdminConsole({
                 </section>
               )}
             </section>
+          )}
+
+          {activeTab === 'holiday' && (
+            authState.user.isAdmin
+              ? <AdminHolidayPanel setErrorPopup={setErrorPopup} />
+              : <HolidayPanel setErrorPopup={setErrorPopup} />
           )}
 
           {activeTab === 'roster' && (
@@ -1125,6 +1500,261 @@ function TimeSelector({ id, label, value, onChange }) {
   )
 }
 
+function ScheduleEditor({
+  schedule,
+  scheduleState,
+  weekOffset,
+  setWeekOffset,
+  saveState,
+  saveSchedule,
+  updateDay,
+  resetDay,
+}) {
+  function changeWeek(direction) {
+    setWeekOffset((current) =>
+      Math.min(maxWeekOffset, Math.max(minWeekOffset, current + direction)),
+    )
+  }
+
+  if (!schedule) {
+    return null
+  }
+
+  return (
+    <form className="schedule-form" onSubmit={saveSchedule}>
+      <div className="schedule-heading">
+        <div>
+          <span className="eyebrow">Weekly availability</span>
+          <h2>{schedule.employeeName}</h2>
+        </div>
+        <div className="week-navigation" aria-label="Week navigation">
+          <button
+            type="button"
+            className="week-arrow"
+            aria-label="Previous week"
+            onClick={() => changeWeek(-1)}
+            disabled={weekOffset === minWeekOffset || scheduleState.status === 'loading'}
+          >
+            ←
+          </button>
+          <div className="week-range">
+            <strong>{weekLabels[weekOffset]}</strong>
+            <span>
+              {dateFormatter.format(parseDate(schedule.weekStart))} –{' '}
+              {dateFormatter.format(parseDate(schedule.weekEnd))}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="week-arrow"
+            aria-label="Next week"
+            onClick={() => changeWeek(1)}
+            disabled={weekOffset === maxWeekOffset || scheduleState.status === 'loading'}
+          >
+            →
+          </button>
+        </div>
+      </div>
+
+      <div className="schedule-table" role="table" aria-label="Weekly availability">
+        <div className="schedule-row schedule-header" role="row">
+          <span role="columnheader">Day</span>
+          <span role="columnheader">Start time</span>
+          <span role="columnheader">Finish time</span>
+          <span role="columnheader">Reset</span>
+        </div>
+
+        {schedule.days.map((day) => (
+          <div className="schedule-row" role="row" key={day.date}>
+            <div className="day-cell" role="cell">
+              <strong>{day.dayOfWeek}</strong>
+              <span>{dateFormatter.format(parseDate(day.date))}</span>
+              {getShiftDuration(day.startTime, day.finishTime) && (
+                <span className="shift-duration">
+                  {getShiftDuration(day.startTime, day.finishTime)}
+                </span>
+              )}
+            </div>
+            <div role="cell">
+              <label className="visually-hidden" htmlFor={`${day.date}-start`}>
+                {day.dayOfWeek} start time
+              </label>
+              <TimeSelector
+                id={`${day.date}-start`}
+                label={`${day.dayOfWeek} start time`}
+                value={day.startTime || ''}
+                onChange={(value) => updateDay(day.date, 'startTime', value)}
+              />
+            </div>
+            <div role="cell">
+              <label className="visually-hidden" htmlFor={`${day.date}-finish`}>
+                {day.dayOfWeek} finish time
+              </label>
+              <TimeSelector
+                id={`${day.date}-finish`}
+                label={`${day.dayOfWeek} finish time`}
+                value={day.finishTime || ''}
+                onChange={(value) => updateDay(day.date, 'finishTime', value)}
+              />
+            </div>
+            <div role="cell">
+              <button
+                type="button"
+                className="reset-button"
+                onClick={() => resetDay(day.date)}
+                disabled={!day.startTime && !day.finishTime}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="form-footer">
+        <span className={`save-message ${saveState.status}`} aria-live="polite">
+          {saveState.message || 'Leave both fields empty for a day off.'}
+        </span>
+        <button type="submit" disabled={saveState.status === 'saving'}>
+          {saveState.status === 'saving' ? 'Saving…' : 'Save availability'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function DriverWorkspace(props) {
+  return (
+    <EmployeeWorkspace
+      {...props}
+      variant="driver"
+      title="Driver workspace"
+      lead="Set the hours you are available to work for the selected week."
+    />
+  )
+}
+
+function InStoreWorkspace(props) {
+  return (
+    <EmployeeWorkspace
+      {...props}
+      variant="instore"
+      title="In-store workspace"
+      lead="Set your in-store availability. In-store-specific details will be added here later."
+    >
+      <section className="role-details instore-details">
+        <span className="eyebrow">In-store profile</span>
+        <h2>Availability and store work</h2>
+        <p>No additional in-store details have been configured yet.</p>
+      </section>
+    </EmployeeWorkspace>
+  )
+}
+
+function EmployeeWorkspace({
+  variant,
+  title,
+  lead,
+  children,
+  authState,
+  employee,
+  errorPopup,
+  employeesState,
+  scheduleState,
+  schedule,
+  saveState,
+  weekOffset,
+  setWeekOffset,
+  saveSchedule,
+  updateDay,
+  resetDay,
+  setErrorPopup,
+  logout,
+}) {
+  const [activeTab, setActiveTab] = useState('availability')
+  const roleLabel = variant === 'driver'
+    ? 'Driver'
+    : variant === 'instore'
+      ? 'In-store'
+      : 'Employee'
+
+  return (
+    <>
+      <ErrorPopup message={errorPopup} onClose={() => setErrorPopup('')} />
+      <main className="page-shell">
+        <section className={`app-card employee-workspace ${variant}-workspace`}>
+          <header className="page-header">
+            <span className="eyebrow">Roaster Generator</span>
+            <h1>{title}</h1>
+            <p className="lead">{lead}</p>
+          </header>
+
+          <div className="app-toolbar">
+            <div className="current-employee">
+              <span className="eyebrow">Signed in as</span>
+              <strong>{authState.user.employeeName || authState.user.username}</strong>
+            </div>
+            <span className="role-badge">{roleLabel}</span>
+            <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
+          </div>
+
+          <nav className="workspace-tabs" aria-label="Employee sections">
+            <button
+              type="button"
+              className={activeTab === 'availability' ? 'workspace-tab active' : 'workspace-tab'}
+              onClick={() => setActiveTab('availability')}
+            >
+              Availability
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'holiday' ? 'workspace-tab active' : 'workspace-tab'}
+              onClick={() => setActiveTab('holiday')}
+            >
+              Holiday
+            </button>
+          </nav>
+
+          {activeTab === 'holiday' ? (
+            <HolidayPanel setErrorPopup={setErrorPopup} />
+          ) : (
+            <>
+              {children}
+
+              {employeesState.status === 'error' && (
+                <p className="message error-message">{employeesState.message}</p>
+              )}
+
+              {employeesState.status === 'success' && !employee && (
+                <p className="message info-message">Your employee profile is not available.</p>
+              )}
+
+              {scheduleState.status === 'loading' && (
+                <p className="message info-message">Loading availability…</p>
+              )}
+
+              {scheduleState.status === 'error' && (
+                <p className="message error-message">{scheduleState.message}</p>
+              )}
+
+              <ScheduleEditor
+                schedule={schedule}
+                scheduleState={scheduleState}
+                weekOffset={weekOffset}
+                setWeekOffset={setWeekOffset}
+                saveState={saveState}
+                saveSchedule={saveSchedule}
+                updateDay={updateDay}
+                resetDay={resetDay}
+              />
+            </>
+          )}
+        </section>
+      </main>
+    </>
+  )
+}
+
 function App() {
   const [authState, setAuthState] = useState({ status: 'loading', user: null, message: '' })
   const [employees, setEmployees] = useState([])
@@ -1143,7 +1773,9 @@ function App() {
   const [dataRefreshKey, setDataRefreshKey] = useState(0)
 
   const isAuthenticated = authState.status === 'authenticated'
-  const isAdmin = isAuthenticated && authState.user.isAdmin
+  const isSystemAdmin = isAuthenticated && authState.user.isAdmin
+  const isManager = isAuthenticated && authState.user.roles?.includes('Manager')
+  const isAdmin = isSystemAdmin || isManager
 
   useEffect(() => {
     function handleAuthExpired(event) {
@@ -1245,8 +1877,11 @@ function App() {
         firstName: employee.firstName,
         lastName: employee.lastName,
         phoneNumber: employee.phoneNumber,
-        targetHours: employee.targetHours,
-        canWorkAlone: employee.canWorkAlone,
+        payrollNumber: employee.payrollNumber || '',
+        roles: employee.roles?.length ? employee.roles : ['Driver'],
+        targetHours: employee.targetHours ?? 20,
+        canWorkAlone: employee.canWorkAlone ?? true,
+        driverType: employee.driverType || 'Car',
       })
     }
   }, [employees, selectedEmployeeId, isCreatingEmployee])
@@ -1269,12 +1904,6 @@ function App() {
       ),
     }))
     setSaveState({ status: 'idle' })
-  }
-
-  function changeWeek(direction) {
-    setWeekOffset((current) =>
-      Math.min(maxWeekOffset, Math.max(minWeekOffset, current + direction)),
-    )
   }
 
   async function login(username, password) {
@@ -1469,306 +2098,46 @@ function App() {
     )
   }
 
+  const employee = employees.find((item) => String(item.id) === selectedEmployeeId)
+  const employeeRoles = authState.user.roles || []
+  const employeeWorkspaceProps = {
+    authState,
+    employee,
+    errorPopup,
+    employeesState,
+    scheduleState,
+    schedule,
+    saveState,
+    weekOffset,
+    setWeekOffset,
+    saveSchedule,
+    updateDay,
+    resetDay,
+    setErrorPopup,
+    logout,
+  }
+
+  if (employeeRoles.includes('Driver')) {
+    return <DriverWorkspace {...employeeWorkspaceProps} />
+  }
+
+  if (employeeRoles.includes('InStore')) {
+    return <InStoreWorkspace {...employeeWorkspaceProps} />
+  }
+
   return (
-    <>
-      <ErrorPopup message={errorPopup} onClose={() => setErrorPopup('')} />
-      <main className="page-shell">
-      <section className="app-card">
-        <header className="page-header">
-          <span className="eyebrow">Roaster Generator</span>
-          <h1>Weekly shifts</h1>
-          <p className="lead">
-            {isAdmin
-              ? 'Manage employees and review or edit schedules.'
-              : 'Set your start and finish times for the available weeks.'}
-          </p>
-        </header>
-
-        <div className="app-toolbar">
-          <span className="role-badge">{isAdmin ? 'Admin' : 'Employee'}</span>
-          <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
-        </div>
-
-        {isAdmin ? (
-          <div className="employee-picker">
-            <label htmlFor="employee">Employee</label>
-            <select
-              id="employee"
-              value={selectedEmployeeId}
-              onChange={(event) => {
-                setSelectedEmployeeId(event.target.value)
-                setWeekOffset(minWeekOffset)
-                setIsCreatingEmployee(false)
-              }}
-              disabled={employeesState.status !== 'success' || employees.length === 0}
-            >
-              <option value="">
-                {employeesState.status === 'loading' ? 'Loading employees…' : 'Select an employee'}
-              </option>
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.firstName} {employee.lastName}{employee.isActive ? '' : ' (inactive)'}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div className="current-employee">
-            <span className="eyebrow">Signed in as</span>
-            <strong>{authState.user.employeeName || authState.user.username}</strong>
-          </div>
-        )}
-
-        {employeesState.status === 'error' && (
-          <p className="message error-message">{employeesState.message}</p>
-        )}
-
-        {employeesState.status === 'success' && employees.length === 0 && (
-          <p className="message info-message">No employees are available yet.</p>
-        )}
-
-        {scheduleState.status === 'loading' && (
-          <p className="message info-message">Loading week…</p>
-        )}
-
-        {scheduleState.status === 'error' && (
-          <p className="message error-message">{scheduleState.message}</p>
-        )}
-
-        {isAdmin && (
-          <section className="admin-tools">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">Administration</span>
-                <h2>{isCreatingEmployee ? 'Add employee' : 'Edit employee'}</h2>
-              </div>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => {
-                  setIsCreatingEmployee((current) => !current)
-                  setEmployeeForm(emptyEmployeeForm)
-                  setEmployeeSaveState({ status: 'idle' })
-                }}
-              >
-                {isCreatingEmployee ? 'Cancel' : 'Add employee'}
-              </button>
-            </div>
-
-            {(isCreatingEmployee || selectedEmployeeId) && (
-              <form className="employee-form" onSubmit={saveEmployee}>
-                <label htmlFor="employee-number">Employee number</label>
-                <input
-                  id="employee-number"
-                  value={employeeForm.employeeNumber}
-                  onChange={(event) => updateEmployeeForm('employeeNumber', event.target.value)}
-                  required
-                />
-                <label htmlFor="employee-first-name">First name</label>
-                <input
-                  id="employee-first-name"
-                  value={employeeForm.firstName}
-                  onChange={(event) => updateEmployeeForm('firstName', event.target.value)}
-                  required
-                />
-                <label htmlFor="employee-last-name">Last name</label>
-                <input
-                  id="employee-last-name"
-                  value={employeeForm.lastName}
-                  onChange={(event) => updateEmployeeForm('lastName', event.target.value)}
-                  required
-                />
-                <label htmlFor="employee-phone">Phone number</label>
-                <input
-                  id="employee-phone"
-                  value={employeeForm.phoneNumber}
-                  onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
-                />
-                <label htmlFor="employee-target-hours">Target hours per week</label>
-                <input
-                  id="employee-target-hours"
-                  type="number"
-                  min="3"
-                  max="168"
-                  step="1"
-                  value={employeeForm.targetHours}
-                  onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
-                  required
-                />
-                <div className="employee-form-actions">
-                  <button type="submit" disabled={employeeSaveState.status === 'saving'}>
-                    {employeeSaveState.status === 'saving' ? 'Saving…' : 'Save employee'}
-                  </button>
-                  {!isCreatingEmployee && (
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => changeEmployeeStatus(
-                        employees.find((employee) => String(employee.id) === selectedEmployeeId)?.isActive
-                          ? 'deactivate'
-                          : 'reactivate',
-                      )}
-                    >
-                      {employees.find((employee) => String(employee.id) === selectedEmployeeId)?.isActive
-                        ? 'Deactivate'
-                        : 'Reactivate'}
-                    </button>
-                  )}
-                </div>
-                {employeeSaveState.message && (
-                  <p className={`save-message ${employeeSaveState.status}`}>
-                    {employeeSaveState.message}
-                  </p>
-                )}
-              </form>
-            )}
-          </section>
-        )}
-
-        {isAdmin && <DemandManager setErrorPopup={setErrorPopup} />}
-
-        {isAdmin && availability && (
-          <section className="availability-section">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">Admin overview</span>
-                <h2>All employee availability</h2>
-              </div>
-              <span className="week-range">
-                {dateFormatter.format(parseDate(availability.weekStart))} –{' '}
-                {dateFormatter.format(parseDate(availability.weekEnd))}
-              </span>
-            </div>
-            <div className="availability-table" role="table">
-              <div className="availability-row availability-header" role="row">
-                <strong>Employee</strong>
-                {availability.employees[0]?.days.map((day) => (
-                  <span key={day.date}>{day.dayOfWeek.slice(0, 3)}</span>
-                ))}
-              </div>
-              {availability.employees.map((employeeSchedule) => (
-                <div className="availability-row" role="row" key={employeeSchedule.employeeId}>
-                  <strong>{employeeSchedule.employeeName}</strong>
-                  {employeeSchedule.days.map((day) => (
-                    <span key={day.date}>
-                      {day.startTime && day.finishTime
-                        ? `${day.startTime}–${day.finishTime}`
-                        : 'Off'}
-                    </span>
-                  ))}
-                </div>
-              ))}
-              {availability.employees.length === 0 && (
-                <p className="message info-message">No active employees.</p>
-              )}
-            </div>
-          </section>
-        )}
-
-        {schedule && (
-          <form className="schedule-form" onSubmit={saveSchedule}>
-            <div className="schedule-heading">
-              <div>
-                <span className="eyebrow">Schedule for</span>
-                <h2>{schedule.employeeName}</h2>
-              </div>
-              <div className="week-navigation" aria-label="Week navigation">
-                <button
-                  type="button"
-                  className="week-arrow"
-                  aria-label="Previous week"
-                  onClick={() => changeWeek(-1)}
-                  disabled={weekOffset === minWeekOffset || scheduleState.status === 'loading'}
-                >
-                  ←
-                </button>
-                <div className="week-range">
-                  <strong>{weekLabels[weekOffset]}</strong>
-                  <span>
-                    {dateFormatter.format(parseDate(schedule.weekStart))} –{' '}
-                    {dateFormatter.format(parseDate(schedule.weekEnd))}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="week-arrow"
-                  aria-label="Next week"
-                  onClick={() => changeWeek(1)}
-                  disabled={weekOffset === maxWeekOffset || scheduleState.status === 'loading'}
-                >
-                  →
-                </button>
-              </div>
-            </div>
-
-            <div className="schedule-table" role="table" aria-label="Selected week schedule">
-                <div className="schedule-row schedule-header" role="row">
-                  <span role="columnheader">Day</span>
-                  <span role="columnheader">Start time</span>
-                  <span role="columnheader">Finish time</span>
-                  <span role="columnheader">Reset</span>
-                </div>
-
-              {schedule.days.map((day) => (
-                <div className="schedule-row" role="row" key={day.date}>
-                  <div className="day-cell" role="cell">
-                    <strong>{day.dayOfWeek}</strong>
-                    <span>{dateFormatter.format(parseDate(day.date))}</span>
-                    {getShiftDuration(day.startTime, day.finishTime) && (
-                      <span className="shift-duration">
-                        {getShiftDuration(day.startTime, day.finishTime)}
-                      </span>
-                    )}
-                  </div>
-                  <div role="cell">
-                    <label className="visually-hidden" htmlFor={`${day.date}-start`}>
-                      {day.dayOfWeek} start time
-                    </label>
-                    <TimeSelector
-                      id={`${day.date}-start`}
-                      label={`${day.dayOfWeek} start time`}
-                      value={day.startTime || ''}
-                      onChange={(value) => updateDay(day.date, 'startTime', value)}
-                    />
-                  </div>
-                    <div role="cell">
-                      <label className="visually-hidden" htmlFor={`${day.date}-finish`}>
-                        {day.dayOfWeek} finish time
-                    </label>
-                    <TimeSelector
-                      id={`${day.date}-finish`}
-                      label={`${day.dayOfWeek} finish time`}
-                      value={day.finishTime || ''}
-                        onChange={(value) => updateDay(day.date, 'finishTime', value)}
-                      />
-                    </div>
-                    <div role="cell">
-                      <button
-                        type="button"
-                        className="reset-button"
-                        onClick={() => resetDay(day.date)}
-                        disabled={!day.startTime && !day.finishTime}
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-
-            <div className="form-footer">
-              <span className={`save-message ${saveState.status}`} aria-live="polite">
-                {saveState.message || 'Leave both fields empty for a day off.'}
-              </span>
-              <button type="submit" disabled={saveState.status === 'saving'}>
-                {saveState.status === 'saving' ? 'Saving…' : 'Save times'}
-              </button>
-            </div>
-          </form>
-        )}
+    <EmployeeWorkspace
+      {...employeeWorkspaceProps}
+      variant="employee"
+      title="Employee workspace"
+      lead="Set the hours you are available to work for the selected week."
+    >
+      <section className="role-details employee-details">
+        <span className="eyebrow">Employee profile</span>
+        <h2>Your availability</h2>
+        <p>Your shared employee information is available to your manager.</p>
       </section>
-      </main>
-    </>
+    </EmployeeWorkspace>
   )
 }
 

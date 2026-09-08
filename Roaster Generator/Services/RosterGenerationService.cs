@@ -122,7 +122,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             var history = loaded.Input.History ?? [];
             Publish(job, "running", "fairness-history", 8,
                 $"Fairness uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Missing weeks are not counted as zero-hour work. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");
-            foreach (var employee in loaded.Input.Employees.Where(e => e.TargetHours > 0))
+            foreach (var employee in loaded.Input.Employees.Where(e => (e.DriverProfile?.TargetHours ?? 0) > 0))
             {
                 var previous = history.Where(h => h.EmployeeId == employee.Id && h.TargetHours > 0).ToList();
                 if (previous.Count > 0)

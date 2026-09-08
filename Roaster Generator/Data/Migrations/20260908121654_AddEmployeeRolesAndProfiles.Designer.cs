@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Roaster_Generator.Data;
@@ -11,9 +12,11 @@ using Roaster_Generator.Data;
 namespace Roaster_Generator.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260908121654_AddEmployeeRolesAndProfiles")]
+    partial class AddEmployeeRolesAndProfiles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -629,54 +632,6 @@ namespace Roaster_Generator.Data.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Roaster_Generator.Entities.HolidayRequest", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at_utc");
-
-                    b.Property<Guid>("EmployeeId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("employee_id");
-
-                    b.Property<int>("Hours")
-                        .HasColumnType("integer")
-                        .HasColumnName("hours");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasDefaultValue("Requested")
-                        .HasColumnName("status");
-
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at_utc");
-
-                    b.Property<DateTimeOffset?>("UsedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("used_at_utc");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EmployeeId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_holiday_requests_employee_requested")
-                        .HasFilter("status = 'Requested'");
-
-                    b.HasIndex("Status", "UpdatedAtUtc");
-
-                    b.ToTable("holiday_requests", (string)null);
-                });
-
             modelBuilder.Entity("Roaster_Generator.Entities.InStoreProfile", b =>
                 {
                     b.Property<Guid>("EmployeeId")
@@ -1058,17 +1013,6 @@ namespace Roaster_Generator.Data.Migrations
                     b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
                         .WithOne("DriverProfile")
                         .HasForeignKey("Roaster_Generator.Entities.DriverProfile", "EmployeeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Employee");
-                });
-
-            modelBuilder.Entity("Roaster_Generator.Entities.HolidayRequest", b =>
-                {
-                    b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
-                        .WithMany()
-                        .HasForeignKey("EmployeeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 

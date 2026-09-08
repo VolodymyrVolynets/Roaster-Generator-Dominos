@@ -14,7 +14,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class AuthController(
     UserManager<ApplicationUser> userManager,
     SignInManager<ApplicationUser> signInManager,
-    AppDbContext db) : ControllerBase
+    AppDbContext db,
+    ILogger<AuthController> logger) : ControllerBase
 {
     [HttpPost("login")]
     [AllowAnonymous]
@@ -22,11 +23,20 @@ public sealed class AuthController(
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
     {
-        var user = await userManager.FindByNameAsync(request.Username);
+        var username = request.Username.Trim();
+
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(request.Password))
+        {
+            logger.LogWarning("Login rejected because the username or password was empty.");
+            return Unauthorized(new { message = "Invalid username or password." });
+        }
+
+        var user = await userManager.FindByNameAsync(username);
 
         if (user is null)
         {
-            return Unauthorized();
+            logger.LogWarning("Login failed for username {Username}: user was not found.", username);
+            return Unauthorized(new { message = "Invalid username or password." });
         }
 
         if (user.EmployeeId is Guid employeeId &&
@@ -34,7 +44,11 @@ public sealed class AuthController(
                 employee => employee.Id == employeeId && employee.IsActive,
                 cancellationToken))
         {
-            return Unauthorized();
+            logger.LogWarning(
+                "Login failed for username {Username}: linked employee {EmployeeId} is inactive or missing.",
+                username,
+                employeeId);
+            return Unauthorized(new { message = "This employee account is inactive." });
         }
 
         var passwordResult = await signInManager.CheckPasswordSignInAsync(
@@ -44,7 +58,13 @@ public sealed class AuthController(
 
         if (!passwordResult.Succeeded)
         {
-            return Unauthorized();
+            logger.LogWarning(
+                "Login failed for username {Username}: password check did not succeed. LockedOut={LockedOut}, NotAllowed={NotAllowed}, RequiresTwoFactor={RequiresTwoFactor}.",
+                username,
+                passwordResult.IsLockedOut,
+                passwordResult.IsNotAllowed,
+                passwordResult.RequiresTwoFactor);
+            return Unauthorized(new { message = "Invalid username or password." });
         }
 
         await signInManager.SignInAsync(user, isPersistent: true);
@@ -81,6 +101,7 @@ public sealed class AuthController(
         return Ok(new CurrentUserResponse
         {
             Username = user.UserName ?? string.Empty,
+            Roles = roles.ToArray(),
             IsAdmin = roles.Contains(RoleNames.Admin),
             EmployeeId = user.EmployeeId,
             EmployeeName = employee is null

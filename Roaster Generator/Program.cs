@@ -1,15 +1,20 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Demand;
 using Roaster_Generator.Contracts.Employees;
+using Roaster_Generator.Contracts.Holidays;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Security;
 using Roaster_Generator.Services;
 using Roaster_Generator.Validation;
 
@@ -21,6 +26,19 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+}
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 builder.Services.AddOptions<AuthOptions>()
     .Bind(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.AddOptions<ShopHoursOptions>()
@@ -45,13 +63,25 @@ builder.Services.Configure<CookieAuthenticationOptions>(
     IdentityConstants.ApplicationScheme,
     options =>
     {
+        options.Cookie.Name = "roaster-generator-auth";
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
     });
-builder.Services.AddAuthorization();
-builder.Services.AddControllers();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(
+        AuthorizationPolicies.Manager,
+        policy => policy.RequireRole(RoleNames.Admin, RoleNames.Manager));
+    options.AddPolicy(
+        AuthorizationPolicies.Admin,
+        policy => policy.RequireRole(RoleNames.Admin));
+});
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IValidator<EmployeeRequest>, EmployeeRequestValidator>();
+builder.Services.AddScoped<IValidator<HolidayHoursRequest>, HolidayRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandImportRequest>, DemandImportRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandPlanUpdateRequest>, DemandPlanUpdateRequestValidator>();
 builder.Services.AddScoped<DemandService>();
@@ -68,6 +98,7 @@ builder.Services.AddScoped<IValidator<RosterSettingsRequest>, RosterSettingsRequ
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();

@@ -637,8 +637,11 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         Id = Guid.NewGuid(),
         FirstName = "Test",
         LastName = "Driver",
-        TargetHours = targetHours,
-        CanWorkAlone = canWorkAlone
+        DriverProfile = new DriverProfile
+        {
+            TargetHours = targetHours,
+            CanWorkAlone = canWorkAlone
+        }
     };
 
     private static Shift Available(Employee employee, DateOnly date, int start, int finish) => new()
@@ -691,7 +694,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             var assigned = result.Shifts.Where(shift => shift.Date == date && shift.StartHour <= hour && shift.FinishHour > hour).ToArray();
             Assert.Equal(required, assigned.Length);
             if (required > 0)
-                Assert.Contains(assigned, shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).CanWorkAlone);
+                Assert.Contains(assigned, shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.CanWorkAlone == true);
         }
     }
 }

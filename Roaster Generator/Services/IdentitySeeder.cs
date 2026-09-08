@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Roaster_Generator.Configuration;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Security;
 
 namespace Roaster_Generator.Services;
@@ -27,7 +28,9 @@ public static class IdentitySeeder
         }
 
         await EnsureRoleAsync(roleManager, RoleNames.Admin);
-        await EnsureRoleAsync(roleManager, RoleNames.User);
+        await EnsureRoleAsync(roleManager, RoleNames.Driver);
+        await EnsureRoleAsync(roleManager, RoleNames.InStore);
+        await EnsureRoleAsync(roleManager, RoleNames.Manager);
         await EnsureAdminAsync(userManager, authOptions);
 
         var employees = await db.Employees
@@ -36,8 +39,15 @@ public static class IdentitySeeder
 
         foreach (var employee in employees)
         {
-            await EnsureEmployeeUserAsync(userManager, employee);
+            await EnsureEmployeeUserAsync(
+                userManager,
+                db,
+                employee,
+                authOptions,
+                cancellationToken);
         }
+
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task EnsureRoleAsync(
@@ -77,14 +87,25 @@ public static class IdentitySeeder
             var roleResult = await userManager.AddToRoleAsync(admin, RoleNames.Admin);
             EnsureSucceeded(roleResult, "assigning the Admin role");
         }
+
+        if (await userManager.IsInRoleAsync(admin, RoleNames.LegacyUser))
+        {
+            var removeResult = await userManager.RemoveFromRoleAsync(admin, RoleNames.LegacyUser);
+            EnsureSucceeded(removeResult, "removing the legacy User role from the admin");
+        }
     }
 
     private static async Task EnsureEmployeeUserAsync(
         UserManager<ApplicationUser> userManager,
-        Employee employee)
+        AppDbContext db,
+        Employee employee,
+        AuthOptions authOptions,
+        CancellationToken cancellationToken)
     {
         var user = await userManager.Users
-            .SingleOrDefaultAsync(item => item.EmployeeId == employee.Id);
+            .SingleOrDefaultAsync(item => item.EmployeeId == employee.Id, cancellationToken);
+
+        var userWasCreated = false;
 
         if (user is null)
         {
@@ -113,6 +134,7 @@ public static class IdentitySeeder
                 user,
                 AuthOptions.DefaultEmployeePassword);
             EnsureSucceeded(createResult, $"creating user for employee {employee.EmployeeNumber}");
+            userWasCreated = true;
         }
         else if (user.EmployeeId is null)
         {
@@ -126,10 +148,64 @@ public static class IdentitySeeder
                 $"The employee number '{employee.EmployeeNumber}' is already linked to another employee.");
         }
 
-        if (!await userManager.IsInRoleAsync(user, RoleNames.User))
+        if (authOptions.ResetEmployeePasswordsOnStartup && !userWasCreated)
         {
-            var roleResult = await userManager.AddToRoleAsync(user, RoleNames.User);
-            EnsureSucceeded(roleResult, $"assigning the User role to employee {employee.EmployeeNumber}");
+            await ResetPasswordAsync(
+                userManager,
+                user,
+                AuthOptions.DefaultEmployeePassword,
+                $"resetting the password for employee {employee.EmployeeNumber}");
+        }
+
+        var roles = (await userManager.GetRolesAsync(user)).ToArray();
+        var employeeRoles = roles
+            .Where(RoleNames.IsEmployeeRole)
+            .ToArray();
+
+        if (employeeRoles.Length == 0)
+        {
+            var roleResult = await userManager.AddToRoleAsync(user, RoleNames.Driver);
+            EnsureSucceeded(roleResult, $"assigning the Driver role to employee {employee.EmployeeNumber}");
+            employeeRoles = [RoleNames.Driver];
+        }
+
+        if (roles.Contains(RoleNames.LegacyUser, StringComparer.Ordinal))
+        {
+            var removeResult = await userManager.RemoveFromRoleAsync(user, RoleNames.LegacyUser);
+            EnsureSucceeded(removeResult, $"removing the legacy User role from employee {employee.EmployeeNumber}");
+        }
+
+        await EnsureProfilesAsync(db, employee, employeeRoles, cancellationToken);
+    }
+
+    private static async Task EnsureProfilesAsync(
+        AppDbContext db,
+        Employee employee,
+        IReadOnlyCollection<string> roles,
+        CancellationToken cancellationToken)
+    {
+        if (roles.Contains(RoleNames.Driver, StringComparer.Ordinal) &&
+            !await db.DriverProfiles.AnyAsync(profile => profile.EmployeeId == employee.Id, cancellationToken))
+        {
+            db.DriverProfiles.Add(new DriverProfile
+            {
+                EmployeeId = employee.Id,
+                TargetHours = 20,
+                CanWorkAlone = true,
+                DriverType = DriverType.Car
+            });
+        }
+
+        if (roles.Contains(RoleNames.InStore, StringComparer.Ordinal) &&
+            !await db.InStoreProfiles.AnyAsync(profile => profile.EmployeeId == employee.Id, cancellationToken))
+        {
+            db.InStoreProfiles.Add(new InStoreProfile { EmployeeId = employee.Id });
+        }
+
+        if (roles.Contains(RoleNames.Manager, StringComparer.Ordinal) &&
+            !await db.ManagerProfiles.AnyAsync(profile => profile.EmployeeId == employee.Id, cancellationToken))
+        {
+            db.ManagerProfiles.Add(new ManagerProfile { EmployeeId = employee.Id });
         }
     }
 
@@ -142,5 +218,21 @@ public static class IdentitySeeder
 
         var errors = string.Join(", ", result.Errors.Select(error => error.Description));
         throw new InvalidOperationException($"Failed while {operation}: {errors}");
+    }
+
+    private static async Task ResetPasswordAsync(
+        UserManager<ApplicationUser> userManager,
+        ApplicationUser user,
+        string password,
+        string operation)
+    {
+        if (await userManager.HasPasswordAsync(user))
+        {
+            var removeResult = await userManager.RemovePasswordAsync(user);
+            EnsureSucceeded(removeResult, operation);
+        }
+
+        var addResult = await userManager.AddPasswordAsync(user, password);
+        EnsureSucceeded(addResult, operation);
     }
 }

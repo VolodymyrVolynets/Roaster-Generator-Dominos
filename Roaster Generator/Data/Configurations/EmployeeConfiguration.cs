@@ -38,23 +38,21 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasMaxLength(32)
             .IsRequired();
 
+        builder.Property(employee => employee.PayrollNumber)
+            .HasColumnName("payroll_number")
+            .HasMaxLength(64);
+
         builder.Property(employee => employee.IsActive)
             .HasColumnName("is_active")
             .HasDefaultValue(true)
             .IsRequired();
 
-        builder.Property(employee => employee.TargetHours)
-            .HasColumnName("target_hours")
-            .HasDefaultValue(20)
-            .IsRequired();
-
-        builder.Property(employee => employee.CanWorkAlone)
-            .HasColumnName("can_work_alone")
-            .HasDefaultValue(true)
-            .IsRequired();
-
         builder.HasIndex(employee => employee.EmployeeNumber)
             .IsUnique();
+
+        builder.HasIndex(employee => employee.PayrollNumber)
+            .IsUnique()
+            .HasFilter("payroll_number IS NOT NULL");
 
         builder.HasData(
             new Employee

@@ -27,6 +27,11 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=roaster;Username=roaster;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       Auth__AdminUsername: ${ADMIN_USERNAME:?ADMIN_USERNAME is required}
       Auth__AdminPassword: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      Auth__ResetAdminPasswordOnStartup: ${RESET_ADMIN_PASSWORD_ON_STARTUP:-false}
+      Auth__ResetEmployeePasswordsOnStartup: ${RESET_EMPLOYEE_PASSWORDS_ON_STARTUP:-false}
+      DataProtection__KeysPath: /home/app/.aspnet/DataProtection-Keys
+    volumes:
+      - data_protection_keys:/home/app/.aspnet/DataProtection-Keys
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,3 +82,4 @@ networks:
 
 volumes:
   postgres_data:
+  data_protection_keys:
