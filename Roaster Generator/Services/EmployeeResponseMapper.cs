@@ -15,6 +15,7 @@ public static class EmployeeResponseMapper
         LastName = employee.LastName,
         PhoneNumber = employee.PhoneNumber,
         PayrollNumber = employee.PayrollNumber,
+        HourlyRate = employee.HourlyRate,
         IsActive = employee.IsActive,
         Roles = roles.ToArray(),
         TargetHours = employee.DriverProfile?.TargetHours,

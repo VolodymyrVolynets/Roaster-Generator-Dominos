@@ -87,6 +87,7 @@ builder.Services.AddScoped<IValidator<DemandPlanUpdateRequest>, DemandPlanUpdate
 builder.Services.AddScoped<DemandService>();
 builder.Services.AddScoped<WeeklyScheduleService>();
 builder.Services.AddScoped<RosterPlanService>();
+builder.Services.AddScoped<RosterLabourService>();
 builder.Services.AddScoped<RosterSettingsService>();
 builder.Services.AddScoped<RosterInputService>();
 builder.Services.AddSingleton<RosterTimerService>();
@@ -95,6 +96,7 @@ builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequ
 builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();
 builder.Services.AddScoped<IValidator<RosterPlanUpdateRequest>, RosterPlanUpdateRequestValidator>();
 builder.Services.AddScoped<IValidator<RosterSettingsRequest>, RosterSettingsRequestValidator>();
+builder.Services.AddScoped<IValidator<RosterLabourRequest>, RosterLabourRequestValidator>();
 
 var app = builder.Build();
 

@@ -15,10 +15,23 @@ public sealed class AdminRosterController(
     IValidator<WeekSelectionRequest> weekValidator,
     IValidator<RosterPlanUpdateRequest> planUpdateValidator,
     IValidator<RosterSettingsRequest> settingsValidator,
+    IValidator<RosterLabourRequest> labourValidator,
     RosterTimerService rosterTimer,
     RosterPlanService rosterPlans,
+    RosterLabourService rosterLabour,
     RosterSettingsService settings) : ApiControllerBase
 {
+    [HttpGet("labour")]
+    public async Task<IActionResult> GetLabour([FromQuery] RosterLabourRequest request, CancellationToken ct)
+    {
+        var validationResult = await ValidateRequestAsync(
+            labourValidator, request, "The selected week is invalid.", ct);
+        if (validationResult is not null) return validationResult;
+        var weekStart = request.WeekStart ?? WeeklyScheduleService.GetWeekMonday(
+            request.WeekOffset ?? WeeklyScheduleService.MinWeekOffset);
+        return Ok(await rosterLabour.GetAsync(weekStart, ct));
+    }
+
     [HttpGet]
     public async Task<IActionResult> Get(
         [FromQuery] int? weekOffset,

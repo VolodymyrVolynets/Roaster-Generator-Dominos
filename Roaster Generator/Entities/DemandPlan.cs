@@ -8,11 +8,6 @@ public sealed class DemandPlan
 
     public DateOnly WeekStart { get; set; }
 
-    // Hourly pay used to turn required driver-hours into an estimated labour cost.
-    public decimal HourlyRate { get; set; }
-
-    public decimal InsideHourlyRate { get; set; }
-
     public decimal DeliveriesPerDriverHour { get; set; } = 2.7m;
 
     public decimal PizzasPerInsideHour { get; set; } = 20m;

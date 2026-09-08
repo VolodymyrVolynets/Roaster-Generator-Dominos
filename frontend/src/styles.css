@@ -615,6 +615,84 @@ input:focus {
   width: 120px;
 }
 
+.saved-roster-labour {
+  margin: 24px 0;
+  padding-top: 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.roster-labour-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.roster-labour-card {
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.26);
+  border-radius: 12px;
+  background: rgba(14, 116, 144, 0.1);
+}
+
+.roster-labour-card h4 {
+  margin: 0;
+  color: #e2e8f0;
+}
+
+.roster-labour-cost {
+  color: #6ee7b7;
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-labour-card span,
+.roster-labour-card small {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.roster-labour-card-combined {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(6, 78, 59, 0.16);
+}
+
+.roster-labour-warning {
+  padding: 14px 16px;
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 10px;
+  background: rgba(120, 53, 15, 0.16);
+  font-size: 0.85rem;
+}
+
+.roster-labour-warning ul {
+  margin-bottom: 0;
+  padding-left: 20px;
+}
+
+.roster-labour-table {
+  min-width: 1040px;
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-labour-table tfoot {
+  color: #6ee7b7;
+  background: rgba(6, 78, 59, 0.16);
+  font-weight: 700;
+}
+
+.roster-labour-table small {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 400;
+  white-space: normal;
+}
+
 .demand-import-form {
   display: grid;
   grid-template-columns: 1.4fr 1fr;

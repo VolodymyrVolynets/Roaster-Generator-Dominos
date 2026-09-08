@@ -26,6 +26,7 @@ const emptyEmployeeForm = {
   lastName: '',
   phoneNumber: '',
   payrollNumber: '',
+  hourlyRate: 14.5,
   roles: ['Driver'],
   targetHours: 20,
   insideTargetHours: 20,
@@ -38,6 +39,7 @@ const employeeFieldLabels = {
   lastName: 'Last name',
   phoneNumber: 'Phone number',
   payrollNumber: 'Payroll number',
+  hourlyRate: 'Hourly pay rate',
   roles: 'Roles',
   targetHours: 'Target hours',
   insideTargetHours: 'Inside target hours',
@@ -683,8 +685,6 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
         body: JSON.stringify({
           name,
           weekStart,
-          hourlyRate: Number(plan.hourlyRate ?? 0),
-          insideHourlyRate: Number(plan.insideHourlyRate ?? 0),
           deliveriesPerDriverHour: Number(plan.deliveriesPerDriverHour ?? 2.7),
           pizzasPerInsideHour: Number(plan.pizzasPerInsideHour ?? 20),
           recalculateDemand,
@@ -735,12 +735,9 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
     (column) => column.position === selectedDemandDayPosition,
   )
   const demandSummary = calculateDemandSummary(plan)
-  const dailyLabourRows = demandSummary.days
-  const selectedDaySummary = dailyLabourRows.find((day) => day.position === selectedDemandDayPosition)
+  const dailyStaffingRows = demandSummary.days
+  const selectedDaySummary = dailyStaffingRows.find((day) => day.position === selectedDemandDayPosition)
   const formatMoney = (value) => `€${Number(value ?? 0).toFixed(2)}`
-  const formatPercentage = (value) => value === null || value === undefined
-    ? '—'
-    : `${Number(value).toFixed(2)}%`
   const demandFields = [['deliveries', 'Deliveries'], ['demand', 'Drivers'], ['pizzas', 'Pizzas'], ['insideDemand', 'Inside staff']]
   function demandCell(row, column, field, label) {
     const value = row.values.find((item) => item.position === column.position) || {}
@@ -811,22 +808,19 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
         <form onSubmit={canEdit ? savePlan : (event) => event.preventDefault()}>
           <div className="demand-labour-settings">
             <div>
-              <span className="eyebrow">Labour planning</span>
-              <h3>Productivity, sales targets and labour</h3>
+              <span className="eyebrow">Demand planning</span>
+              <h3>Productivity and sales targets</h3>
               <p>
-                Labour combines driver-hours and inside-hours at their respective rates, divided by target sales.
                 Inside-hours include managers. Productivity changes recalculate the demand preview immediately;
                 save to apply it to generation. Raising productivity needs fewer staff, lowering it needs more.
                 Recalculation replaces manual staff counts; save productivity changes before applying staffing overrides.
-                These are demand estimates. Sunday applies a 25% premium to both hourly rates.
+                Labour costs and percentages are available on Saved rosters, using actual shifts and employee pay rates.
               </p>
             </div>
             <div className="demand-productivity-grid">
               {[
                 ['deliveriesPerDriverHour', 'Deliveries per hour per driver', 2.7, 0.01, 1000],
                 ['pizzasPerInsideHour', 'Pizzas per hour per inside employee', 20, 0.01, 1000],
-                ['hourlyRate', 'Driver base hourly rate (€)', 0, 0, 10000],
-                ['insideHourlyRate', 'Inside base hourly rate (€)', 0, 0, 10000],
               ].map(([field, label, defaultValue, min, max]) => <label key={field}>{label}
                 <input type="number" min={min} max={max} step="0.01" required value={plan[field] ?? defaultValue}
                   onChange={(event) => updatePlanningSetting(field, event.target.value)} readOnly={!canEdit} aria-readonly={!canEdit} />
@@ -836,28 +830,17 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
 
           {demandSummary.missingInsideHours > 0 && <p className="message info-message" role="status">
             Inside demand is incomplete for {demandSummary.missingInsideHours} open hour{demandSummary.missingInsideHours === 1 ? '' : 's'}.
-            {' '}Fill the missing pizza counts and inside demand before generating an inside roster. Labour totals below are partial until those hours are filled.
+            {' '}Fill the missing pizza counts and inside demand before generating an inside roster. Inside-hours below are incomplete until those hours are filled.
           </p>}
           <div className="demand-labour-summary">
             <div className="demand-labour-weekly">
               <span>Weekly target sales</span>
               <strong>{formatMoney(demandSummary.targetSales)}</strong>
             </div>
-            <div className="demand-labour-weekly">
-              <span>Estimated labour cost</span>
-              <strong>{formatMoney(demandSummary.labourCost)}</strong>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Weekly labour</span>
-              <strong>{formatPercentage(demandSummary.labourPercentage)}</strong>
-            </div>
-            <div className="demand-labour-weekly"><span>Driver labour</span><strong>{formatMoney(demandSummary.driverLabourCost)}</strong><small>{demandSummary.driverHours} driver-hours</small></div>
-            <div className="demand-labour-weekly"><span>Inside labour</span><strong>{formatMoney(demandSummary.insideLabourCost)}</strong><small>{demandSummary.insideHours} inside-hours, including managers</small></div>
+            <div className="demand-labour-weekly"><span>Driver demand</span><strong>{demandSummary.driverHours} hours</strong><small>Required driver-hours this week</small></div>
+            <div className="demand-labour-weekly"><span>Inside demand</span><strong>{demandSummary.insideHours} hours</strong><small>Including managers</small></div>
             <div className="demand-labour-weekly"><span>Weekly workload</span><strong>{demandSummary.deliveries} deliveries</strong><small>{demandSummary.pizzas} pizzas</small></div>
           </div>
-          <p className="demand-labour-note">
-            A dash means that day has no target sales yet, so a percentage cannot be calculated.
-          </p>
 
           <div className="demand-labour-table-wrapper">
             <table className="demand-labour-table">
@@ -868,14 +851,10 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                   <th>Driver-hours</th>
                   <th>Inside-hours</th>
                   <th>Deliveries / pizzas</th>
-                  <th>Driver labour</th>
-                  <th>Inside labour</th>
-                  <th>Total labour</th>
-                  <th>Labour %</th>
                 </tr>
               </thead>
               <tbody>
-                {dailyLabourRows.map((day) => (
+                {dailyStaffingRows.map((day) => (
                   <tr key={day.position}>
                     <th>{day.label}</th>
                     <td>
@@ -893,10 +872,6 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                     <td>{day.requiredDriverHours}</td>
                     <td>{day.requiredInsideHours}</td>
                     <td>{day.deliveries} / {day.pizzas}</td>
-                    <td>{formatMoney(day.driverLabourCost)}<small>{formatMoney(day.appliedHourlyRate)}/h{day.isSunday && ' · +25%'}</small></td>
-                    <td>{formatMoney(day.insideLabourCost)}<small>{formatMoney(day.appliedInsideHourlyRate)}/h{day.isSunday && ' · +25%'}</small></td>
-                    <td>{formatMoney(day.labourCost)}</td>
-                    <td className="demand-result">{formatPercentage(day.labourPercentage)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -932,7 +907,7 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                     <th key={column.position} colSpan="4">
                       <span className="demand-day-label">{column.label}</span>
                       <small className="demand-day-hours">
-                        {dailyLabourRows.find((day) => day.position === column.position)?.requiredDriverHours ?? 0} driver-hours · {dailyLabourRows.find((day) => day.position === column.position)?.requiredInsideHours ?? 0} inside-hours
+                        {dailyStaffingRows.find((day) => day.position === column.position)?.requiredDriverHours ?? 0} driver-hours · {dailyStaffingRows.find((day) => day.position === column.position)?.requiredInsideHours ?? 0} inside-hours
                       </small>
                     </th>
                   ))}
@@ -1072,6 +1047,7 @@ function AdminConsole({
     updateEmployeeForm('lastName', '')
     updateEmployeeForm('phoneNumber', '')
     updateEmployeeForm('payrollNumber', '')
+    updateEmployeeForm('hourlyRate', 14.5)
     updateEmployeeForm('roles', ['Driver'])
     updateEmployeeForm('targetHours', 20)
     updateEmployeeForm('insideTargetHours', 20)
@@ -1122,6 +1098,7 @@ function AdminConsole({
   const roleErrors = getEmployeeFieldErrors(employeeSaveState, 'roles')
   const targetHoursErrors = getEmployeeFieldErrors(employeeSaveState, 'targetHours')
   const insideTargetHoursErrors = getEmployeeFieldErrors(employeeSaveState, 'insideTargetHours')
+  const hourlyRateErrors = getEmployeeFieldErrors(employeeSaveState, 'hourlyRate')
   const driverTypeErrors = getEmployeeFieldErrors(employeeSaveState, 'driverType')
 
   return (
@@ -1250,6 +1227,7 @@ function AdminConsole({
                           <strong>{employee.firstName} {employee.lastName}</strong>
                           <span>Employee number: {employee.employeeNumber}</span>
                           <span>Payroll number: {employee.payrollNumber || 'Not set'}</span>
+                          <span>Hourly pay: €{Number(employee.hourlyRate ?? 14.5).toFixed(2)}</span>
                           <span>Phone: {employee.phoneNumber || 'Not set'}</span>
                           <span>Roles: {(employee.roles || []).join(', ') || 'Not set'}</span>
                           {employeeHasRole(employee, 'Driver') && (
@@ -1362,6 +1340,22 @@ function AdminConsole({
                         aria-describedby={payrollNumberErrors.length > 0 ? 'admin-employee-payrollNumber-error' : undefined}
                       />
                       <EmployeeFieldError field="payrollNumber" messages={payrollNumberErrors} />
+                    </div>
+
+                    <div className="employee-form-field">
+                      <label htmlFor="admin-employee-hourly-rate">Hourly pay rate (€)</label>
+                      <input id="admin-employee-hourly-rate" type="number" min="0" max="10000" step="0.01" required
+                        value={employeeForm.hourlyRate ?? 14.5}
+                        onChange={(event) => updateEmployeeForm('hourlyRate', event.target.value === '' ? '' : Number(event.target.value))}
+                        aria-invalid={hourlyRateErrors.length > 0}
+                        aria-describedby={`admin-employee-hourly-rate-help${hourlyRateErrors.length > 0 ? ' admin-employee-hourlyRate-error' : ''}`} />
+                      <EmployeeFieldError field="hourlyRate" messages={hourlyRateErrors} />
+                      <small id="admin-employee-hourly-rate-help">
+                        Default €14.50. Used with actual saved shifts to calculate labour.
+                        {' '}{employeeForm.roles?.includes('Manager')
+                          ? 'Managers receive this same rate on Sunday.'
+                          : 'Hours worked on Sunday receive an extra 25%.'}
+                      </small>
                     </div>
 
                     <fieldset
@@ -2103,6 +2097,7 @@ function App() {
         lastName: employee.lastName,
         phoneNumber: employee.phoneNumber,
         payrollNumber: employee.payrollNumber || '',
+        hourlyRate: employee.hourlyRate ?? 14.5,
         roles: employee.roles?.length ? employee.roles : ['Driver'],
         targetHours: employee.targetHours ?? 20,
         insideTargetHours: employee.insideTargetHours ?? 20,

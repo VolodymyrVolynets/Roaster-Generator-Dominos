@@ -44,14 +44,6 @@ public sealed class DemandPlanUpdateRequestValidator : AbstractValidator<DemandP
             .When(request => request.WeekStart != DateOnly.MinValue)
             .WithMessage("The week start date must be a Monday.");
 
-        RuleFor(request => request.HourlyRate)
-            .GreaterThanOrEqualTo(0)
-            .WithMessage("Hourly rate cannot be negative.");
-
-        RuleFor(request => request.InsideHourlyRate)
-            .GreaterThanOrEqualTo(0)
-            .WithMessage("Inside hourly rate cannot be negative.");
-
         RuleFor(request => request.DeliveriesPerDriverHour)
             .InclusiveBetween(0.01m, 1000m)
             .WithMessage("Deliveries per driver-hour must be between 0.01 and 1000.");

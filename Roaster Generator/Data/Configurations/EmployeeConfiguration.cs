@@ -42,6 +42,13 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasColumnName("payroll_number")
             .HasMaxLength(64);
 
+        builder.Property(employee => employee.HourlyRate)
+            .HasColumnName("hourly_rate")
+            .HasPrecision(12, 2)
+            .HasDefaultValue(14.5m)
+            .ValueGeneratedNever()
+            .IsRequired();
+
         builder.Property(employee => employee.IsActive)
             .HasColumnName("is_active")
             .HasDefaultValue(true)

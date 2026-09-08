@@ -17,14 +17,6 @@ public static class DemandStaffing
         return required.HasValue ? Math.Max(1, required.Value) : null;
     }
 
-    public static decimal AppliedHourlyRate(DayOfWeek day, decimal baseHourlyRate) =>
-        day == DayOfWeek.Sunday
-            ? Math.Round(baseHourlyRate * 1.25m, 2, MidpointRounding.AwayFromZero)
-            : baseHourlyRate;
-
-    public static decimal LabourCost(int hours, decimal hourlyRate) =>
-        Math.Round(hours * hourlyRate, 2, MidpointRounding.AwayFromZero);
-
     private static int? RequiredStaff(decimal? workload, decimal productivity)
     {
         if (productivity is < 0.01m or > 1000m)

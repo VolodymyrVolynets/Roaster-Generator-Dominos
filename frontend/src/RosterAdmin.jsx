@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/signalr'
 import { createRosterEventState, mergeRosterEvents } from './rosterEvents'
 import { compareRosterEmployees, getRosterRoleGroup, rosterRoleGroups } from './employeeGroups'
+import SavedRosterLabour from './SavedRosterLabour'
 
 const weightFields = [
   ['targetHoursWeight', 'Equal target percentages', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s target percentage; reduce it when availability or exact coverage needs more flexibility. Set to 0 to disable it.'],
@@ -614,6 +615,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, i
   const [editStatus, setEditStatus] = useState({ status: 'idle', message: '' })
   const [status, setStatus] = useState('loading')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [labourRefreshKey, setLabourRefreshKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -702,6 +704,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, i
         }),
       })
       setRoster(payload)
+      setLabourRefreshKey((value) => value + 1)
       setEditStatus({ status: 'success', message: 'Roster changes saved and revalidated.' })
       setEditing(false)
     } catch (error) {
@@ -733,6 +736,8 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, i
   const populatedRosterEmployeeGroups = groupedRosterEmployees.filter((group) => group.employees.length > 0)
   const savedDates = [...new Set([...(initialWeekStart ? [initialWeekStart] : []), ...history.map((item) => item.weekStart)])]
     .sort((left, right) => right.localeCompare(left))
+  const [selectionKind, selectionValue] = selection.split(':')
+  const labourQuery = selectionKind === 'date' ? `weekStart=${encodeURIComponent(selectionValue)}` : `weekOffset=${selectionValue}`
 
   return (
     <section className="admin-tools saved-roster-tools">
@@ -815,6 +820,10 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, i
             {editStatus.message && <span className={`save-message ${editStatus.status}`}>{editStatus.message}</span>}
           </div>
         </form>}
+      </>}
+      <SavedRosterLabour fetchJson={fetchJson} query={labourQuery}
+        refreshKey={`${rosterKind}:${refreshKey}:${labourRefreshKey}`} editing={editing && !!roster} />
+      {roster && <>
         <div className="roster-week-summary roster-result-metrics">
           <Metric label="Demand coverage" value={roster.coveragePercent == null ? 'Unverified' : `${formatNumber(roster.coveragePercent)}%`} />
           <Metric label="Scheduled / needed" value={`${formatNumber(roster.totalScheduledHours)} / ${formatNumber(roster.totalDemandHours)}h`} />

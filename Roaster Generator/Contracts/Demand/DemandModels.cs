@@ -15,17 +15,8 @@ public sealed class DemandPlanUpdateRequest
 
     public DateOnly WeekStart { get; set; }
 
-    public decimal HourlyRate { get; set; }
-
-    private decimal insideHourlyRate;
     private decimal deliveriesPerDriverHour = 2.7m;
     private decimal pizzasPerInsideHour = 20m;
-
-    public decimal InsideHourlyRate
-    {
-        get => insideHourlyRate;
-        set { insideHourlyRate = value; InsideHourlyRateSpecified = true; }
-    }
 
     public decimal DeliveriesPerDriverHour
     {
@@ -40,7 +31,6 @@ public sealed class DemandPlanUpdateRequest
     }
 
     // Presence is separate from zero/default values so older clients retain saved settings.
-    internal bool InsideHourlyRateSpecified { get; private set; }
     internal bool DeliveriesPerDriverHourSpecified { get; private set; }
     internal bool PizzasPerInsideHourSpecified { get; private set; }
 
@@ -120,8 +110,6 @@ public sealed class DemandPlanSummaryResponse
 
     public int ColumnCount { get; init; }
 
-    public decimal HourlyRate { get; init; }
-
     public decimal WeeklyTargetSales { get; init; }
 }
 
@@ -135,10 +123,6 @@ public sealed class DemandPlanResponse
 
     public DateTimeOffset UpdatedAtUtc { get; init; }
 
-    public decimal HourlyRate { get; init; }
-
-    public decimal InsideHourlyRate { get; init; }
-
     public decimal DeliveriesPerDriverHour { get; init; }
 
     public decimal PizzasPerInsideHour { get; init; }
@@ -147,21 +131,13 @@ public sealed class DemandPlanResponse
 
     public int WeeklyInsideHours { get; init; }
 
-    public decimal WeeklyDriverLabourCost { get; init; }
-
-    public decimal WeeklyInsideLabourCost { get; init; }
-
     public decimal WeeklyTargetSales { get; init; }
-
-    public decimal WeeklyLabourCost { get; init; }
-
-    public decimal? WeeklyLabourPercentage { get; init; }
 
     public List<DemandColumnResponse> Columns { get; init; } = [];
 
     public List<DemandRowResponse> Rows { get; init; } = [];
 
-    public List<DemandLabourDayResponse> DailyLabour { get; init; } = [];
+    public List<DemandStaffingDayResponse> DailyStaffing { get; init; } = [];
 }
 
 public sealed class DemandColumnResponse
@@ -177,7 +153,7 @@ public sealed class DemandColumnResponse
     public decimal TargetSales { get; init; }
 }
 
-public sealed class DemandLabourDayResponse
+public sealed class DemandStaffingDayResponse
 {
     public int Position { get; init; }
 
@@ -188,18 +164,6 @@ public sealed class DemandLabourDayResponse
     public int RequiredDriverHours { get; init; }
 
     public int RequiredInsideHours { get; init; }
-
-    public decimal AppliedHourlyRate { get; init; }
-
-    public decimal AppliedInsideHourlyRate { get; init; }
-
-    public decimal DriverLabourCost { get; init; }
-
-    public decimal InsideLabourCost { get; init; }
-
-    public decimal LabourCost { get; init; }
-
-    public decimal? LabourPercentage { get; init; }
 }
 
 public sealed class DemandRowResponse

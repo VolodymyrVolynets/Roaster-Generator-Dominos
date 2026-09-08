@@ -65,6 +65,7 @@ If existing credentials are unknown, the opt-in `RESET_ADMIN_PASSWORD_ON_STARTUP
 - phone number
 - optional payroll number
 - active/inactive status
+- hourly pay rate (`HourlyRate`, default `14.50`, editable from `0` to `10000` with up to two decimal places)
 
 Role-specific information is kept in one-to-one profiles:
 
@@ -75,6 +76,8 @@ Role-specific information is kept in one-to-one profiles:
 Use profile entities for future role-specific fields. Do not add driver-only, in-store-only, or manager-only nullable columns to `Employee`.
 
 The admin employee editor can create/update roles and profile data. It may display driver details for administrators. The driver workspace must not display driver type or target hours; it only provides availability and holiday workflows.
+
+Hourly pay is shared employee information rather than a demand setting. Existing employees receive the `14.50` default through migration. Omitted pay rates preserve an existing employee's rate when older clients update a profile; new employees use the default.
 
 The employee API accepts `insideTargetHours` separately from driver `targetHours`. Employees with both manager and in-store profiles use the manager target for inside fairness; saving an employee applies the inside target to both profiles. Availability and saved roster views group **Drivers** separately from **In-store & managers**. An employee with an inside role belongs to the inside group even if they also have a driver role. Active Identity roles, as well as profiles, determine generation eligibility.
 
@@ -113,13 +116,15 @@ Management permissions are role-scoped: managers can view the full availability 
 
 ## Demand and labour
 
-The single reusable weekly demand template retains both pizzas and deliveries from each weekday's imported pair. Admins may edit those counts, staff demands, productivity settings, hourly rates and sales targets. Managers have read-only access.
+The single reusable weekly demand template retains both pizzas and deliveries from each weekday's imported pair. Admins may edit those counts, staff demands, productivity settings and sales targets. Managers have read-only access. Demand shows workload, required staff hours and sales targets; labour calculations appear with saved rosters.
 
 - `DeliveriesPerDriverHour` defaults to `2.7`; `PizzasPerInsideHour` defaults to `20`. Both are editable from `0.01` to `1000`.
 - Calculated staff demand rounds workload/productivity **up** to whole employees. Inside demand includes at least one employee per open hour, including zero-pizza hours; the inside solver requires that employee to be a manager.
 - Missing pizza counts remain unknown. Existing demand templates need pizza counts entered or reimported before inside generation; omitted legacy data is not treated as zero pizzas.
 - Changing productivity or explicitly recalculating replaces staff-demand overrides; an ordinary save can retain explicit manual staff counts. Older request payloads preserve omitted workload/settings fields.
-- Driver and inside hourly rates are separate. Both use the Sunday 25% premium. Daily and weekly previews expose each group's required hours and labour costs, plus combined cost and cost/sales percentage. Unknown pizza inputs are shown as incomplete labour estimates.
+- Saved-roster labour uses actual persisted shifts and each employee's current hourly pay rate. Drivers and in-store staff receive a 25% premium for hours worked on Sunday; managers keep their normal rate. Overnight shifts split at calendar midnight for Sunday pay, while totals remain assigned to the shift's business day for comparison with sales targets.
+- `GET /api/admin/roster/labour?weekStart=YYYY-MM-DD` returns daily and weekly hours, cost and percentage of target sales for drivers, in-store staff with managers, and both teams combined. It reads both roster kinds for that Monday and the current reusable demand template's weekday sales targets. Admins and managers may read it.
+- Labour totals refresh after roster edits and are recalculated from current employee rates whenever loaded, including for older rosters. Missing team rosters are identified explicitly; a combined subtotal remains partial until both are saved. Missing or zero sales targets show no percentage. The Sunday multiplier retains full decimal precision until labour costs are rounded to cents.
 
 ## Roster generation invariants
 

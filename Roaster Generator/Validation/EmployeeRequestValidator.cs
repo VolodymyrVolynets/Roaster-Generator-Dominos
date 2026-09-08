@@ -31,6 +31,15 @@ public sealed class EmployeeRequestValidator : AbstractValidator<EmployeeRequest
             .When(request => request.PayrollNumber is not null)
             .WithMessage("Payroll number cannot exceed 64 characters.");
 
+        RuleFor(request => request.HourlyRate)
+            .InclusiveBetween(0m, 10000m)
+            .When(request => request.HourlyRate.HasValue)
+            .WithMessage("Hourly rate must be between 0 and 10000.");
+
+        RuleFor(request => request.HourlyRate)
+            .Must(rate => !rate.HasValue || decimal.Round(rate.Value, 2) == rate.Value)
+            .WithMessage("Hourly rate must have no more than two decimal places.");
+
         RuleFor(request => request.InsideTargetHours)
             .InclusiveBetween(3, 168)
             .When(request => request.Roles?.Any(role =>

@@ -119,11 +119,11 @@ public sealed class DemandStaffingTests
     }
 
     [Fact]
-    public void LabourTotalsIncludeBothTeamsSundayPremiumAndExcludeClosedHours()
+    public void StaffingTotalsIncludeBothTeamsAndSalesButExcludeClosedHoursAndLabour()
     {
         using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().Options);
         var service = new DemandService(db, Options.Create(new ShopHoursOptions()));
-        var plan = new DemandPlan { WeekStart = Monday, HourlyRate = 10m, InsideHourlyRate = 12m };
+        var plan = new DemandPlan { WeekStart = Monday };
         for (var position = 0; position < 7; position++)
         {
             plan.Columns.Add(new DemandColumn
@@ -148,15 +148,15 @@ public sealed class DemandStaffingTests
         var response = service.ToResponse(plan);
         Assert.Equal(4, response.WeeklyDriverHours);
         Assert.Equal(6, response.WeeklyInsideHours);
-        Assert.Equal(45m, response.WeeklyDriverLabourCost);
-        Assert.Equal(81m, response.WeeklyInsideLabourCost);
-        Assert.Equal(126m, response.WeeklyLabourCost);
-        Assert.Equal(63m, response.WeeklyLabourPercentage);
-        var sunday = response.DailyLabour.Single(day => day.Position == 6);
-        Assert.Equal(12.5m, sunday.AppliedHourlyRate);
-        Assert.Equal(15m, sunday.AppliedInsideHourlyRate);
-        Assert.Equal(70m, sunday.LabourCost);
+        Assert.Equal(200m, response.WeeklyTargetSales);
+        var sunday = response.DailyStaffing.Single(day => day.Position == 6);
+        Assert.Equal(2, sunday.RequiredDriverHours);
+        Assert.Equal(3, sunday.RequiredInsideHours);
+        Assert.Equal(100m, sunday.TargetSales);
         Assert.All(response.Rows.Single(row => row.Hour == 11).Values, value => Assert.False(value.IsOpen));
+        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("hourlyRate", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("labour", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -175,7 +175,7 @@ public sealed class DemandStaffingTests
     }
 
     [Fact]
-    public void SettingsAcceptDefaultsAndZeroRatesButRejectNegativeWorkload()
+    public void SettingsAcceptDefaultsButRejectNegativeWorkload()
     {
         Assert.True(new DemandPlanUpdateRequestValidator().Validate(ValidRequest()).IsValid);
         var result = new DemandValueRequestValidator().Validate(new DemandValueRequest
@@ -243,35 +243,33 @@ public sealed class DemandStaffingTests
     [Fact]
     public void OmittedNewSettingsPreserveSavedSettingsAndManualDemands()
     {
-        var plan = new DemandPlan { DeliveriesPerDriverHour = 4m, PizzasPerInsideHour = 40m, InsideHourlyRate = 18m };
+        var plan = new DemandPlan { DeliveriesPerDriverHour = 4m, PizzasPerInsideHour = 40m };
         var oldRequest = JsonSerializer.Deserialize<DemandPlanUpdateRequest>("{\"hourlyRate\":12}",
             new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         var settings = DemandService.SettingsForUpdate(plan, oldRequest);
 
         Assert.Equal(4m, settings.DeliveriesPerDriverHour);
         Assert.Equal(40m, settings.PizzasPerInsideHour);
-        Assert.Equal(18m, settings.InsideHourlyRate);
         Assert.False(settings.Recalculate);
     }
 
     [Fact]
-    public void ExplicitDefaultProductivityAndZeroRateReplaceCustomSettings()
+    public void ExplicitDefaultProductivityReplacesCustomSettings()
     {
-        var plan = new DemandPlan { DeliveriesPerDriverHour = 4m, PizzasPerInsideHour = 40m, InsideHourlyRate = 18m };
+        var plan = new DemandPlan { DeliveriesPerDriverHour = 4m, PizzasPerInsideHour = 40m };
         var edit = JsonSerializer.Deserialize<DemandPlanUpdateRequest>(
-            "{\"deliveriesPerDriverHour\":2.7,\"pizzasPerInsideHour\":20,\"insideHourlyRate\":0}",
+            "{\"deliveriesPerDriverHour\":2.7,\"pizzasPerInsideHour\":20}",
             new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         var settings = DemandService.SettingsForUpdate(plan, edit);
 
         Assert.Equal(2.7m, settings.DeliveriesPerDriverHour);
         Assert.Equal(20m, settings.PizzasPerInsideHour);
-        Assert.Equal(0m, settings.InsideHourlyRate);
         Assert.True(settings.Recalculate);
     }
 
     private static DemandValue PreviousValue() => new() { Deliveries = 8m, Pizzas = 40m, Demand = 4, InsideDemand = 3 };
 
-    private static DemandService.DemandEditSettings SavedSettings() => new(4m, 40m, 18m, false);
+    private static DemandService.DemandEditSettings SavedSettings() => new(4m, 40m, false);
 
     private static DemandPlanUpdateRequest ValidRequest() => new()
     {

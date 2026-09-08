@@ -28,18 +28,6 @@ public sealed class DemandPlanConfiguration : IEntityTypeConfiguration<DemandPla
             .HasColumnType("date")
             .IsRequired();
 
-        builder.Property(plan => plan.HourlyRate)
-            .HasColumnName("hourly_rate")
-            .HasPrecision(12, 2)
-            .HasDefaultValue(0m)
-            .IsRequired();
-
-        builder.Property(plan => plan.InsideHourlyRate)
-            .HasColumnName("inside_hourly_rate")
-            .HasPrecision(12, 2)
-            .HasDefaultValue(0m)
-            .IsRequired();
-
         builder.Property(plan => plan.DeliveriesPerDriverHour)
             .HasColumnName("deliveries_per_driver_hour")
             .HasPrecision(12, 4)

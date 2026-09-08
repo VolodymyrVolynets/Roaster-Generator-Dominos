@@ -102,6 +102,7 @@ public sealed class AdminEmployeesController(
             LastName = lastName,
             PhoneNumber = phoneNumber,
             PayrollNumber = payrollNumber,
+            HourlyRate = request.HourlyRate ?? 14.5m,
             IsActive = true
         };
 
@@ -226,6 +227,7 @@ public sealed class AdminEmployeesController(
         employee.LastName = lastName;
         employee.PhoneNumber = phoneNumber;
         employee.PayrollNumber = payrollNumber;
+        employee.HourlyRate = request.HourlyRate ?? employee.HourlyRate;
 
         SynchronizeProfiles(employee, roles, request);
 

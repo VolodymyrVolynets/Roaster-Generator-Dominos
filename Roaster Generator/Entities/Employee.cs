@@ -14,6 +14,8 @@ public sealed class Employee
 
     public string? PayrollNumber { get; set; }
 
+    public decimal HourlyRate { get; set; } = 14.5m;
+
     public bool IsActive { get; set; } = true;
 
     public DriverProfile? DriverProfile { get; set; }

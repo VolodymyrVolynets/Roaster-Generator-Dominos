@@ -43,7 +43,6 @@ public sealed class DemandService(
                 UpdatedAtUtc = plan.UpdatedAtUtc,
                 RowCount = plan.Rows.Count,
                 ColumnCount = plan.Columns.Count,
-                HourlyRate = plan.HourlyRate,
                 WeeklyTargetSales = plan.Columns.Sum(column => column.TargetSales)
             })
             .ToListAsync(cancellationToken);
@@ -176,8 +175,6 @@ public sealed class DemandService(
 
         plan.Name = request.Name.Trim();
         plan.WeekStart = request.WeekStart;
-        plan.HourlyRate = request.HourlyRate;
-        plan.InsideHourlyRate = settings.InsideHourlyRate;
         plan.DeliveriesPerDriverHour = settings.DeliveriesPerDriverHour;
         plan.PizzasPerInsideHour = settings.PizzasPerInsideHour;
         foreach (var columnRequest in request.Columns)
@@ -427,39 +424,16 @@ public sealed class DemandService(
             })
             .ToList();
         var columnsById = plan.Columns.ToDictionary(column => column.Id);
-        var dailyLabour = columns
-            .Select(column =>
+        var dailyStaffing = columns
+            .Select(column => new DemandStaffingDayResponse
             {
-                var requiredDriverHours = column.TotalHours;
-                var requiredInsideHours = column.InsideTotalHours;
-                var day = plan.WeekStart.AddDays(column.Position).DayOfWeek;
-                var appliedHourlyRate = DemandStaffing.AppliedHourlyRate(day, plan.HourlyRate);
-                var appliedInsideHourlyRate = DemandStaffing.AppliedHourlyRate(day, plan.InsideHourlyRate);
-                var driverLabourCost = DemandStaffing.LabourCost(requiredDriverHours, appliedHourlyRate);
-                var insideLabourCost = DemandStaffing.LabourCost(requiredInsideHours, appliedInsideHourlyRate);
-                var labourCost = driverLabourCost + insideLabourCost;
-                var labourPercentage = column.TargetSales > 0m
-                    ? Math.Round(labourCost / column.TargetSales * 100m, 2, MidpointRounding.AwayFromZero)
-                    : (decimal?)null;
-
-                return new DemandLabourDayResponse
-                {
-                    Position = column.Position,
-                    Label = column.Label,
-                    TargetSales = column.TargetSales,
-                    RequiredDriverHours = requiredDriverHours,
-                    RequiredInsideHours = requiredInsideHours,
-                    AppliedHourlyRate = appliedHourlyRate,
-                    AppliedInsideHourlyRate = appliedInsideHourlyRate,
-                    DriverLabourCost = driverLabourCost,
-                    InsideLabourCost = insideLabourCost,
-                    LabourCost = labourCost,
-                    LabourPercentage = labourPercentage
-                };
+                Position = column.Position,
+                Label = column.Label,
+                TargetSales = column.TargetSales,
+                RequiredDriverHours = column.TotalHours,
+                RequiredInsideHours = column.InsideTotalHours
             })
             .ToList();
-        var weeklyTargetSales = dailyLabour.Sum(item => item.TargetSales);
-        var weeklyLabourCost = Math.Round(dailyLabour.Sum(item => item.LabourCost), 2, MidpointRounding.AwayFromZero);
 
         return new DemandPlanResponse
         {
@@ -467,21 +441,13 @@ public sealed class DemandService(
             Name = plan.Name,
             WeekStart = plan.WeekStart,
             UpdatedAtUtc = plan.UpdatedAtUtc,
-            HourlyRate = plan.HourlyRate,
-            InsideHourlyRate = plan.InsideHourlyRate,
             DeliveriesPerDriverHour = plan.DeliveriesPerDriverHour,
             PizzasPerInsideHour = plan.PizzasPerInsideHour,
-            WeeklyDriverHours = dailyLabour.Sum(item => item.RequiredDriverHours),
-            WeeklyInsideHours = dailyLabour.Sum(item => item.RequiredInsideHours),
-            WeeklyDriverLabourCost = dailyLabour.Sum(item => item.DriverLabourCost),
-            WeeklyInsideLabourCost = dailyLabour.Sum(item => item.InsideLabourCost),
-            WeeklyTargetSales = weeklyTargetSales,
-            WeeklyLabourCost = weeklyLabourCost,
-            WeeklyLabourPercentage = weeklyTargetSales > 0m
-                ? Math.Round(weeklyLabourCost / weeklyTargetSales * 100m, 2, MidpointRounding.AwayFromZero)
-                : null,
+            WeeklyDriverHours = dailyStaffing.Sum(item => item.RequiredDriverHours),
+            WeeklyInsideHours = dailyStaffing.Sum(item => item.RequiredInsideHours),
+            WeeklyTargetSales = dailyStaffing.Sum(item => item.TargetSales),
             Columns = columns,
-            DailyLabour = dailyLabour,
+            DailyStaffing = dailyStaffing,
             Rows = plan.Rows
                 .OrderBy(row => GetDisplayHourOrder(row.Hour))
                 .Select(row => new DemandRowResponse
@@ -678,7 +644,6 @@ public sealed class DemandService(
         var pizzas = request.PizzasPerInsideHourSpecified
             ? request.PizzasPerInsideHour : plan.PizzasPerInsideHour;
         return new(deliveries, pizzas,
-            request.InsideHourlyRateSpecified ? request.InsideHourlyRate : plan.InsideHourlyRate,
             request.RecalculateDemand || deliveries != plan.DeliveriesPerDriverHour ||
             pizzas != plan.PizzasPerInsideHour);
     }
@@ -865,7 +830,7 @@ public sealed class DemandService(
         List<ParsedDemandRow> Rows);
 
     internal sealed record DemandEditSettings(decimal DeliveriesPerDriverHour, decimal PizzasPerInsideHour,
-        decimal InsideHourlyRate, bool Recalculate);
+        bool Recalculate);
 
     internal sealed record ParsedDemandColumn(int Position, string Label);
 

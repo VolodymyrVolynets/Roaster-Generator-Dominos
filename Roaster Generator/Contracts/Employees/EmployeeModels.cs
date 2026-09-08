@@ -14,6 +14,9 @@ public sealed class EmployeeRequest
 
     public string? PayrollNumber { get; set; }
 
+    // Older clients may omit pay; updates preserve the existing value in that case.
+    public decimal? HourlyRate { get; set; }
+
     public List<string> Roles { get; set; } = ["Driver"];
 
     public int TargetHours { get; set; } = 20;
@@ -36,6 +39,8 @@ public sealed class EmployeeResponse
     public string PhoneNumber { get; init; } = string.Empty;
 
     public string? PayrollNumber { get; init; }
+
+    public decimal HourlyRate { get; init; }
 
     public bool IsActive { get; init; }
 
