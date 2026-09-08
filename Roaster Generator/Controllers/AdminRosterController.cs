@@ -13,6 +13,8 @@ namespace Roaster_Generator.Controllers;
 [Route("api/admin/roster")]
 public sealed class AdminRosterController(
     IValidator<WeekSelectionRequest> weekValidator,
+    IValidator<RosterPlanUpdateRequest> planUpdateValidator,
+    IValidator<RosterSettingsRequest> settingsValidator,
     RosterTimerService rosterTimer,
     RosterPlanService rosterPlans,
     RosterSettingsService settings) : ApiControllerBase
@@ -38,13 +40,7 @@ public sealed class AdminRosterController(
 
         if (!validationResult.IsValid)
         {
-            var errors = validationResult.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group.Select(error => error.ErrorMessage).ToArray());
-
-            return ValidationError(errors, "The selected week is invalid.");
+            return ValidationError(ToErrors(validationResult), "The selected week is invalid.");
         }
 
         var plan = await rosterPlans.GetAsync(selection.WeekOffset, cancellationToken);
@@ -58,6 +54,17 @@ public sealed class AdminRosterController(
         [FromBody] RosterPlanUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await ValidateRequestAsync(
+            planUpdateValidator,
+            request,
+            "The edited roster is invalid.",
+            cancellationToken);
+
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
         try
         {
             return Ok(await rosterPlans.UpdateAsync(request, cancellationToken));
@@ -87,13 +94,7 @@ public sealed class AdminRosterController(
 
         if (!validationResult.IsValid)
         {
-            var errors = validationResult.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group.Select(error => error.ErrorMessage).ToArray());
-
-            return ValidationError(errors, "The selected week is invalid.");
+            return ValidationError(ToErrors(validationResult), "The selected week is invalid.");
         }
 
         return Ok(await rosterPlans.GetSummaryAsync(selection.WeekOffset, cancellationToken));
@@ -109,13 +110,7 @@ public sealed class AdminRosterController(
 
         if (!validationResult.IsValid)
         {
-            var errors = validationResult.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group.Select(error => error.ErrorMessage).ToArray());
-
-            return ValidationError(errors, "The selected week is invalid.");
+            return ValidationError(ToErrors(validationResult), "The selected week is invalid.");
         }
 
         try
@@ -142,13 +137,7 @@ public sealed class AdminRosterController(
 
         if (!validationResult.IsValid)
         {
-            var errors = validationResult.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group.Select(error => error.ErrorMessage).ToArray());
-
-            return ValidationError(errors, "The selected week is invalid.");
+            return ValidationError(ToErrors(validationResult), "The selected week is invalid.");
         }
 
         return rosterTimer.Cancel(selection.WeekOffset, request.JobId)
@@ -160,8 +149,16 @@ public sealed class AdminRosterController(
     public async Task<IActionResult> GetSettings(CancellationToken ct) => Ok(await settings.GetAsync(ct));
 
     [HttpPut("settings")]
-    public async Task<IActionResult> SaveSettings([FromBody] RosterSettingsRequest request, CancellationToken ct) =>
-        Ok(await settings.SaveAsync(request, ct));
+    public async Task<IActionResult> SaveSettings([FromBody] RosterSettingsRequest request, CancellationToken ct)
+    {
+        var validationResult = await ValidateRequestAsync(
+            settingsValidator,
+            request,
+            "The roster settings are invalid.",
+            ct);
+
+        return validationResult ?? Ok(await settings.SaveAsync(request, ct));
+    }
 
     [HttpGet("history")]
     public async Task<IActionResult> History(CancellationToken ct) => Ok(await rosterPlans.GetHistoryAsync(ct));

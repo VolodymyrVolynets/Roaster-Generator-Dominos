@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Roaster_Generator.Configuration;
+using Roaster_Generator.Contracts.Demand;
+using Roaster_Generator.Contracts.Employees;
+using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
@@ -48,6 +51,9 @@ builder.Services.Configure<CookieAuthenticationOptions>(
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
+builder.Services.AddScoped<IValidator<EmployeeRequest>, EmployeeRequestValidator>();
+builder.Services.AddScoped<IValidator<DemandImportRequest>, DemandImportRequestValidator>();
+builder.Services.AddScoped<IValidator<DemandPlanUpdateRequest>, DemandPlanUpdateRequestValidator>();
 builder.Services.AddScoped<DemandService>();
 builder.Services.AddScoped<WeeklyScheduleService>();
 builder.Services.AddScoped<RosterPlanService>();
@@ -57,6 +63,8 @@ builder.Services.AddSingleton<RosterTimerService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<RosterTimerService>());
 builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
 builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();
+builder.Services.AddScoped<IValidator<RosterPlanUpdateRequest>, RosterPlanUpdateRequestValidator>();
+builder.Services.AddScoped<IValidator<RosterSettingsRequest>, RosterSettingsRequestValidator>();
 
 var app = builder.Build();
 

@@ -63,7 +63,6 @@ public sealed class DemandService(
         DemandImportRequest request,
         CancellationToken cancellationToken)
     {
-        ValidateMetadata(request.Name, request.WeekStart);
         var parsed = ParseText(request.Content);
         return await SaveImportedPlanAsync(request.Name, request.WeekStart, parsed, cancellationToken);
     }
@@ -74,8 +73,6 @@ public sealed class DemandService(
         Stream stream,
         CancellationToken cancellationToken)
     {
-        ValidateMetadata(string.IsNullOrWhiteSpace(name) ? "Imported demand" : name, weekStart);
-
         using var workbook = new XLWorkbook(stream);
         var worksheet = workbook.Worksheets.FirstOrDefault()
             ?? throw new DemandValidationException("The Excel file does not contain a worksheet.");
@@ -102,20 +99,8 @@ public sealed class DemandService(
         DemandPlanUpdateRequest request,
         CancellationToken cancellationToken)
     {
-        ValidateMetadata(request.Name, request.WeekStart);
-
-        if (request.Columns.Count == 0)
-        {
-            throw new DemandValidationException("At least one demand column is required.");
-        }
-
         var plan = await LoadPlanAsync(planId, cancellationToken)
             ?? throw new DemandValidationException("Demand plan not found.");
-
-        if (request.Columns.GroupBy(column => column.Position).Any(group => group.Count() > 1))
-        {
-            throw new DemandValidationException("Demand column positions must be unique.");
-        }
 
         var existingPositions = plan.Columns.Select(column => column.Position).ToHashSet();
         var requestedPositions = request.Columns.Select(column => column.Position).ToHashSet();
@@ -125,39 +110,12 @@ public sealed class DemandService(
             throw new DemandValidationException("Demand columns can only be changed by importing a new table.");
         }
 
-        if (request.Rows.GroupBy(row => row.Hour).Any(group => group.Count() > 1))
-        {
-            throw new DemandValidationException("Demand hours must be unique.");
-        }
-
         var existingHours = plan.Rows.Select(row => row.Hour).ToHashSet();
         var requestedHours = request.Rows.Select(row => row.Hour).ToHashSet();
 
         if (!existingHours.SetEquals(requestedHours))
         {
             throw new DemandValidationException("Demand hours can only be changed by importing a new table.");
-        }
-
-        if (request.Rows.Any(row =>
-                row.Values.GroupBy(value => value.Position).Any(group => group.Count() > 1) ||
-                !requestedPositions.SetEquals(row.Values.Select(value => value.Position))))
-        {
-            throw new DemandValidationException("Every demand row must contain each imported day exactly once.");
-        }
-
-        if (request.Rows.SelectMany(row => row.Values).Any(value => value.Demand is < 0))
-        {
-            throw new DemandValidationException("Demand cannot be negative.");
-        }
-
-        if (request.HourlyRate < 0)
-        {
-            throw new DemandValidationException("Hourly rate cannot be negative.");
-        }
-
-        if (request.Columns.Any(column => column.TargetSales < 0))
-        {
-            throw new DemandValidationException("Target sales cannot be negative.");
         }
 
         var otherPlan = await db.DemandPlans
@@ -518,31 +476,8 @@ public sealed class DemandService(
             ? Math.Round(baseHourlyRate * SundayPayRateMultiplier, 2, MidpointRounding.AwayFromZero)
             : baseHourlyRate;
 
-    private static void ValidateMetadata(string? name, DateOnly weekStart)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            throw new DemandValidationException("A demand plan name is required.");
-        }
-
-        if (weekStart == default)
-        {
-            throw new DemandValidationException("A week start date is required.");
-        }
-
-        if (weekStart.DayOfWeek != DayOfWeek.Monday)
-        {
-            throw new DemandValidationException("The week start date must be a Monday.");
-        }
-    }
-
     private static ParsedDemand ParseText(string content)
     {
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            throw new DemandValidationException("Paste the demand table before importing it.");
-        }
-
         var rows = content
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
             .Select(SplitTextRow)

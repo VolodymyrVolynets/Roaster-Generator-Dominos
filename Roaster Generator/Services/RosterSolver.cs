@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Google.OrTools.Sat;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Validation;
 
 namespace Roaster_Generator.Services;
 
@@ -13,7 +14,7 @@ namespace Roaster_Generator.Services;
 public sealed class RosterSolver
 {
     private const int MaxCandidates = 100_000;
-    private const int MaxEmployees = 1_000;
+    private const int MaxEmployees = RosterSolverInputValidator.MaxEmployees;
     private const int PercentageScale = 10_000;
 
     public RosterSolverResult Solve(
@@ -25,7 +26,7 @@ public sealed class RosterSolver
         var reporter = new ProgressReporter(onProgress);
         cancellationToken.ThrowIfCancellationRequested();
         reporter.Publish("validating", 5, $"Checking demand, availability, employee targets, rest settings and the hard {input.Options.LatestShiftStartHour:00}:00 latest shift start. Overnight finishes are allowed.");
-        var inputErrors = ValidateInput(input);
+        var inputErrors = RosterSolverInputValidator.ValidateInput(input);
         if (inputErrors.Count > 0)
             return Failure("invalid", "Roster inputs are invalid; no roster was generated.", inputErrors);
 
@@ -247,7 +248,7 @@ public sealed class RosterSolver
     /// <summary>Checks actual shifts independently of the optimization model before persistence.</summary>
     public static IReadOnlyList<string> Validate(RosterSolverInput input, IReadOnlyList<RosterSolverShift> shifts)
     {
-        var errors = ValidateInput(input);
+        var errors = RosterSolverInputValidator.ValidateInput(input).ToList();
         if (errors.Count > 0) return errors;
         var employees = input.Employees.Where(employee => employee.IsActive).ToDictionary(employee => employee.Id);
         var availability = input.Availability.GroupBy(shift => (shift.EmployeeId, shift.Date))
@@ -720,38 +721,6 @@ public sealed class RosterSolver
             if (spread > 30.01)
                 yield return $"Fairness warning: target utilization still spans {minimum.Percentage:F1}% ({Name(minimum.Employee)}) to {maximum.Percentage:F1}% ({Name(maximum.Employee)}), a {spread:F1}-percentage-point gap. Coverage remains exact. Availability, target differences, shift/rest rules, selected weights or the search limit can restrict further balancing; review this allocation before using it.";
         }
-    }
-
-    private static List<string> ValidateInput(RosterSolverInput input)
-    {
-        var errors = new List<string>();
-        var options = input.Options;
-        if (input.WeekStart == DateOnly.MinValue || input.WeekStart > DateOnly.MaxValue.AddDays(-8))
-            errors.Add("A valid week start date is required.");
-        if (options.MinimumRestHours is < 0 or > 24 || options.PreferredRestHours < options.MinimumRestHours || options.PreferredRestHours > 48)
-            errors.Add("Minimum rest must be 0–24 hours; preferred rest must be at least the minimum and at most 48 hours.");
-        if (options.LatestShiftStartHour is < 6 or > 22)
-            errors.Add("Latest shift start must be between 06:00 and 22:00.");
-        if (options.MaxSolveSeconds is < 1 or > 120) errors.Add("Solve time must be between 1 and 120 seconds.");
-        if (new[] { options.TargetHoursWeight, options.HistoryFairnessWeight, options.FairnessSpreadWeight, options.LongShiftBonus, options.ShortShiftPenalty, options.DailyShiftCountPenalty, options.ShortBreakPenalty }.Any(weight => weight is < 0 or > 10_000))
-            errors.Add("Preference weights must be between 0 and 10000.");
-        if (input.Employees.GroupBy(employee => employee.Id).Any(group => group.Count() > 1)) errors.Add("The employee list contains duplicate IDs.");
-        if (input.Employees.Any(employee => employee.TargetHours is < 0 or > 168)) errors.Add("Employee target hours must be between 0 and 168.");
-        if (input.Demand.Any(slot => slot.Date < input.WeekStart || slot.Date.DayNumber - input.WeekStart.DayNumber >= 7 || slot.Hour is < 0 or > 47 || slot.RequiredDrivers is < 0 or > MaxEmployees))
-            errors.Add("Demand must contain hours 0–47 within the selected business week and 0–1000 drivers per hour.");
-        if (input.Demand.GroupBy(slot => AbsoluteHour(input.WeekStart, slot.Date, slot.Hour)).Any(group => group.Count() > 1))
-            errors.Add("Demand contains duplicate or overlapping real-world hours across business dates.");
-        if (input.Availability.GroupBy(shift => (shift.EmployeeId, shift.Date)).Any(group => group.Count() > 1))
-            errors.Add("Availability contains multiple windows for the same employee and business date. Consolidate each day into one window.");
-        if (input.Availability.Any(shift => shift.StartTime.Ticks % TimeSpan.TicksPerHour != 0 || shift.FinishTime.Ticks % TimeSpan.TicksPerHour != 0 || shift.StartTime == shift.FinishTime))
-            errors.Add("Availability times must be whole hours, with different start and finish times.");
-        if (input.BoundaryShifts.Any(shift => shift.Finish <= shift.Start)) errors.Add("A saved neighboring-week shift has an invalid start or finish.");
-        if ((input.History ?? []).Any(item => item.TargetHours is < 0 or > 168 || item.ScheduledHours is < 0 or > 168))
-            errors.Add("Saved historical target and scheduled hours must be between 0 and 168.");
-        if ((input.History ?? []).Where(item => item.WeekStart < input.WeekStart && item.WeekStart.DayNumber >= input.WeekStart.DayNumber - 28)
-            .GroupBy(item => (item.EmployeeId, item.WeekStart)).Any(group => group.Count() > 1))
-            errors.Add("Historical employee snapshots contain duplicate employee/week records.");
-        return errors;
     }
 
     private static (int Start, int Finish) AvailabilityWindow(Shift shift)

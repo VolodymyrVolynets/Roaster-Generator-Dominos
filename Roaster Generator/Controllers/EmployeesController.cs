@@ -142,13 +142,6 @@ public sealed class EmployeesController(
             : null;
     }
 
-    private static Dictionary<string, string[]> ToErrors(FluentValidation.Results.ValidationResult result) =>
-        result.Errors
-            .GroupBy(error => error.PropertyName)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(error => error.ErrorMessage).ToArray());
-
     private static EmployeeResponse ToEmployeeResponse(Employee employee) => new()
     {
         Id = employee.Id,

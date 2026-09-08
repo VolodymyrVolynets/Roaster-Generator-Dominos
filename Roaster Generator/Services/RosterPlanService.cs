@@ -65,9 +65,6 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         RosterPlanUpdateRequest request,
         CancellationToken ct)
     {
-        if (request.WeekStart == default || request.WeekStart.DayOfWeek != DayOfWeek.Monday)
-            throw new RosterInputException("Select the Monday of a saved roster week.");
-
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var ownsLock = await db.Database
             .SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock(724863910) AS \"Value\"")

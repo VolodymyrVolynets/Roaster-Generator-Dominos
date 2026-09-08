@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -15,7 +16,8 @@ namespace Roaster_Generator.Controllers;
 [Route("api/admin/employees")]
 public sealed class AdminEmployeesController(
     AppDbContext db,
-    UserManager<ApplicationUser> userManager) : ApiControllerBase
+    UserManager<ApplicationUser> userManager,
+    IValidator<EmployeeRequest> employeeValidator) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetEmployees(CancellationToken cancellationToken)
@@ -36,17 +38,21 @@ public sealed class AdminEmployeesController(
         [FromBody] EmployeeRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await ValidateRequestAsync(
+            employeeValidator,
+            request,
+            "The employee is invalid.",
+            cancellationToken);
+
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
         var employeeNumber = request.EmployeeNumber.Trim();
         var firstName = request.FirstName.Trim();
         var lastName = request.LastName.Trim();
         var phoneNumber = request.PhoneNumber.Trim();
-
-        var validation = ValidateEmployee(employeeNumber, firstName, lastName, request.TargetHours);
-
-        if (validation is not null)
-        {
-            return validation;
-        }
 
         if (await db.Employees.AnyAsync(employee => employee.EmployeeNumber == employeeNumber, cancellationToken) ||
             await userManager.FindByNameAsync(employeeNumber) is not null)
@@ -127,17 +133,21 @@ public sealed class AdminEmployeesController(
             return NotFound(new { message = "Employee not found." });
         }
 
+        var validationResult = await ValidateRequestAsync(
+            employeeValidator,
+            request,
+            "The employee is invalid.",
+            cancellationToken);
+
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
         var employeeNumber = request.EmployeeNumber.Trim();
         var firstName = request.FirstName.Trim();
         var lastName = request.LastName.Trim();
         var phoneNumber = request.PhoneNumber.Trim();
-
-        var validation = ValidateEmployee(employeeNumber, firstName, lastName, request.TargetHours);
-
-        if (validation is not null)
-        {
-            return validation;
-        }
 
         if (await db.Employees.AnyAsync(
                 item => item.Id != employeeId && item.EmployeeNumber == employeeNumber,
@@ -247,39 +257,6 @@ public sealed class AdminEmployeesController(
         employee.IsActive = isActive;
         await db.SaveChangesAsync(cancellationToken);
         return Ok(ToEmployeeResponse(employee));
-    }
-
-    private static IActionResult? ValidateEmployee(
-        string employeeNumber,
-        string firstName,
-        string lastName,
-        int targetHours)
-    {
-        if (string.IsNullOrWhiteSpace(employeeNumber) ||
-            string.IsNullOrWhiteSpace(firstName) ||
-            string.IsNullOrWhiteSpace(lastName)
-            )
-        {
-            return new BadRequestObjectResult(new ValidationProblemDetails(
-                new Dictionary<string, string[]>
-                {
-                    ["employee"] = ["Employee number, first name, and last name are required."]
-                })
-                {
-                    Title = "The employee is invalid."
-                });
-        }
-
-        return targetHours is < 3 or > 168
-            ? new BadRequestObjectResult(new ValidationProblemDetails(
-                new Dictionary<string, string[]>
-                {
-                    ["targetHours"] = ["Target hours must be between 3 and 168 per week."]
-                })
-                {
-                    Title = "The employee is invalid."
-                })
-            : null;
     }
 
     private static EmployeeResponse ToEmployeeResponse(Employee employee) => new()

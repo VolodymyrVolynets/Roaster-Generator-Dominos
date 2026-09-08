@@ -1,4 +1,5 @@
 using System.Globalization;
+using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Roaster_Generator.Contracts.Demand;
@@ -10,7 +11,10 @@ namespace Roaster_Generator.Controllers;
 [ApiController]
 [Authorize(Roles = RoleNames.Admin)]
 [Route("api/admin/demand")]
-public sealed class AdminDemandController(DemandService demand) : ApiControllerBase
+public sealed class AdminDemandController(
+    DemandService demand,
+    IValidator<DemandImportRequest> importValidator,
+    IValidator<DemandPlanUpdateRequest> updateValidator) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetPlans(CancellationToken cancellationToken) =>
@@ -32,6 +36,17 @@ public sealed class AdminDemandController(DemandService demand) : ApiControllerB
         [FromBody] DemandImportRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await ValidateRequestAsync(
+            importValidator,
+            request,
+            "The demand plan is invalid.",
+            cancellationToken);
+
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
         try
         {
             return Ok(await demand.ImportTextAsync(request, cancellationToken));
@@ -66,6 +81,11 @@ public sealed class AdminDemandController(DemandService demand) : ApiControllerB
                 throw new DemandValidationException("A valid Monday week start date is required.");
             }
 
+            if (parsedWeekStart.DayOfWeek != DayOfWeek.Monday)
+            {
+                throw new DemandValidationException("The week start date must be a Monday.");
+            }
+
             await using var stream = file.OpenReadStream();
             return Ok(await demand.ImportExcelAsync(
                 name,
@@ -85,6 +105,17 @@ public sealed class AdminDemandController(DemandService demand) : ApiControllerB
         [FromBody] DemandPlanUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await ValidateRequestAsync(
+            updateValidator,
+            request,
+            "The demand plan is invalid.",
+            cancellationToken);
+
+        if (validationResult is not null)
+        {
+            return validationResult;
+        }
+
         try
         {
             return Ok(await demand.UpdateAsync(planId, request, cancellationToken));

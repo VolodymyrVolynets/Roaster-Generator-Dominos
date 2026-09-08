@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace Roaster_Generator.Contracts.Roster;
 
 public sealed class RosterTimerStartResponse
@@ -192,23 +190,17 @@ public sealed class RosterCoverageResponse
     public int Scheduled { get; init; }
 }
 
-public sealed class RosterSettingsRequest : IValidatableObject
+public sealed class RosterSettingsRequest
 {
-    [Range(0, 1000)] public int TargetHoursWeight { get; set; } = 100;
-    [Range(0, 1000)] public int HistoryFairnessWeight { get; set; } = 100;
-    [Range(0, 1000)] public int FairnessSpreadWeight { get; set; } = 1000;
-    [Range(0, 1000)] public int LongShiftBonus { get; set; } = 25;
-    [Range(0, 1000)] public int ShortShiftPenalty { get; set; } = 10;
-    [Range(0, 1000)] public int DailyShiftCountPenalty { get; set; } = 25;
-    [Range(0, 1000)] public int ShortBreakPenalty { get; set; } = 100;
-    [Range(0, 24)] public int MinimumRestHours { get; set; } = 8;
-    [Range(0, 48)] public int PreferredRestHours { get; set; } = 12;
-    [Range(6, 22)] public int LatestShiftStartHour { get; set; } = 20;
-    [Range(1, 120)] public int MaxSolveSeconds { get; set; } = 20;
-
-    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
-    {
-        if (PreferredRestHours < MinimumRestHours)
-            yield return new ValidationResult("Preferred rest must be at least the minimum rest.", [nameof(PreferredRestHours)]);
-    }
+    public int TargetHoursWeight { get; set; } = 100;
+    public int HistoryFairnessWeight { get; set; } = 100;
+    public int FairnessSpreadWeight { get; set; } = 1000;
+    public int LongShiftBonus { get; set; } = 25;
+    public int ShortShiftPenalty { get; set; } = 10;
+    public int DailyShiftCountPenalty { get; set; } = 25;
+    public int ShortBreakPenalty { get; set; } = 100;
+    public int MinimumRestHours { get; set; } = 8;
+    public int PreferredRestHours { get; set; } = 12;
+    public int LatestShiftStartHour { get; set; } = 20;
+    public int MaxSolveSeconds { get; set; } = 20;
 }
