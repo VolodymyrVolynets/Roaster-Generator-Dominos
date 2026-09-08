@@ -1374,9 +1374,54 @@ input:focus {
   line-height: 1.55;
 }
 
+.employee-save-alert {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.58);
+  border-radius: 12px;
+  color: #fee2e2;
+  background: rgba(127, 29, 29, 0.24);
+}
+
+.employee-save-alert > strong {
+  color: #fecaca;
+}
+
+.employee-save-alert p {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
+.employee-save-alert-detail {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(252, 165, 165, 0.2);
+  font-size: 0.86rem;
+}
+
+.employee-save-alert-detail strong {
+  color: #fda4af;
+}
+
+.employee-save-alert-detail span {
+  overflow-wrap: anywhere;
+}
+
 .employee-form-field {
   display: grid;
   gap: 7px;
+}
+
+.employee-field-error {
+  margin: -1px 0 0;
+  color: #fca5a5;
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .employee-form-field label,
@@ -1393,6 +1438,12 @@ input:focus {
   min-height: 42px;
 }
 
+.employee-form input[aria-invalid="true"],
+.employee-form select[aria-invalid="true"] {
+  border-color: rgba(248, 113, 113, 0.78);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
+}
+
 .employee-role-fieldset {
   display: flex;
   grid-column: 1 / -1;
@@ -1405,6 +1456,15 @@ input:focus {
   border: 1px solid rgba(125, 211, 252, 0.24);
   border-radius: 12px;
   background: rgba(8, 47, 73, 0.18);
+}
+
+.employee-role-fieldset[aria-invalid="true"] {
+  border-color: rgba(248, 113, 113, 0.78);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.employee-role-fieldset .employee-field-error {
+  flex-basis: 100%;
 }
 
 .employee-role-fieldset legend {

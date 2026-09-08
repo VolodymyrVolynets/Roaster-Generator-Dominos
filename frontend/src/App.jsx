@@ -29,6 +29,18 @@ const emptyEmployeeForm = {
   driverType: 'Car',
 }
 
+const employeeFieldLabels = {
+  employeeNumber: 'Employee number',
+  firstName: 'First name',
+  lastName: 'Last name',
+  phoneNumber: 'Phone number',
+  payrollNumber: 'Payroll number',
+  roles: 'Roles',
+  targetHours: 'Target hours',
+  driverType: 'Driver type',
+  identity: 'Employee login',
+}
+
 function parseDate(dateValue) {
   const [year, month, day] = dateValue.split('-').map(Number)
   return new Date(year, month - 1, day)
@@ -73,11 +85,18 @@ async function fetchJson(url, options) {
   }
 
   if (!response.ok) {
-    const validationMessages = payload?.errors
-      ? Object.values(payload.errors).flatMap((messages) =>
-          Array.isArray(messages) ? messages : [messages],
-        )
-      : []
+    const rawFieldErrors = payload?.errors && typeof payload.errors === 'object'
+      ? payload.errors
+      : {}
+    const fieldErrors = Object.fromEntries(
+      Object.entries(rawFieldErrors).map(([field, messages]) => [
+        field.length > 0 ? `${field[0].toLowerCase()}${field.slice(1)}` : field,
+        (Array.isArray(messages) ? messages : [messages])
+          .filter((message) => message !== null && message !== undefined && String(message).trim())
+          .map((message) => String(message)),
+      ]),
+    )
+    const validationMessages = Object.values(fieldErrors).flat()
     const messages = [payload?.message, payload?.detail, payload?.title, ...validationMessages]
       .filter(Boolean)
       .filter((message, index, allMessages) => allMessages.indexOf(message) === index)
@@ -93,9 +112,12 @@ async function fetchJson(url, options) {
 
     const message = response.status === 401 && requestPath !== '/api/auth/login'
       ? 'Your session has expired. Please sign in again.'
-      : messages.join('\n') || body || 'The API request failed.'
+      : response.status === 403
+        ? messages.join('\n') || 'You do not have permission to perform this action.'
+        : messages.join('\n') || body || 'The API request failed.'
     const error = new Error(message)
     error.status = response.status
+    error.fieldErrors = fieldErrors
     throw error
   }
 
@@ -123,6 +145,31 @@ function ErrorPopup({ message, onClose }) {
       <p>{message}</p>
     </div>
   )
+}
+
+function getEmployeeFieldErrors(saveState, field) {
+  return saveState?.status === 'error' ? saveState.fieldErrors?.[field] || [] : []
+}
+
+function EmployeeFieldError({ field, messages }) {
+  if (!messages?.length) {
+    return null
+  }
+
+  return (
+    <p id={`admin-employee-${field}-error`} className="employee-field-error">
+      {messages.join(' ')}
+    </p>
+  )
+}
+
+function getEmployeeErrorSummary(error) {
+  const fieldMessages = new Set(Object.values(error?.fieldErrors || {}).flat())
+  const summary = String(error?.message || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !fieldMessages.has(line))
+  return summary.join('\n') || 'The employee could not be saved.'
 }
 
 function LoginView({ onLogin, error, isSubmitting }) {
@@ -1078,6 +1125,14 @@ function AdminConsole({
   const editableRoles = authState.user.isAdmin
     ? ['Driver', 'InStore', 'Manager', 'Admin']
     : ['Driver', 'InStore', 'Manager']
+  const employeeNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'employeeNumber')
+  const firstNameErrors = getEmployeeFieldErrors(employeeSaveState, 'firstName')
+  const lastNameErrors = getEmployeeFieldErrors(employeeSaveState, 'lastName')
+  const phoneNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'phoneNumber')
+  const payrollNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'payrollNumber')
+  const roleErrors = getEmployeeFieldErrors(employeeSaveState, 'roles')
+  const targetHoursErrors = getEmployeeFieldErrors(employeeSaveState, 'targetHours')
+  const driverTypeErrors = getEmployeeFieldErrors(employeeSaveState, 'driverType')
 
   return (
     <>
@@ -1232,6 +1287,19 @@ function AdminConsole({
                       : 'Update this profile here. Changes are applied to future roster generation and availability.'}
                   </p>
 
+                  {employeeSaveState.status === 'error' && (
+                    <div className="employee-save-alert" role="alert" aria-live="assertive">
+                      <strong>Employee could not be saved</strong>
+                      <p>{employeeSaveState.message}</p>
+                      {Object.entries(employeeSaveState.fieldErrors || {}).map(([field, messages]) => (
+                        <div className="employee-save-alert-detail" key={field}>
+                          <strong>{employeeFieldLabels[field] || field || 'General'}</strong>
+                          <span>{messages.join(' ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <form className="employee-form" onSubmit={saveEmployee}>
                     <div className="employee-form-field">
                       <label htmlFor="admin-employee-number">Employee number</label>
@@ -1239,8 +1307,11 @@ function AdminConsole({
                         id="admin-employee-number"
                         value={employeeForm.employeeNumber}
                         onChange={(event) => updateEmployeeForm('employeeNumber', event.target.value)}
+                        aria-invalid={employeeNumberErrors.length > 0}
+                        aria-describedby={employeeNumberErrors.length > 0 ? 'admin-employee-employeeNumber-error' : undefined}
                         required
                       />
+                      <EmployeeFieldError field="employeeNumber" messages={employeeNumberErrors} />
                     </div>
                     <div className="employee-form-field">
                       <label htmlFor="admin-employee-first-name">First name</label>
@@ -1248,8 +1319,11 @@ function AdminConsole({
                         id="admin-employee-first-name"
                         value={employeeForm.firstName}
                         onChange={(event) => updateEmployeeForm('firstName', event.target.value)}
+                        aria-invalid={firstNameErrors.length > 0}
+                        aria-describedby={firstNameErrors.length > 0 ? 'admin-employee-firstName-error' : undefined}
                         required
                       />
+                      <EmployeeFieldError field="firstName" messages={firstNameErrors} />
                     </div>
                     <div className="employee-form-field">
                       <label htmlFor="admin-employee-last-name">Last name</label>
@@ -1257,8 +1331,11 @@ function AdminConsole({
                         id="admin-employee-last-name"
                         value={employeeForm.lastName}
                         onChange={(event) => updateEmployeeForm('lastName', event.target.value)}
+                        aria-invalid={lastNameErrors.length > 0}
+                        aria-describedby={lastNameErrors.length > 0 ? 'admin-employee-lastName-error' : undefined}
                         required
                       />
+                      <EmployeeFieldError field="lastName" messages={lastNameErrors} />
                     </div>
                     <div className="employee-form-field">
                       <label htmlFor="admin-employee-phone">Phone number</label>
@@ -1266,7 +1343,10 @@ function AdminConsole({
                         id="admin-employee-phone"
                         value={employeeForm.phoneNumber}
                         onChange={(event) => updateEmployeeForm('phoneNumber', event.target.value)}
+                        aria-invalid={phoneNumberErrors.length > 0}
+                        aria-describedby={phoneNumberErrors.length > 0 ? 'admin-employee-phoneNumber-error' : undefined}
                       />
+                      <EmployeeFieldError field="phoneNumber" messages={phoneNumberErrors} />
                     </div>
                     <div className="employee-form-field">
                       <label htmlFor="admin-employee-payroll-number">Payroll number</label>
@@ -1274,10 +1354,17 @@ function AdminConsole({
                         id="admin-employee-payroll-number"
                         value={employeeForm.payrollNumber}
                         onChange={(event) => updateEmployeeForm('payrollNumber', event.target.value)}
+                        aria-invalid={payrollNumberErrors.length > 0}
+                        aria-describedby={payrollNumberErrors.length > 0 ? 'admin-employee-payrollNumber-error' : undefined}
                       />
+                      <EmployeeFieldError field="payrollNumber" messages={payrollNumberErrors} />
                     </div>
 
-                    <fieldset className="employee-role-fieldset">
+                    <fieldset
+                      className="employee-role-fieldset"
+                      aria-invalid={roleErrors.length > 0}
+                      aria-describedby={roleErrors.length > 0 ? 'admin-employee-roles-error' : undefined}
+                    >
                       <legend>Roles</legend>
                       {editableRoles.map((role) => (
                         <label className="checkbox-label" htmlFor={`admin-employee-role-${role}`} key={role}>
@@ -1296,6 +1383,7 @@ function AdminConsole({
                           {role}
                         </label>
                       ))}
+                      <EmployeeFieldError field="roles" messages={roleErrors} />
                     </fieldset>
 
                     {employeeForm.roles?.includes('Driver') && (
@@ -1306,11 +1394,14 @@ function AdminConsole({
                             id="admin-employee-driver-type"
                             value={employeeForm.driverType}
                             onChange={(event) => updateEmployeeForm('driverType', event.target.value)}
+                            aria-invalid={driverTypeErrors.length > 0}
+                            aria-describedby={driverTypeErrors.length > 0 ? 'admin-employee-driverType-error' : undefined}
                           >
                             <option value="Car">Car</option>
                             <option value="Moped">Moped</option>
                             <option value="EBike">E-bike</option>
                           </select>
+                          <EmployeeFieldError field="driverType" messages={driverTypeErrors} />
                         </div>
                         <div className="employee-form-field">
                           <label htmlFor="admin-employee-target-hours">Target hours per week</label>
@@ -1322,8 +1413,11 @@ function AdminConsole({
                             step="1"
                             value={employeeForm.targetHours}
                             onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
+                            aria-invalid={targetHoursErrors.length > 0}
+                            aria-describedby={targetHoursErrors.length > 0 ? 'admin-employee-targetHours-error' : undefined}
                             required
                           />
+                          <EmployeeFieldError field="targetHours" messages={targetHoursErrors} />
                         </div>
                       </>
                     )}
@@ -1348,7 +1442,7 @@ function AdminConsole({
                       )}
                     </div>
                     {employeeSaveState.message && (
-                      <p className={`save-message ${employeeSaveState.status}`}>
+                      <p className={`save-message ${employeeSaveState.status}`} role={employeeSaveState.status === 'error' ? 'alert' : undefined}>
                         {employeeSaveState.message}
                       </p>
                     )}
@@ -2021,7 +2115,18 @@ function App() {
 
   async function saveEmployee(event) {
     event.preventDefault()
-    setEmployeeSaveState({ status: 'saving' })
+    if (!employeeForm.roles?.length) {
+      const message = 'Select at least one employee role before saving.'
+      setEmployeeSaveState({
+        status: 'error',
+        message,
+        fieldErrors: { roles: ['At least one employee role is required.'] },
+      })
+      setErrorPopup(message)
+      return
+    }
+
+    setEmployeeSaveState({ status: 'saving', message: 'Saving employee…', fieldErrors: {} })
 
     const endpoint = isCreatingEmployee
       ? '/api/admin/employees'
@@ -2043,10 +2148,15 @@ function App() {
       setSelectedEmployeeId(String(savedEmployee.id))
       setIsCreatingEmployee(false)
       setEmployeeEditorOpen(true)
-      setEmployeeSaveState({ status: 'success', message: 'Employee saved.' })
+      setEmployeeSaveState({ status: 'success', message: 'Employee saved.', fieldErrors: {} })
     } catch (error) {
-      setEmployeeSaveState({ status: 'error', message: error.message })
-      setErrorPopup(error.message)
+      const message = getEmployeeErrorSummary(error)
+      setEmployeeSaveState({
+        status: 'error',
+        message,
+        fieldErrors: error.fieldErrors || {},
+      })
+      setErrorPopup(error.message || message)
     }
   }
 
