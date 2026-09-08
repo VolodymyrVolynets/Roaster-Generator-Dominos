@@ -10,16 +10,13 @@ public sealed class RosterLabourService(AppDbContext db)
     public async Task<RosterLabourResponse> GetAsync(DateOnly weekStart, CancellationToken ct)
     {
         var plans = await db.RosterPlans.AsNoTracking()
-            .Where(plan => plan.WeekStart == weekStart &&
-                (plan.RosterKind == RosterKinds.Drivers || plan.RosterKind == RosterKinds.Inside))
-            .Select(plan => new { plan.Id, plan.RosterKind }).ToListAsync(ct);
-        var hasDrivers = plans.Any(plan => plan.RosterKind == RosterKinds.Drivers);
-        var hasInside = plans.Any(plan => plan.RosterKind == RosterKinds.Inside);
-        var planIds = plans.Select(plan => plan.Id).ToArray();
+            .Where(plan => plan.WeekStart == weekStart && plan.RosterKind == RosterKinds.Drivers)
+            .Select(plan => plan.Id).ToArrayAsync(ct);
+        var hasDrivers = plans.Length > 0;
         var shifts = await db.RosterShifts.AsNoTracking()
-            .Where(shift => planIds.Contains(shift.RosterPlanId))
+            .Where(shift => plans.Contains(shift.RosterPlanId))
             .Select(shift => new LabourShift(
-                shift.RosterPlan.RosterKind, shift.EmployeeId, shift.Date, shift.StartTime,
+                shift.EmployeeId, shift.Date, shift.StartTime,
                 shift.FinishTime, shift.Employee.HourlyRate, shift.Employee.User != null,
                 shift.Employee.ManagerProfile != null))
             .ToListAsync(ct);
@@ -43,7 +40,6 @@ public sealed class RosterLabourService(AppDbContext db)
         }).ToArray();
         decimal? weeklySales = sales.All(value => value.HasValue) ? sales.Sum(value => value!.Value) : null;
         var driverDays = new Amounts[7];
-        var insideDays = new Amounts[7];
         foreach (var shift in shifts)
         {
             var position = shift.Date.DayNumber - weekStart.DayNumber;
@@ -51,41 +47,32 @@ public sealed class RosterLabourService(AppDbContext db)
                 throw new InvalidOperationException("A saved roster shift is outside its roster week; correct the shift before calculating labour.");
             var isManager = managerIds.Contains(shift.EmployeeId) || !shift.HasUser && shift.HasManagerProfile;
             var amount = CalculateShift(shift, isManager);
-            var days = shift.RosterKind == RosterKinds.Drivers ? driverDays : insideDays;
-            days[position] += amount;
+            driverDays[position] += amount;
         }
 
-        // The daily team total is the currency rounding boundary. Weekly and
-        // combined amounts then sum those cents so every displayed total adds up.
+        // Round daily costs to cents before summing the weekly total.
         for (var position = 0; position < 7; position++)
         {
             driverDays[position] = RoundCost(driverDays[position]);
-            insideDays[position] = RoundCost(insideDays[position]);
         }
 
         var daysResponse = Enumerable.Range(0, 7).Select(position => new RosterLabourDayResponse
         {
             Date = weekStart.AddDays(position), Label = weekStart.AddDays(position).DayOfWeek.ToString(),
             TargetSales = sales[position],
-            Drivers = Totals(driverDays[position], sales[position], hasDrivers),
-            Inside = Totals(insideDays[position], sales[position], hasInside),
-            Combined = Totals(driverDays[position] + insideDays[position], sales[position], hasDrivers && hasInside)
+            Drivers = Totals(driverDays[position], sales[position], hasDrivers)
         }).ToArray();
         var drivers = driverDays.Aggregate(default(Amounts), (sum, day) => sum + day);
-        var inside = insideDays.Aggregate(default(Amounts), (sum, day) => sum + day);
         var warnings = new List<string>();
-        if (!hasDrivers) warnings.Add("No saved driver roster exists for this week. Combined labour is incomplete.");
-        if (!hasInside) warnings.Add("No saved in-store and manager roster exists for this week. Combined labour is incomplete.");
+        if (!hasDrivers) warnings.Add("No saved driver roster exists for this week. Generate a driver roster to calculate labour.");
         if (demand is null) warnings.Add("No demand template is available. Enter target sales to calculate labour percentages.");
         else if (sales.Any(value => value is null or <= 0))
             warnings.Add("Some days have missing or zero target sales. Labour percentages are unavailable for those days.");
         return new RosterLabourResponse
         {
             WeekStart = weekStart, DemandPlanId = demand?.Id,
-            HasDriverRoster = hasDrivers, HasInsideRoster = hasInside, TargetSales = weeklySales,
+            HasDriverRoster = hasDrivers, TargetSales = weeklySales,
             Drivers = Totals(drivers, weeklySales, hasDrivers),
-            Inside = Totals(inside, weeklySales, hasInside),
-            Combined = Totals(drivers + inside, weeklySales, hasDrivers && hasInside),
             Days = daysResponse, Warnings = warnings
         };
     }
@@ -124,7 +111,7 @@ public sealed class RosterLabourService(AppDbContext db)
     private static Amounts RoundCost(Amounts amounts) =>
         amounts with { Cost = decimal.Round(amounts.Cost, 2, MidpointRounding.AwayFromZero) };
 
-    private sealed record LabourShift(string RosterKind, Guid EmployeeId, DateOnly Date,
+    private sealed record LabourShift(Guid EmployeeId, DateOnly Date,
         TimeOnly StartTime, TimeOnly FinishTime, decimal HourlyRate, bool HasUser, bool HasManagerProfile);
 
     private readonly record struct Amounts(decimal Hours, decimal Cost)

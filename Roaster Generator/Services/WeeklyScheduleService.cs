@@ -43,9 +43,8 @@ public sealed class WeeklyScheduleService(AppDbContext db)
         var weekStart = GetWeekMonday(weekOffset);
         var weekEnd = weekStart.AddDays(7);
 
-        var employees = await db.Employees
+        var employees = await DriverRosterEmployees.Query(db)
             .AsNoTracking()
-            .Where(employee => employee.IsActive)
             .OrderBy(employee => employee.LastName)
             .ThenBy(employee => employee.FirstName)
             .ToListAsync(cancellationToken);

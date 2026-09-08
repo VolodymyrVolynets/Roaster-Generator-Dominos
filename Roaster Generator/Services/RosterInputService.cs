@@ -7,7 +7,6 @@ using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
-using Roaster_Generator.Security;
 
 namespace Roaster_Generator.Services;
 
@@ -24,7 +23,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
 {
     public async Task<LoadedRosterInput> LoadAsync(DateOnly weekStart, CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsValid(rosterKind)) throw new RosterInputException("Roster type must be drivers or inside.");
+        RosterKinds.EnsureEnabled(rosterKind);
         int TargetHours(Employee employee) => RosterKinds.TargetHours(employee, rosterKind);
         var weekEnd = weekStart.AddDays(7);
         // Demand is deliberately a single reusable Monday-to-Sunday template in this app.
@@ -51,57 +50,28 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             for (var hour = opening; hour < closing; hour++)
             {
                 values.TryGetValue(hour % 24, out var value);
-                var required = rosterKind == RosterKinds.Inside ? value?.InsideDemand : value?.Demand;
-                if (rosterKind == RosterKinds.Inside && (value?.Pizzas is null || value.Pizzas < 0))
-                    diagnostics.Add($"{date.DayOfWeek} {hour % 24:00}:00{(hour >= 24 ? " (+1 day)" : "")}: pizza count is missing or invalid. Enter 0 explicitly for an open hour with no pizzas.");
+                var required = value?.Demand;
                 if (required is null || required < 0)
                     diagnostics.Add($"{date.DayOfWeek} {hour % 24:00}:00{(hour >= 24 ? " (+1 day)" : "")}: enter a non-negative {rosterKind} demand; this hour is missing or invalid.");
-                else demand.Add(new RosterSolverDemand(date, hour,
-                    rosterKind == RosterKinds.Inside ? Math.Max(1, required.Value) : required.Value));
+                else demand.Add(new RosterSolverDemand(date, hour, required.Value));
             }
-            if (values.Any(v => (rosterKind == RosterKinds.Inside ? v.Value?.InsideDemand : v.Value?.Demand) > 0 && !Enumerable.Range(opening, closing - opening).Any(h => h % 24 == v.Key)))
+            if (values.Any(v => v.Value?.Demand > 0 && !Enumerable.Range(opening, closing - opening).Any(h => h % 24 == v.Key)))
                 warnings.Add($"{date.DayOfWeek}: demand entries outside configured shop hours are excluded.");
         }
         if (diagnostics.Count > 0)
             throw new RosterInputException("The demand template is incomplete. Enter demand for every open hour (use 0 when no drivers are needed).", diagnostics);
 
-        var roleMemberships = await db.UserRoles
-            .Join(db.Roles.Where(role => role.Name == RoleNames.Driver || role.Name == RoleNames.InStore || role.Name == RoleNames.Manager),
-                userRole => userRole.RoleId, role => role.Id, (userRole, role) => new { userRole.UserId, role.Name })
-            .Join(
-                db.Users.Where(user => user.EmployeeId.HasValue),
-                membership => membership.UserId,
-                user => user.Id,
-                (membership, user) => new { EmployeeId = user.EmployeeId!.Value, Role = membership.Name! })
-            .ToListAsync(ct);
-        var rolesByEmployee = roleMemberships.GroupBy(item => item.EmployeeId)
-            .ToDictionary(group => group.Key, group => group.Select(item => item.Role).ToHashSet());
-        var employeeIds = rolesByEmployee.Where(pair => rosterKind == RosterKinds.Inside
-                ? pair.Value.Contains(RoleNames.Manager) || pair.Value.Contains(RoleNames.InStore)
-                : pair.Value.Contains(RoleNames.Driver) && !pair.Value.Contains(RoleNames.Manager) && !pair.Value.Contains(RoleNames.InStore))
-            .Select(pair => pair.Key).ToArray();
-        var employees = await db.Employees
+        var employees = await DriverRosterEmployees.Query(db)
             .AsNoTracking()
             .Include(employee => employee.DriverProfile)
-            .Include(employee => employee.InStoreProfile)
-            .Include(employee => employee.ManagerProfile)
-            .Where(employee => employee.IsActive && employeeIds.Contains(employee.Id))
             .OrderBy(employee => employee.Id)
             .ToListAsync(ct);
-        // Profiles alone must not grant manager coverage after a role was removed.
-        foreach (var employee in employees)
-        {
-            var roles = rolesByEmployee[employee.Id];
-            if (!roles.Contains(RoleNames.Manager)) employee.ManagerProfile = null;
-            if (!roles.Contains(RoleNames.InStore)) employee.InStoreProfile = null;
-            if (!roles.Contains(RoleNames.Driver)) employee.DriverProfile = null;
-        }
         var ids = employees.Select(e => e.Id).ToArray();
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekEnd)
             .OrderBy(s => s.EmployeeId).ThenBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync(ct);
         var boundaryEntities = await db.RosterShifts.AsNoTracking()
             .Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart.AddDays(-3) && s.Date < weekEnd.AddDays(3)
-                && (s.Date < weekStart || s.Date >= weekEnd || s.RosterPlan.RosterKind != rosterKind))
+                && s.RosterPlan.RosterKind == RosterKinds.Drivers && (s.Date < weekStart || s.Date >= weekEnd))
             .OrderBy(s => s.EmployeeId).ThenBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync(ct);
         var boundaries = boundaryEntities.Select(s =>
         {
@@ -147,7 +117,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 e.Id,
                 e.FirstName,
                 e.LastName,
-                Roles = rolesByEmployee[e.Id].Order().ToArray(),
+                Roles = RosterKinds.Roles(e),
                 TargetHours = TargetHours(e),
                 e.DriverProfile?.DriverType
             }),

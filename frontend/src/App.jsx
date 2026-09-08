@@ -579,7 +579,6 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
         const existing = row.values.find((item) => item.position === position)
         let nextValue = { ...existing, position, [field]: numericValue }
         if (field === 'deliveries') nextValue = recalculateDemandValue(nextValue, current, ['demand'])
-        if (field === 'pizzas') nextValue = recalculateDemandValue(nextValue, current, ['insideDemand'])
 
         return {
           ...row,
@@ -608,7 +607,7 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
     const value = rawValue === '' ? '' : Number(rawValue)
     setPlan((current) => {
       const updated = { ...current, [field]: value }
-      return field === 'deliveriesPerDriverHour' || field === 'pizzasPerInsideHour'
+      return field === 'deliveriesPerDriverHour'
         ? recalculateDemandPlan(updated) : updated
     })
     setStatus({ status: 'idle', message: '' })
@@ -686,7 +685,6 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
           name,
           weekStart,
           deliveriesPerDriverHour: Number(plan.deliveriesPerDriverHour ?? 2.7),
-          pizzasPerInsideHour: Number(plan.pizzasPerInsideHour ?? 20),
           recalculateDemand,
           columns: plan.columns.map((column) => ({
             position: column.position,
@@ -698,15 +696,13 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
             values: row.values.map((value) => ({
               position: value.position,
               deliveries: value.deliveries ?? null,
-              pizzas: value.pizzas ?? null,
               demand: value.demand,
-              insideDemand: value.insideDemand ?? null,
             })),
           })),
         }),
       })
       setPlan(payload)
-      setStatus({ status: 'success', message: recalculateDemand ? 'Driver and inside demand recalculated and saved.' : 'Demand changes saved.' })
+      setStatus({ status: 'success', message: recalculateDemand ? 'Driver demand recalculated and saved.' : 'Demand changes saved.' })
       await refreshPlans()
     } catch (error) {
       setStatus({ status: 'error', message: error.message })
@@ -738,13 +734,13 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
   const dailyStaffingRows = demandSummary.days
   const selectedDaySummary = dailyStaffingRows.find((day) => day.position === selectedDemandDayPosition)
   const formatMoney = (value) => `€${Number(value ?? 0).toFixed(2)}`
-  const demandFields = [['deliveries', 'Deliveries'], ['demand', 'Drivers'], ['pizzas', 'Pizzas'], ['insideDemand', 'Inside staff']]
+  const demandFields = [['deliveries', 'Deliveries'], ['demand', 'Drivers']]
   function demandCell(row, column, field, label) {
     const value = row.values.find((item) => item.position === column.position) || {}
     const missing = value.isOpen && value[field] == null
     return <td key={`${row.hour}-${column.position}-${field}`} className={missing ? 'demand-missing-value' : undefined}>
-      <input type="number" min={field === 'insideDemand' && value.isOpen ? 1 : 0} max={field === 'demand' || field === 'insideDemand' ? 100000000 : 1000000}
-        step={field === 'demand' || field === 'insideDemand' ? '1' : '0.01'} value={value[field] ?? ''}
+      <input type="number" min="0" max={field === 'demand' ? 100000000 : 1000000}
+        step={field === 'demand' ? '1' : '0.01'} value={value[field] ?? ''}
         onChange={(event) => updateDemandValue(row.hour, column.position, field, event.target.value)}
         readOnly={!canEdit || value.isOpen === false} aria-readonly={!canEdit || value.isOpen === false}
         placeholder={value.isOpen === false ? 'Closed' : '—'}
@@ -769,10 +765,8 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
       )}
 
       <p className="demand-help">
-        Import the weekly Excel/CSV/table template with a pair of pizza and delivery columns for each weekday.
-        Driver demand is deliveries ÷ deliveries per driver-hour, rounded up. Inside demand is pizzas ÷ pizzas per inside-hour,
-        rounded up, including at least one manager at every open hour. Counts and demand can be adjusted below.
-        Blank pizza counts must be filled before generating an inside roster; enter 0 for a quiet open hour.
+        Import the weekly Excel/CSV/table template. Driver demand is deliveries ÷ deliveries per driver-hour,
+        rounded up. Delivery counts and driver demand can be adjusted below.
         Hours run from 06–23 followed by next-day 00–05. Imports preserve saved sales targets and productivity settings.
       </p>
 
@@ -811,7 +805,7 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
               <span className="eyebrow">Demand planning</span>
               <h3>Productivity and sales targets</h3>
               <p>
-                Inside-hours include managers. Productivity changes recalculate the demand preview immediately;
+                Productivity changes recalculate the demand preview immediately;
                 save to apply it to generation. Raising productivity needs fewer staff, lowering it needs more.
                 Recalculation replaces manual staff counts; save productivity changes before applying staffing overrides.
                 Labour costs and percentages are available on Saved rosters, using actual shifts and employee pay rates.
@@ -820,7 +814,6 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
             <div className="demand-productivity-grid">
               {[
                 ['deliveriesPerDriverHour', 'Deliveries per hour per driver', 2.7, 0.01, 1000],
-                ['pizzasPerInsideHour', 'Pizzas per hour per inside employee', 20, 0.01, 1000],
               ].map(([field, label, defaultValue, min, max]) => <label key={field}>{label}
                 <input type="number" min={min} max={max} step="0.01" required value={plan[field] ?? defaultValue}
                   onChange={(event) => updatePlanningSetting(field, event.target.value)} readOnly={!canEdit} aria-readonly={!canEdit} />
@@ -828,18 +821,13 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
             </div>
           </div>
 
-          {demandSummary.missingInsideHours > 0 && <p className="message info-message" role="status">
-            Inside demand is incomplete for {demandSummary.missingInsideHours} open hour{demandSummary.missingInsideHours === 1 ? '' : 's'}.
-            {' '}Fill the missing pizza counts and inside demand before generating an inside roster. Inside-hours below are incomplete until those hours are filled.
-          </p>}
           <div className="demand-labour-summary">
             <div className="demand-labour-weekly">
               <span>Weekly target sales</span>
               <strong>{formatMoney(demandSummary.targetSales)}</strong>
             </div>
             <div className="demand-labour-weekly"><span>Driver demand</span><strong>{demandSummary.driverHours} hours</strong><small>Required driver-hours this week</small></div>
-            <div className="demand-labour-weekly"><span>Inside demand</span><strong>{demandSummary.insideHours} hours</strong><small>Including managers</small></div>
-            <div className="demand-labour-weekly"><span>Weekly workload</span><strong>{demandSummary.deliveries} deliveries</strong><small>{demandSummary.pizzas} pizzas</small></div>
+            <div className="demand-labour-weekly"><span>Weekly workload</span><strong>{demandSummary.deliveries} deliveries</strong></div>
           </div>
 
           <div className="demand-labour-table-wrapper">
@@ -849,8 +837,7 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                   <th>Day</th>
                   <th>Target sales</th>
                   <th>Driver-hours</th>
-                  <th>Inside-hours</th>
-                  <th>Deliveries / pizzas</th>
+                  <th>Deliveries</th>
                 </tr>
               </thead>
               <tbody>
@@ -870,8 +857,7 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                       />
                     </td>
                     <td>{day.requiredDriverHours}</td>
-                    <td>{day.requiredInsideHours}</td>
-                    <td>{day.deliveries} / {day.pizzas}</td>
+                    <td>{day.deliveries}</td>
                   </tr>
                 ))}
               </tbody>
@@ -879,7 +865,7 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
           </div>
 
           <p className="demand-total-summary">
-            Weekly demand: <strong>{demandSummary.driverHours} driver-hours</strong> · <strong>{demandSummary.insideHours} inside-hours</strong>
+            Weekly demand: <strong>{demandSummary.driverHours} driver-hours</strong>
           </p>
 
           <div className="demand-mobile-controls">
@@ -904,10 +890,10 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                 <tr>
                   <th rowSpan="2">Hour</th>
                   {plan.columns.map((column) => (
-                    <th key={column.position} colSpan="4">
+                    <th key={column.position} colSpan="2">
                       <span className="demand-day-label">{column.label}</span>
                       <small className="demand-day-hours">
-                        {dailyStaffingRows.find((day) => day.position === column.position)?.requiredDriverHours ?? 0} driver-hours · {dailyStaffingRows.find((day) => day.position === column.position)?.requiredInsideHours ?? 0} inside-hours
+                        {dailyStaffingRows.find((day) => day.position === column.position)?.requiredDriverHours ?? 0} driver-hours
                       </small>
                     </th>
                   ))}
@@ -932,10 +918,10 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
               <table className="demand-table demand-mobile-table">
                 <thead>
                   <tr>
-                    <th colSpan="5">
+                    <th colSpan="3">
                       <span className="demand-day-label">{selectedDemandColumn?.label ?? 'Day'}</span>
                       <small className="demand-day-hours">
-                        {selectedDaySummary?.requiredDriverHours ?? 0} driver-hours · {selectedDaySummary?.requiredInsideHours ?? 0} inside-hours
+                        {selectedDaySummary?.requiredDriverHours ?? 0} driver-hours
                       </small>
                     </th>
                   </tr>
@@ -1018,7 +1004,6 @@ function AdminConsole({
 }) {
   const [activeTab, setActiveTab] = useState('employees')
   const [savedWeekStart, setSavedWeekStart] = useState(null)
-  const [savedRosterKind, setSavedRosterKind] = useState('drivers')
   const employeeEditorRef = useRef(null)
 
   useEffect(() => {
@@ -1083,7 +1068,7 @@ function AdminConsole({
       employees: (availability?.employees || [])
         .filter((employeeSchedule) => {
           const employee = employeeSchedule.roles?.length ? employeeSchedule : employeesById.get(String(employeeSchedule.employeeId)) || { roles: ['Driver'] }
-          return getRosterRoleGroup(employee).id === group.id
+          return getRosterRoleGroup(employee)?.id === group.id
         })
         .sort((first, second) => first.employeeName.localeCompare(second.employeeName, undefined, { sensitivity: 'base' })),
     }))
@@ -1097,7 +1082,6 @@ function AdminConsole({
   const payrollNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'payrollNumber')
   const roleErrors = getEmployeeFieldErrors(employeeSaveState, 'roles')
   const targetHoursErrors = getEmployeeFieldErrors(employeeSaveState, 'targetHours')
-  const insideTargetHoursErrors = getEmployeeFieldErrors(employeeSaveState, 'insideTargetHours')
   const hourlyRateErrors = getEmployeeFieldErrors(employeeSaveState, 'hourlyRate')
   const driverTypeErrors = getEmployeeFieldErrors(employeeSaveState, 'driverType')
 
@@ -1236,7 +1220,6 @@ function AdminConsole({
                               <span>Target hours: {employee.targetHours}</span>
                             </>
                           )}
-                          {(employeeHasRole(employee, 'InStore') || employeeHasRole(employee, 'Manager')) && <span>Inside target hours: {employee.insideTargetHours ?? 20}</span>}
                           <span className="employee-card-status">
                             {employee.isActive ? 'Active' : 'Inactive'}
                           </span>
@@ -1420,19 +1403,6 @@ function AdminConsole({
                       </>
                     )}
 
-                    {(employeeForm.roles?.includes('InStore') || employeeForm.roles?.includes('Manager')) && (
-                      <div className="employee-form-field">
-                        <label htmlFor="admin-employee-inside-target-hours">Inside target hours per week</label>
-                        <input id="admin-employee-inside-target-hours" type="number" min="0" max="168" step="1" required
-                          value={employeeForm.insideTargetHours ?? 20}
-                          onChange={(event) => updateEmployeeForm('insideTargetHours', Number(event.target.value))}
-                          aria-invalid={insideTargetHoursErrors.length > 0}
-                          aria-describedby={insideTargetHoursErrors.length > 0 ? 'admin-employee-insideTargetHours-error' : undefined} />
-                        <EmployeeFieldError field="insideTargetHours" messages={insideTargetHoursErrors} />
-                        <small>Used for in-store and manager roster fairness. Employees with an inside role are scheduled on the inside roster.</small>
-                      </div>
-                    )}
-
                     <div className="employee-form-actions">
                       <button type="submit" disabled={employeeSaveState.status === 'saving'}>
                         {employeeSaveState.status === 'saving' ? 'Saving…' : 'Save employee'}
@@ -1477,7 +1447,7 @@ function AdminConsole({
               <div className="section-heading">
                 <div>
                   <span className="eyebrow">Admin overview</span>
-                  <h2>Full availability roster</h2>
+                  <h2>Driver availability roster</h2>
                 </div>
                 <WeekSelector weekOffset={weekOffset} onChange={setWeekOffset} />
               </div>
@@ -1677,15 +1647,14 @@ function AdminConsole({
               fetchJson={fetchJson}
               setErrorPopup={setErrorPopup}
               isVisible={activeTab === 'generate-roster'}
-              onShowSaved={(weekStart, rosterKind) => { setSavedWeekStart(weekStart); setSavedRosterKind(rosterKind); switchTab('saved-rosters') }}
+              onShowSaved={(weekStart) => { setSavedWeekStart(weekStart); switchTab('saved-rosters') }}
             />
           )}
           {activeTab === 'saved-rosters' && <SavedRosterPanel
-            key={`${savedWeekStart || 'upcoming'}-${savedRosterKind}`}
+            key={savedWeekStart || 'upcoming'}
             fetchJson={fetchJson}
             setErrorPopup={setErrorPopup}
             initialWeekStart={savedWeekStart}
-            initialRosterKind={savedRosterKind}
             canEdit={authState.user.isAdmin}
           />}
         </section>

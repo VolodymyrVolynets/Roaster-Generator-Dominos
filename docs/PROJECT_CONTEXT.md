@@ -43,7 +43,7 @@ Roles:
 - `Admin`: system administrator. Can manage employee accounts, grant/remove roles, administer holidays, and use the management console.
 - `Manager`: employee work role with management-console access through `ManagerAccess` (`Admin` or `Manager`).
 - `Driver`: employee work role included in the driver roster.
-- `InStore`: employee work role included with managers in the inside roster.
+- `InStore`: employee work role with personal availability and holiday access; not included in roster generation.
 
 Every employee needs at least one work role. Existing legacy `User` roles are removed by the identity seeder; employees without a work role are assigned `Driver`. Newly created employee passwords are `12345`. The configured admin password is taken from `Auth__AdminPassword`. Existing passwords are intentionally preserved on normal startup.
 
@@ -70,8 +70,8 @@ If existing credentials are unknown, the opt-in `RESET_ADMIN_PASSWORD_ON_STARTUP
 Role-specific information is kept in one-to-one profiles:
 
 - `DriverProfile`: target weekly hours and `DriverType` (`Car`, `Moped`, `EBike`, default `Car`). Car and moped drivers can work alone. Any number of e-bike drivers requires at least one car or moped driver alongside them throughout their shifts.
-- `InStoreProfile`: inside weekly target hours (default `20`).
-- `ManagerProfile`: inside weekly target hours (default `20`) and eligibility to provide manager coverage.
+- `InStoreProfile`: retained in-store role data, including legacy target hours.
+- `ManagerProfile`: retained manager role data, including legacy target hours.
 
 Use profile entities for future role-specific fields. Do not add driver-only, in-store-only, or manager-only nullable columns to `Employee`.
 
@@ -79,7 +79,7 @@ The admin employee editor can create/update roles and profile data. It may displ
 
 Hourly pay is shared employee information rather than a demand setting. Existing employees receive the `14.50` default through migration. Omitted pay rates preserve an existing employee's rate when older clients update a profile; new employees use the default.
 
-The employee API accepts `insideTargetHours` separately from driver `targetHours`. Employees with both manager and in-store profiles use the manager target for inside fairness; saving an employee applies the inside target to both profiles. Availability and saved roster views group **Drivers** separately from **In-store & managers**. An employee with an inside role belongs to the inside group even if they also have a driver role. Active Identity roles, as well as profiles, determine generation eligibility.
+The employee API retains `insideTargetHours` for compatibility, but in-store staff and managers are not scheduled. Availability roster overviews and saved rosters show drivers only. Active driver profiles and Identity roles determine generation eligibility; employees with an in-store or manager role/profile are excluded even if they also have a driver role. Personal availability remains available to all active employees.
 
 ## Holidays
 
@@ -110,36 +110,34 @@ Enforce these rules in the API and validator/service layer; UI limits are only c
 
 The UI must not be treated as an authorization boundary. All data access still goes through protected API endpoints.
 
-Management permissions are role-scoped: managers can view the full availability roster, saved rosters, and demand plans, and can approve holiday requests. Demand imports/edits/deletes, roster generation/cancellation/settings, saved-roster edits, another employee's individual availability, and holiday CSV export require administrator access. Drivers, in-store staff, and managers can read and replace their own availability for the next three weeks through `GET/PUT /api/employees/{employeeId}/schedule`; the API verifies the linked employee ID and active status. Selecting someone in the management employee directory never changes the manager's personal availability target. The React controls mirror these restrictions, but the API and roster-generation hub enforce them independently.
+Management permissions are role-scoped: managers can view the driver availability roster, saved driver rosters, and demand plans, and can approve holiday requests. Demand imports/edits/deletes, roster generation/cancellation/settings, saved-roster edits, another employee's individual availability, and holiday CSV export require administrator access. Drivers, in-store staff, and managers can read and replace their own availability for the next three weeks through `GET/PUT /api/employees/{employeeId}/schedule`; the API verifies the linked employee ID and active status. Selecting someone in the management employee directory never changes the manager's personal availability target. The React controls mirror these restrictions, but the API and roster-generation hub enforce them independently.
 
 `frontend/nginx.conf` proxies `/api/` and `/hubs/` to the backend and serves the SPA for all other paths. Keep frontend API calls same-origin and use `credentials: 'include'` for Identity cookies.
 
 ## Demand and labour
 
-The single reusable weekly demand template retains both pizzas and deliveries from each weekday's imported pair. Admins may edit those counts, staff demands, productivity settings and sales targets. Managers have read-only access. Demand shows workload, required staff hours and sales targets; labour calculations appear with saved rosters.
+The single reusable weekly demand template uses delivery counts from each weekday's imported pair. The pizza column in legacy paired imports is ignored. Admins may edit deliveries, driver demand, delivery productivity and sales targets. Managers have read-only access. Demand shows driver workload, required hours and sales targets; labour calculations appear with saved driver rosters.
 
-- `DeliveriesPerDriverHour` defaults to `2.7`; `PizzasPerInsideHour` defaults to `20`. Both are editable from `0.01` to `1000`.
-- Calculated staff demand rounds workload/productivity **up** to whole employees. Inside demand includes at least one employee per open hour, including zero-pizza hours; the inside solver requires that employee to be a manager.
-- Missing pizza counts remain unknown. Existing demand templates need pizza counts entered or reimported before inside generation; omitted legacy data is not treated as zero pizzas.
+- `DeliveriesPerDriverHour` defaults to `2.7` and is editable from `0.01` to `1000`.
+- Calculated driver demand rounds deliveries/productivity **up** to whole employees. Pizza counts, inside staffing and inside productivity are absent from the demand API and interface. Existing database columns remain for historical compatibility.
 - Changing productivity or explicitly recalculating replaces staff-demand overrides; an ordinary save can retain explicit manual staff counts. Older request payloads preserve omitted workload/settings fields.
-- Saved-roster labour uses actual persisted shifts and each employee's current hourly pay rate. Drivers and in-store staff receive a 25% premium for hours worked on Sunday; managers keep their normal rate. Overnight shifts split at calendar midnight for Sunday pay, while totals remain assigned to the shift's business day for comparison with sales targets.
-- `GET /api/admin/roster/labour?weekStart=YYYY-MM-DD` returns daily and weekly hours, cost and percentage of target sales for drivers, in-store staff with managers, and both teams combined. It reads both roster kinds for that Monday and the current reusable demand template's weekday sales targets. Admins and managers may read it.
-- Labour totals refresh after roster edits and are recalculated from current employee rates whenever loaded, including for older rosters. Missing team rosters are identified explicitly; a combined subtotal remains partial until both are saved. Missing or zero sales targets show no percentage. The Sunday multiplier retains full decimal precision until labour costs are rounded to cents.
+- Saved-roster labour uses actual persisted driver roster shifts and each employee's current hourly pay rate. Sunday hours receive a 25% premium; the manager exemption remains for legacy driver shifts. Overnight shifts split at calendar midnight for Sunday pay, while totals remain assigned to the shift's business day for comparison with sales targets.
+- `GET /api/admin/roster/labour?weekStart=YYYY-MM-DD` returns daily and weekly driver hours, cost and percentage of target sales, using that Monday's driver roster and the current reusable demand template's weekday sales targets. Archived inside rosters are excluded. Admins and managers may read it.
+- Labour totals refresh after roster edits and are recalculated from current employee rates whenever loaded, including for older rosters. A driver roster is complete without an inside roster. Missing driver rosters or zero/missing sales targets show no percentage. The Sunday multiplier retains full decimal precision until labour costs are rounded to cents.
 
 ## Roster generation invariants
 
 Roster generation uses OR-Tools CP-SAT and is coordinated by the roster services/timer. Important rules include:
 
-- driver rosters use active driver employees who do not have an inside/manager work role; inside rosters use active in-store employees and managers with the corresponding profiles;
+- only driver rosters can be generated, edited or read; eligibility requires an active driver employee without an inside/manager role or profile;
 - generated shifts are continuous and 3–10 hours, inside availability;
-- exact hourly demand for the selected roster kind is required;
+- exact hourly driver demand is required;
 - at least one `Car` or `Moped` driver must cover each staffed hour; multiple `EBike` drivers cannot substitute for that support;
-- inside rosters require at least one `Manager` during every configured open hour, including hours with zero pizza demand;
 - minimum/preferred rest, latest start, fairness, and rolling history are enforced or scored according to saved settings;
 - generation and saving are protected against concurrent jobs and stale input;
 - failed or cancelled generation must not replace the saved roster.
 
-`RosterPlan.RosterKind` is `drivers` or `inside`, defaulting old records to `drivers`. The unique key is `(WeekStart, RosterKind)`; regenerating or editing one kind preserves the other. Read, summary, history, job-log, generation and cancellation endpoints accept the `rosterKind` query parameter (default `drivers`), and saved-roster PUT accepts `rosterKind` in its body. Generation remains admin-only, with one server worker and one database lock shared by both kinds. WebSocket messages include `rosterKind`, and the frontend separates job replay by both week and kind. History uses only the matching kind; adjacent-week shifts and any shifts in the other same-week roster are checked for overlap/rest conflicts. New saved employee snapshots include roles so managers can view correct groupings without loading the admin employee editor.
+`RosterPlan.RosterKind` and its `(WeekStart, RosterKind)` unique key remain for compatibility with stored history. Only `drivers` is enabled: read, summary, history, job-log, generation, cancellation and edit requests reject `inside`, with service-level guards as well as HTTP validation. Archived inside rows are retained but hidden and excluded from labour and driver rest boundaries. Generation remains admin-only with one server worker and one database lock. WebSocket messages still include `rosterKind`; the interface accepts driver events only. Driver history and adjacent saved driver weeks continue to provide fairness and rest checks.
 
 Fairness uses the previous four saved weeks for both hours versus targets and average shift duration. Historical duration is total scheduled hours divided by actual shift count, pooled across valid saved shifts (not an average of weekly averages). Missing or inconsistent legacy shift details do not contribute to duration history. The independent `HistoryShiftLengthWeight` preference defaults to `100`; administrators can set it from `0` (disabled) to `1000`. It prefers a duration of `clamp(7 + group historical average - employee historical average, 6, 8)` hours for employees with valid history, using a squared duration penalty. This gives drivers with shorter past shifts a stronger preference for longer shifts, while exact demand, availability, supervision and rest remain mandatory and target-hour fairness remains separately weighted. The solver precomputes eight costs per employee, adding no search variables for this preference.
 

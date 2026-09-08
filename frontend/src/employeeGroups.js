@@ -32,12 +32,6 @@ export const rosterRoleGroups = [
     roles: ['Driver'],
     description: 'Delivery drivers and their shifts.',
   },
-  {
-    id: 'inside',
-    label: 'In-store & managers',
-    roles: ['InStore', 'Manager'],
-    description: 'Shop staff, including managers who supervise every open hour.',
-  },
 ]
 
 export function employeeHasRole(employee, role) {
@@ -51,11 +45,14 @@ export function getEmployeeRoleGroup(employee) {
 }
 
 export function getRosterRoleGroup(employee) {
-  // An employee with an inside role belongs to that roster even if they also drive.
-  if (rosterRoleGroups[1].roles.some((role) => employeeHasRole(employee, role))) return rosterRoleGroups[1]
-  return rosterRoleGroups.find((group) =>
-    group.roles.some((role) => employeeHasRole(employee, role)),
-  ) || rosterRoleGroups[0]
+  if (employeeHasRole(employee, 'InStore') || employeeHasRole(employee, 'Manager')) return null
+  // Older driver rosters have no role snapshot.
+  return !employee?.roles?.length || employeeHasRole(employee, 'Driver') ? rosterRoleGroups[0] : null
+}
+
+export function driverRosterOnly(roster) {
+  if (!roster || (roster.rosterKind && roster.rosterKind !== 'drivers')) return null
+  return { ...roster, employees: (roster.employees || []).filter((employee) => getRosterRoleGroup(employee)?.id === 'drivers') }
 }
 
 export function compareEmployees(first, second) {

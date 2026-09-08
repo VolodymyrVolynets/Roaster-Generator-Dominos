@@ -8,13 +8,12 @@ test('missing roster is shown as not generated instead of zero labour', () => {
   })
 })
 
-test('combined partial week shows saved subtotal and suppresses a misleading percentage', () => {
-  const display = labourDisplay({ isComplete: false, scheduledHours: 8, labourCost: 116, labourPercentage: 50 }, { combined: true })
-  assert.equal(display.hours, '8h')
-  assert.equal(display.cost, '€116.00')
+test('incomplete driver cost is unavailable rather than a partial subtotal', () => {
+  const display = labourDisplay({ isComplete: false, scheduledHours: 8, labourCost: 116, labourPercentage: 50 })
+  assert.equal(display.hours, '—')
+  assert.equal(display.cost, '—')
   assert.equal(display.percentage, '—')
-  assert.equal(display.status, 'Partial · saved shifts only')
-  assert.equal(labourDisplay({ isComplete: false, scheduledHours: 0, labourCost: 0 }, { combined: true, hasSavedRoster: false }).cost, '—')
+  assert.equal(display.status, 'Not generated')
 })
 
 test('complete saved week uses API cost and percentage without estimating from demand', () => {

@@ -17,7 +17,7 @@ public sealed class RosterLabourTests
     private static readonly DateOnly Monday = new(2026, 9, 14);
 
     [Fact]
-    public async Task CostsActualSavedHoursAtEachEmployeesRateWithManagerSundayExemption()
+    public async Task CostsOnlySavedDriverRosterAndIgnoresExistingInsideRosters()
     {
         using var db = NewDb();
         var drivers = Plan(db, RosterKinds.Drivers);
@@ -39,17 +39,15 @@ public sealed class RosterLabourTests
         var result = await new RosterLabourService(db).GetAsync(Monday, default);
 
         Assert.True(result.Drivers.IsComplete);
-        Assert.True(result.Inside.IsComplete);
-        Assert.True(result.Combined.IsComplete);
         Assert.Equal(159m, result.Days[0].Drivers.LabourCost);
-        Assert.Equal(280m, result.Days[0].Inside.LabourCost);
         Assert.Equal(198.75m, result.Days[6].Drivers.LabourCost);
-        Assert.Equal(310m, result.Days[6].Inside.LabourCost);
-        Assert.Equal(947.75m, result.Combined.LabourCost);
-        Assert.Equal(52m, result.Combined.ScheduledHours);
+        Assert.Equal(357.75m, result.Drivers.LabourCost);
+        Assert.Equal(20m, result.Drivers.ScheduledHours);
         Assert.Equal(7000m, result.TargetSales);
-        Assert.Equal(13.54m, result.Combined.LabourPercentage);
-        Assert.Equal(50.88m, result.Days[6].Combined.LabourPercentage);
+        Assert.Equal(5.11m, result.Drivers.LabourPercentage);
+        Assert.Equal(19.88m, result.Days[6].Drivers.LabourPercentage);
+        Assert.Empty(result.Warnings);
+        Assert.Equal(2, await db.RosterPlans.CountAsync());
     }
 
     [Theory]
@@ -93,32 +91,26 @@ public sealed class RosterLabourTests
 
         // 18.125 * 6 = 108.75; rounding the rate first would incorrectly yield 108.78.
         Assert.Equal(108.75m, result.Drivers.LabourCost);
-        Assert.Equal(54.38m, result.Inside.LabourCost);
-        Assert.Equal(163.13m, result.Combined.LabourCost);
         Assert.Equal(result.Drivers.LabourCost, result.Days.Sum(day => day.Drivers.LabourCost));
-        Assert.Equal(result.Inside.LabourCost, result.Days.Sum(day => day.Inside.LabourCost));
-        Assert.Equal(result.Combined.LabourCost, result.Drivers.LabourCost + result.Inside.LabourCost);
-        Assert.All(result.Days, day => Assert.Equal(day.Combined.LabourCost,
-            day.Drivers.LabourCost + day.Inside.LabourCost));
     }
 
     [Theory]
     [InlineData(true, false, false)]
     [InlineData(false, true, true)]
     [InlineData(true, true, true)]
-    public async Task CurrentManagerRolesOverrideStaleOrMissingProfiles(
+    public async Task LegacyDriverShiftsKeepCurrentManagerPayExemption(
         bool managerProfile, bool managerRole, bool expectedExemption)
     {
         using var db = NewDb();
-        var inside = Plan(db, RosterKinds.Inside);
+        var drivers = Plan(db, RosterKinds.Drivers);
         var employee = Employee(db, 20m, managerProfile);
         AddUser(db, employee, managerRole ? RoleNames.Manager : RoleNames.InStore);
-        Shift(inside, employee, Monday.AddDays(6), 12, 16);
+        Shift(drivers, employee, Monday.AddDays(6), 12, 16);
         await db.SaveChangesAsync();
 
         var result = await new RosterLabourService(db).GetAsync(Monday, default);
 
-        Assert.Equal(expectedExemption ? 80m : 100m, result.Inside.LabourCost);
+        Assert.Equal(expectedExemption ? 80m : 100m, result.Drivers.LabourCost);
     }
 
     [Fact]
@@ -144,7 +136,6 @@ public sealed class RosterLabourTests
         Assert.Equal(43.5m, original.Drivers.LabourCost);
         Assert.Equal(currentDemand.Id, original.DemandPlanId);
         Assert.Equal(7000m, original.TargetSales);
-        Assert.False(original.HasInsideRoster);
 
         employee.HourlyRate = 20m;
         shift.FinishTime = new TimeOnly(18, 0);
@@ -162,7 +153,7 @@ public sealed class RosterLabourTests
     }
 
     [Fact]
-    public async Task EmptySavedRosterIsCompleteButMissingRosterIsPartial()
+    public async Task EmptySavedDriverRosterIsCompleteWithoutAnInsideRoster()
     {
         using var db = NewDb();
         Plan(db, RosterKinds.Drivers);
@@ -173,36 +164,52 @@ public sealed class RosterLabourTests
         var partial = await service.GetAsync(Monday, default);
         Assert.True(partial.HasDriverRoster);
         Assert.True(partial.Drivers.IsComplete);
-        Assert.False(partial.HasInsideRoster);
-        Assert.False(partial.Inside.IsComplete);
-        Assert.False(partial.Combined.IsComplete);
         Assert.Equal(0m, partial.Drivers.LabourPercentage);
-        Assert.Null(partial.Inside.LabourPercentage);
-        Assert.Null(partial.Combined.LabourPercentage);
-        Assert.Contains(partial.Warnings, warning => warning.Contains("Combined labour is incomplete"));
+        Assert.Empty(partial.Warnings);
 
         Plan(db, RosterKinds.Inside);
         await db.SaveChangesAsync();
         var complete = await service.GetAsync(Monday, default);
-        Assert.True(complete.Combined.IsComplete);
-        Assert.Equal(0m, complete.Combined.LabourCost);
-        Assert.Equal(0m, complete.Combined.LabourPercentage);
+        Assert.True(complete.Drivers.IsComplete);
+        Assert.Equal(0m, complete.Drivers.LabourCost);
+        Assert.Equal(0m, complete.Drivers.LabourPercentage);
+        Assert.Empty(complete.Warnings);
     }
 
     [Fact]
-    public async Task MissingAllRostersAndSalesReturnsExplicitIncompleteZeroSubtotal()
+    public async Task MissingDriverRosterAndSalesReturnsExplicitUnavailableLabour()
     {
         using var db = NewDb();
         var result = await new RosterLabourService(db).GetAsync(Monday, default);
         Assert.False(result.HasDriverRoster);
-        Assert.False(result.HasInsideRoster);
-        Assert.False(result.Combined.IsComplete);
-        Assert.Equal(0m, result.Combined.LabourCost);
+        Assert.False(result.Drivers.IsComplete);
+        Assert.Equal(0m, result.Drivers.LabourCost);
         Assert.Null(result.TargetSales);
-        Assert.Null(result.Combined.LabourPercentage);
+        Assert.Null(result.Drivers.LabourPercentage);
         Assert.Equal(7, result.Days.Count);
         Assert.All(result.Days, day => Assert.Null(day.TargetSales));
-        Assert.Equal(3, result.Warnings.Count);
+        Assert.Equal(2, result.Warnings.Count);
+    }
+
+    [Fact]
+    public async Task ArchivedInsideRosterNeverAppearsInLabourOrMakesDriverRosterComplete()
+    {
+        using var db = NewDb();
+        Shift(Plan(db, RosterKinds.Inside), Employee(db, 100m, manager: true), Monday, 12, 20);
+        Demand(db, 1000m);
+        await db.SaveChangesAsync();
+
+        var result = await new RosterLabourService(db).GetAsync(Monday, default);
+        Assert.False(result.HasDriverRoster);
+        Assert.False(result.Drivers.IsComplete);
+        Assert.Equal(0m, result.Drivers.LabourCost);
+        Assert.Null(result.Drivers.LabourPercentage);
+        Assert.All(result.Days, day => Assert.Equal(0m, day.Drivers.ScheduledHours));
+        var json = System.Text.Json.JsonSerializer.Serialize(result,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("inside", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("combined", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(await db.RosterPlans.ToListAsync());
     }
 
     [Theory]

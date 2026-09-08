@@ -16,7 +16,6 @@ public sealed class DemandPlanUpdateRequest
     public DateOnly WeekStart { get; set; }
 
     private decimal deliveriesPerDriverHour = 2.7m;
-    private decimal pizzasPerInsideHour = 20m;
 
     public decimal DeliveriesPerDriverHour
     {
@@ -24,15 +23,8 @@ public sealed class DemandPlanUpdateRequest
         set { deliveriesPerDriverHour = value; DeliveriesPerDriverHourSpecified = true; }
     }
 
-    public decimal PizzasPerInsideHour
-    {
-        get => pizzasPerInsideHour;
-        set { pizzasPerInsideHour = value; PizzasPerInsideHourSpecified = true; }
-    }
-
     // Presence is separate from zero/default values so older clients retain saved settings.
     internal bool DeliveriesPerDriverHourSpecified { get; private set; }
-    internal bool PizzasPerInsideHourSpecified { get; private set; }
 
     public bool RecalculateDemand { get; set; }
 
@@ -62,20 +54,12 @@ public sealed class DemandValueRequest
     public int Position { get; set; }
 
     private decimal? deliveries;
-    private decimal? pizzas;
     private int? demand;
-    private int? insideDemand;
 
     public decimal? Deliveries
     {
         get => deliveries;
         set { deliveries = value; DeliveriesSpecified = true; }
-    }
-
-    public decimal? Pizzas
-    {
-        get => pizzas;
-        set { pizzas = value; PizzasSpecified = true; }
     }
 
     public int? Demand
@@ -84,16 +68,8 @@ public sealed class DemandValueRequest
         set { demand = value; DemandSpecified = true; }
     }
 
-    public int? InsideDemand
-    {
-        get => insideDemand;
-        set { insideDemand = value; InsideDemandSpecified = true; }
-    }
-
     internal bool DeliveriesSpecified { get; private set; }
-    internal bool PizzasSpecified { get; private set; }
     internal bool DemandSpecified { get; private set; }
-    internal bool InsideDemandSpecified { get; private set; }
 }
 
 public sealed class DemandPlanSummaryResponse
@@ -125,11 +101,7 @@ public sealed class DemandPlanResponse
 
     public decimal DeliveriesPerDriverHour { get; init; }
 
-    public decimal PizzasPerInsideHour { get; init; }
-
     public int WeeklyDriverHours { get; init; }
-
-    public int WeeklyInsideHours { get; init; }
 
     public decimal WeeklyTargetSales { get; init; }
 
@@ -148,8 +120,6 @@ public sealed class DemandColumnResponse
 
     public int TotalHours { get; init; }
 
-    public int InsideTotalHours { get; init; }
-
     public decimal TargetSales { get; init; }
 }
 
@@ -163,7 +133,6 @@ public sealed class DemandStaffingDayResponse
 
     public int RequiredDriverHours { get; init; }
 
-    public int RequiredInsideHours { get; init; }
 }
 
 public sealed class DemandRowResponse
@@ -181,9 +150,5 @@ public sealed class DemandValueResponse
 
     public decimal? Deliveries { get; init; }
 
-    public decimal? Pizzas { get; init; }
-
     public int? Demand { get; init; }
-
-    public int? InsideDemand { get; init; }
 }

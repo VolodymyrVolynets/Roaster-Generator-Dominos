@@ -11,10 +11,9 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 {
     public async Task<RosterWeekSummaryResponse> GetSummaryAsync(int weekOffset, CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
+        RosterKinds.EnsureEnabled(rosterKind);
         var weekStart = WeeklyScheduleService.GetWeekMonday(weekOffset);
-        var ids = await db.Employees.AsNoTracking().Where(e => e.IsActive && (rosterKind == RosterKinds.Inside
-            ? e.ManagerProfile != null || e.InStoreProfile != null
-            : e.DriverProfile != null && e.ManagerProfile == null && e.InStoreProfile == null)).Select(e => e.Id).ToListAsync(ct);
+        var ids = await DriverRosterEmployees.Query(db).AsNoTracking().Select(e => e.Id).ToListAsync(ct);
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekStart.AddDays(7)).ToListAsync(ct);
         var demandExists = await db.DemandPlans.AnyAsync(ct);
         var required = 0;
@@ -36,6 +35,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
     public async Task<RosterPlanResponse?> GetAsync(DateOnly weekStart, CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
+        RosterKinds.EnsureEnabled(rosterKind);
         var plan = await db.RosterPlans.AsNoTracking().Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.DriverProfile)
             .Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.InStoreProfile)
             .Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.ManagerProfile)
@@ -45,6 +45,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
     public async Task<object> GetHistoryAsync(CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
+        RosterKinds.EnsureEnabled(rosterKind);
         var plans = await db.RosterPlans.AsNoTracking().Where(p => p.RosterKind == rosterKind).OrderByDescending(p => p.WeekStart)
             .Select(p => new { p.Id, p.WeekStart, p.RosterKind, p.UpdatedAtUtc, p.SnapshotJson }).Take(156).ToListAsync(ct);
         return plans.Select(p =>
@@ -59,6 +60,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
     // Caller owns the transaction; replacing shifts and the audit snapshot is one atomic save.
     public async Task<RosterPlanResponse> SaveAsync(LoadedRosterInput loaded, RosterSolverResult result, CancellationToken ct)
     {
+        RosterKinds.EnsureEnabled(loaded.Input.RosterKind);
         var validation = RosterSolver.Validate(loaded.Input, result.Shifts);
         if (!result.Success || validation.Count > 0)
             throw new RosterInputException("The generated roster failed final validation and was not saved.", validation);
@@ -69,6 +71,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         RosterPlanUpdateRequest request,
         CancellationToken ct)
     {
+        RosterKinds.EnsureEnabled(request.RosterKind);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var ownsLock = await db.Database
             .SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock(724863910) AS \"Value\"")

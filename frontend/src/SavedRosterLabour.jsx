@@ -3,8 +3,6 @@ import { formatLabourMoney, labourDisplay } from './rosterLabour'
 
 const groups = [
   { key: 'drivers', label: 'Drivers' },
-  { key: 'inside', label: 'In-store & managers' },
-  { key: 'combined', label: 'All employees' },
 ]
 
 export default function SavedRosterLabour({ fetchJson, query, refreshKey, editing = false }) {
@@ -21,16 +19,15 @@ export default function SavedRosterLabour({ fetchJson, query, refreshKey, editin
   }, [fetchJson, query, refreshKey, retryKey])
 
   const data = state.data
-  const hasSavedRoster = data?.hasDriverRoster || data?.hasInsideRoster
-  const display = (value, key) => labourDisplay(value, { combined: key === 'combined', hasSavedRoster })
+  const display = labourDisplay
 
   return <section className="saved-roster-labour" aria-labelledby="saved-roster-labour-heading">
     <div className="section-heading">
       <div><span className="eyebrow">Actual saved shifts</span><h3 id="saved-roster-labour-heading">Roster labour</h3></div>
     </div>
     <p className="demand-help">
-      Costs use each employee’s current hourly pay rate. Drivers and in-store staff receive an extra 25% for hours worked on Sunday;
-      managers receive their normal rate. Overnight shifts use the rate for each calendar hour and appear under their shift’s business day.
+      Costs use each driver’s current hourly pay rate, with an extra 25% for hours worked on Sunday.
+      Overnight shifts use the rate for each calendar hour and appear under their shift’s business day.
       Percentages compare labour cost with that day’s target sales from Demand; weekly percentages use weekly totals.
     </p>
     {editing && <p className="message info-message" role="status">Labour shows the saved roster. Save your shift changes to update these values.</p>}
@@ -58,7 +55,7 @@ export default function SavedRosterLabour({ fetchJson, query, refreshKey, editin
       </div>
       <div className="demand-table-wrapper">
         <table className="saved-roster-table roster-labour-table">
-          <caption className="visually-hidden">Daily labour from saved driver and inside rosters</caption>
+          <caption className="visually-hidden">Daily labour from saved driver rosters</caption>
           <thead>
             <tr><th rowSpan="2" scope="col">Day</th><th rowSpan="2" scope="col">Target sales</th>
               {groups.map(({ key, label }) => <th key={key} colSpan="3" scope="colgroup">{label}</th>)}
@@ -89,7 +86,7 @@ export default function SavedRosterLabour({ fetchJson, query, refreshKey, editin
           </tr></tfoot>
         </table>
       </div>
-      <p className="roster-footnote">A dash means no saved roster or no positive sales target. When one roster is missing, combined cost is a partial subtotal and its percentage is unavailable.</p>
+      <p className="roster-footnote">A dash means no saved driver roster or no positive sales target.</p>
     </>}
   </section>
 }

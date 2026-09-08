@@ -39,7 +39,7 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsValid(rosterKind)) return BadRequest(new { message = "Roster type must be drivers or inside." });
+        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
         if (weekStart.HasValue)
         {
             if (weekStart.Value.DayOfWeek != DayOfWeek.Monday)
@@ -104,7 +104,7 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsValid(rosterKind)) return BadRequest(new { message = "Roster type must be drivers or inside." });
+        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
         var selection = new WeekSelectionRequest
         {
             WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
@@ -127,7 +127,7 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsValid(rosterKind)) return BadRequest(new { message = "Roster type must be drivers or inside." });
+        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
         var validationResult = await weekValidator.ValidateAsync(request, cancellationToken);
 
         if (!validationResult.IsValid)
@@ -153,7 +153,7 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsValid(rosterKind)) return BadRequest(new { message = "Roster type must be drivers or inside." });
+        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
         var selection = new WeekSelectionRequest
         {
             WeekOffset = request.WeekOffset
@@ -189,14 +189,14 @@ public sealed class AdminRosterController(
 
     [HttpGet("history")]
     public async Task<IActionResult> History(CancellationToken ct, [FromQuery] string rosterKind = RosterKinds.Drivers) =>
-        !RosterKinds.IsValid(rosterKind) ? BadRequest(new { message = "Roster type must be drivers or inside." }) :
+        !RosterKinds.IsEnabled(rosterKind) ? BadRequest(new { message = RosterKinds.DisabledMessage }) :
         Ok(await rosterPlans.GetHistoryAsync(ct, rosterKind));
 
     [HttpGet("jobs")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Jobs([FromQuery] int weekOffset, CancellationToken ct, [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsValid(rosterKind)) return BadRequest(new { message = "Roster type must be drivers or inside." });
+        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
         var validation = await weekValidator.ValidateAsync(new WeekSelectionRequest { WeekOffset = weekOffset }, ct);
         if (!validation.IsValid) return BadRequest(new { message = "Select a week from next week through three weeks ahead." });
         return Ok(rosterTimer.GetLogs(WeeklyScheduleService.GetWeekMonday(weekOffset), rosterKind));

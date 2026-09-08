@@ -27,20 +27,22 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
 
     public IReadOnlyList<RosterTimerProgressResponse> GetLogs(DateOnly weekStart, string rosterKind = RosterKinds.Drivers)
     {
+        RosterKinds.EnsureEnabled(rosterKind);
         lock (gate) return latestJobs.TryGetValue((weekStart, rosterKind), out var job) ? job.Logs.ToArray() : [];
     }
 
     public async Task SendActiveLogsAsync(string connectionId)
     {
         RosterTimerProgressResponse[] logs;
-        lock (gate) logs = latestJobs.Values.SelectMany(j => j.Logs).OrderBy(l => l.TimestampUtc).ToArray();
+        lock (gate) logs = latestJobs.Values.Where(j => RosterKinds.IsEnabled(j.RosterKind))
+            .SelectMany(j => j.Logs).OrderBy(l => l.TimestampUtc).ToArray();
         foreach (var log in logs)
             await hub.Clients.Client(connectionId).SendAsync("rosterGenerationProgress", log);
     }
 
     public RosterTimerStartResponse Start(int weekOffset, string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsValid(rosterKind)) throw new RosterInputException("Roster type must be drivers or inside.");
+        RosterKinds.EnsureEnabled(rosterKind);
         ActiveJob job;
         lock (gate)
         {
@@ -59,6 +61,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
 
     public bool Cancel(int weekOffset, Guid? jobId = null, string rosterKind = RosterKinds.Drivers)
     {
+        RosterKinds.EnsureEnabled(rosterKind);
         lock (gate)
         {
             if (active is null || active.WeekStart != WeeklyScheduleService.GetWeekMonday(weekOffset) || active.RosterKind != rosterKind
@@ -120,8 +123,6 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             foreach (var warning in loaded.Warnings) Publish(job, "running", "input-check", 5, warning, "warning");
             Publish(job, "running", "input-check", 8,
                 $"Loaded {loaded.Input.Employees.Count} active employees and {loaded.Input.Demand.Sum(d => d.RequiredDrivers)} required {job.RosterKind} staff-hours. Latest shift start {loaded.Settings.LatestShiftStartHour:00}:00 (overnight finishes allowed). Minimum rest {loaded.Settings.MinimumRestHours}h; preferred rest {loaded.Settings.PreferredRestHours}h; solver budget {loaded.Settings.MaxSolveSeconds}s, one CPU worker.");
-            if (job.RosterKind == RosterKinds.Inside)
-                Publish(job, "running", "input-check", 8, "Inside roster includes in-store employees and managers. At least one manager must cover every open hour, including hours with zero pizzas.");
             var history = loaded.Input.History ?? [];
             Publish(job, "running", "fairness-history", 8,
                 $"Fairness uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Missing weeks are not counted as zero-hour work. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");

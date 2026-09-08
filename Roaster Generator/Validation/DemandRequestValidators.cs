@@ -48,10 +48,6 @@ public sealed class DemandPlanUpdateRequestValidator : AbstractValidator<DemandP
             .InclusiveBetween(0.01m, 1000m)
             .WithMessage("Deliveries per driver-hour must be between 0.01 and 1000.");
 
-        RuleFor(request => request.PizzasPerInsideHour)
-            .InclusiveBetween(0.01m, 1000m)
-            .WithMessage("Pizzas per inside employee-hour must be between 0.01 and 1000.");
-
         RuleFor(request => request.Columns)
             .NotNull()
             .WithMessage("Demand columns are required.")
@@ -155,19 +151,10 @@ public sealed class DemandValueRequestValidator : AbstractValidator<DemandValueR
             .When(value => value.Demand.HasValue)
             .WithMessage("Demand cannot be negative.");
 
-        RuleFor(value => value.InsideDemand)
-            .GreaterThanOrEqualTo(0)
-            .When(value => value.InsideDemand.HasValue)
-            .WithMessage("Inside demand cannot be negative.");
-
         RuleFor(value => value.Deliveries)
             .InclusiveBetween(0m, DemandStaffing.MaximumWorkload)
             .When(value => value.Deliveries.HasValue)
             .WithMessage("Hourly deliveries must be between 0 and 1000000.");
 
-        RuleFor(value => value.Pizzas)
-            .InclusiveBetween(0m, DemandStaffing.MaximumWorkload)
-            .When(value => value.Pizzas.HasValue)
-            .WithMessage("Hourly pizzas must be between 0 and 1000000.");
     }
 }
