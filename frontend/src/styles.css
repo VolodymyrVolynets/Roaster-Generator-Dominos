@@ -1331,6 +1331,82 @@ input:focus {
   border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+.employee-groups {
+  display: grid;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.employee-group {
+  --employee-accent: #7dd3fc;
+  --employee-border: rgba(125, 211, 252, 0.3);
+  --employee-surface: rgba(8, 47, 73, 0.16);
+  --employee-card-surface: rgba(30, 41, 59, 0.62);
+  padding: 16px;
+  border: 1px solid var(--employee-border);
+  border-radius: 16px;
+  background: var(--employee-surface);
+}
+
+.employee-group-drivers {
+  --employee-accent: #6ee7b7;
+  --employee-border: rgba(110, 231, 183, 0.32);
+  --employee-surface: rgba(6, 78, 59, 0.16);
+  --employee-card-surface: rgba(6, 78, 59, 0.24);
+}
+
+.employee-group-instore {
+  --employee-accent: #c4b5fd;
+  --employee-border: rgba(196, 181, 253, 0.34);
+  --employee-surface: rgba(76, 29, 149, 0.16);
+  --employee-card-surface: rgba(76, 29, 149, 0.24);
+}
+
+.employee-group-managers {
+  --employee-accent: #fcd34d;
+  --employee-border: rgba(252, 211, 77, 0.34);
+  --employee-surface: rgba(120, 53, 15, 0.16);
+  --employee-card-surface: rgba(120, 53, 15, 0.24);
+}
+
+.employee-group-other {
+  --employee-accent: #7dd3fc;
+}
+
+.employee-group-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.employee-group-label {
+  margin: 0;
+  color: var(--employee-accent);
+  font-size: 1.02rem;
+  font-weight: 850;
+}
+
+.employee-group-heading p {
+  margin: 4px 0 0;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.employee-group-count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--employee-border);
+  border-radius: 999px;
+  color: var(--employee-accent);
+  background: var(--employee-surface);
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .employee-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1360,9 +1436,19 @@ input:focus {
   text-align: left;
 }
 
+.employee-group .employee-card {
+  border-color: var(--employee-border);
+  background: var(--employee-card-surface);
+}
+
 .employee-card:hover:not(:disabled) {
   border-color: rgba(125, 211, 252, 0.8);
   background: rgba(30, 41, 59, 0.95);
+}
+
+.employee-group .employee-card:hover:not(:disabled) {
+  border-color: var(--employee-accent);
+  background: var(--employee-card-surface);
 }
 
 .employee-card strong {
@@ -1377,7 +1463,7 @@ input:focus {
 
 .employee-card-status {
   margin-top: auto;
-  color: #6ee7b7 !important;
+  color: var(--employee-accent, #6ee7b7) !important;
   font-weight: 800;
 }
 
@@ -1733,6 +1819,11 @@ select:disabled {
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .employee-group-heading {
+    flex-direction: column;
+    gap: 8px;
   }
 
   .week-selector {

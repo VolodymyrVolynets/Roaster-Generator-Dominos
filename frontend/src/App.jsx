@@ -21,6 +21,55 @@ const emptyEmployeeForm = {
   driverType: 'Car',
 }
 
+const employeeRoleGroups = [
+  {
+    id: 'drivers',
+    label: 'Drivers',
+    roles: ['Driver'],
+    description: 'Delivery staff included in roster generation.',
+  },
+  {
+    id: 'instore',
+    label: 'In-store',
+    roles: ['InStore'],
+    description: 'Employees assigned to in-store work.',
+  },
+  {
+    id: 'managers',
+    label: 'Managers & admins',
+    roles: ['Manager', 'Admin'],
+    description: 'Employees with management or administration access.',
+  },
+  {
+    id: 'other',
+    label: 'Other employees',
+    roles: [],
+    description: 'Employees without one of the groups above.',
+  },
+]
+
+function employeeHasRole(employee, role) {
+  return (employee.roles || []).some((item) => item.toLowerCase() === role.toLowerCase())
+}
+
+function getEmployeeRoleGroup(employee) {
+  return employeeRoleGroups.find((group) =>
+    group.roles.some((role) => employeeHasRole(employee, role)),
+  ) || employeeRoleGroups.at(-1)
+}
+
+function compareEmployees(first, second) {
+  if (first.isActive !== second.isActive) {
+    return first.isActive ? -1 : 1
+  }
+
+  return `${first.lastName} ${first.firstName}`.localeCompare(
+    `${second.lastName} ${second.firstName}`,
+    undefined,
+    { sensitivity: 'base' },
+  )
+}
+
 function parseDate(dateValue) {
   const [year, month, day] = dateValue.split('-').map(Number)
   return new Date(year, month - 1, day)
@@ -1048,6 +1097,14 @@ function AdminConsole({
     (employee) => String(employee.id) === selectedEmployeeId,
   )
   const activeEmployeeCount = employees.filter((employee) => employee.isActive).length
+  const groupedEmployees = employeeRoleGroups
+    .map((group) => ({
+      ...group,
+      employees: employees
+        .filter((employee) => getEmployeeRoleGroup(employee).id === group.id)
+        .sort(compareEmployees),
+    }))
+    .filter((group) => group.employees.length > 0)
   const editableRoles = authState.user.isAdmin
     ? ['Driver', 'InStore', 'Manager', 'Admin']
     : ['Driver', 'InStore', 'Manager']
@@ -1141,29 +1198,45 @@ function AdminConsole({
                 <p className="message error-message">Unable to load employees.</p>
               )}
 
-              <div className="employee-card-grid">
-                {employees.map((employee) => (
-                  <button
-                    type="button"
-                    className={`employee-card ${employee.isActive ? '' : 'inactive'}`}
-                    key={employee.id}
-                    onClick={() => openEmployee(employee.id)}
-                  >
-                    <strong>{employee.firstName} {employee.lastName}</strong>
-                    <span>Employee number: {employee.employeeNumber}</span>
-                    <span>Payroll number: {employee.payrollNumber || 'Not set'}</span>
-                    <span>Phone: {employee.phoneNumber || 'Not set'}</span>
-                    <span>Roles: {(employee.roles || []).join(', ') || 'Not set'}</span>
-                    {employee.roles?.includes('Driver') && (
-                      <>
-                        <span>Driver type: {employee.driverType || 'Car'}</span>
-                        <span>Target hours: {employee.targetHours}</span>
-                      </>
-                    )}
-                    <span className="employee-card-status">
-                      {employee.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </button>
+              <div className="employee-groups">
+                {groupedEmployees.map((group) => (
+                  <section className={`employee-group employee-group-${group.id}`} key={group.id}>
+                    <div className="employee-group-heading">
+                      <div>
+                        <h3 className="employee-group-label">{group.label}</h3>
+                        <p>{group.description}</p>
+                      </div>
+                      <span className="employee-group-count">
+                        {group.employees.length} {group.employees.length === 1 ? 'employee' : 'employees'}
+                      </span>
+                    </div>
+
+                    <div className="employee-card-grid">
+                      {group.employees.map((employee) => (
+                        <button
+                          type="button"
+                          className={`employee-card ${employee.isActive ? '' : 'inactive'}`}
+                          key={employee.id}
+                          onClick={() => openEmployee(employee.id)}
+                        >
+                          <strong>{employee.firstName} {employee.lastName}</strong>
+                          <span>Employee number: {employee.employeeNumber}</span>
+                          <span>Payroll number: {employee.payrollNumber || 'Not set'}</span>
+                          <span>Phone: {employee.phoneNumber || 'Not set'}</span>
+                          <span>Roles: {(employee.roles || []).join(', ') || 'Not set'}</span>
+                          {employeeHasRole(employee, 'Driver') && (
+                            <>
+                              <span>Driver type: {employee.driverType || 'Car'}</span>
+                              <span>Target hours: {employee.targetHours}</span>
+                            </>
+                          )}
+                          <span className="employee-card-status">
+                            {employee.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
 
