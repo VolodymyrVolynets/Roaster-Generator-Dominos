@@ -145,11 +145,6 @@ public sealed class EmployeesController(
             return null;
         }
 
-        if (User.IsInRole(RoleNames.Manager))
-        {
-            return Forbid();
-        }
-
         var user = await userManager.GetUserAsync(User);
 
         return user?.EmployeeId != employeeId ||

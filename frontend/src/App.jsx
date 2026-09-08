@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 import { calculateDemandSummary, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
+import { getAvailabilityEmployeeId } from './availabilityAccess'
 import {
   compareEmployees,
   employeeHasRole,
@@ -1170,6 +1171,15 @@ function AdminConsole({
                 Employee availability
               </button>
             )}
+            {!authState.user.isAdmin && authState.user.employeeId && (
+              <button
+                type="button"
+                className={activeTab === 'my-availability' ? 'admin-tab active' : 'admin-tab'}
+                onClick={() => switchTab('my-availability')}
+              >
+                My availability
+              </button>
+            )}
             <button
               type="button"
               className={activeTab === 'demand' ? 'admin-tab active' : 'admin-tab'}
@@ -1531,6 +1541,34 @@ function AdminConsole({
             </section>
           )}
 
+          {activeTab === 'my-availability' && !authState.user.isAdmin && authState.user.employeeId && (
+            <section className="admin-tools">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Personal schedule</span>
+                  <h2>My availability</h2>
+                  <p>Set the hours you are available to work for the selected week.</p>
+                </div>
+              </div>
+              {scheduleState.status === 'loading' && (
+                <p className="message info-message">Loading availability…</p>
+              )}
+              {scheduleState.status === 'error' && (
+                <p className="message error-message">{scheduleState.message}</p>
+              )}
+              <ScheduleEditor
+                schedule={schedule}
+                scheduleState={scheduleState}
+                weekOffset={weekOffset}
+                setWeekOffset={setWeekOffset}
+                saveState={saveState}
+                saveSchedule={saveSchedule}
+                updateDay={updateDay}
+                resetDay={resetDay}
+              />
+            </section>
+          )}
+
           {activeTab === 'employee-availability' && authState.user.isAdmin && (
             <section className="admin-tools">
               <div className="section-heading">
@@ -1825,14 +1863,8 @@ function InStoreWorkspace(props) {
       {...props}
       variant="instore"
       title="In-store workspace"
-      lead="Set your in-store availability. In-store-specific details will be added here later."
-    >
-      <section className="role-details instore-details">
-        <span className="eyebrow">In-store profile</span>
-        <h2>Availability and store work</h2>
-        <p>No additional in-store details have been configured yet.</p>
-      </section>
-    </EmployeeWorkspace>
+      lead="Set the hours you are available to work for the selected week."
+    />
   )
 }
 
@@ -1961,6 +1993,10 @@ function App() {
   const isSystemAdmin = isAuthenticated && authState.user.isAdmin
   const isManager = isAuthenticated && authState.user.roles?.includes('Manager')
   const isAdmin = isSystemAdmin || isManager
+  const availabilityEmployeeId = getAvailabilityEmployeeId(
+    isAuthenticated ? authState.user : null,
+    selectedEmployeeId,
+  )
 
   useEffect(() => {
     function handleAuthExpired(event) {
@@ -2020,7 +2056,7 @@ function App() {
   }, [authState, isAuthenticated, isAdmin, dataRefreshKey])
 
   useEffect(() => {
-    if (!isAuthenticated || !isSystemAdmin || !selectedEmployeeId) {
+    if (!availabilityEmployeeId) {
       setSchedule(null)
       setScheduleState({ status: 'idle' })
       return
@@ -2031,16 +2067,20 @@ function App() {
     setSaveState({ status: 'idle' })
     setErrorPopup('')
 
-    fetchJson(`/api/employees/${selectedEmployeeId}/schedule?weekOffset=${weekOffset}`)
+    let cancelled = false
+    fetchJson(`/api/employees/${availabilityEmployeeId}/schedule?weekOffset=${weekOffset}`)
       .then((payload) => {
+        if (cancelled) return
         setSchedule(payload)
         setScheduleState({ status: 'success' })
       })
       .catch((error) => {
+        if (cancelled) return
         setScheduleState({ status: 'error', message: error.message })
         setErrorPopup(error.message)
       })
-  }, [isAuthenticated, isSystemAdmin, selectedEmployeeId, weekOffset, dataRefreshKey])
+    return () => { cancelled = true }
+  }, [availabilityEmployeeId, weekOffset, dataRefreshKey])
 
   useEffect(() => {
     if (!isAdmin) {
@@ -2219,12 +2259,16 @@ function App() {
 
   async function saveSchedule(event) {
     event.preventDefault()
+    if (!availabilityEmployeeId || schedule?.employeeId !== availabilityEmployeeId ||
+        scheduleState.status !== 'success' || saveState.status === 'saving') {
+      return
+    }
     setSaveState({ status: 'saving' })
     setErrorPopup('')
 
     try {
       const payload = await fetchJson(
-        `/api/employees/${selectedEmployeeId}/schedule`,
+        `/api/employees/${availabilityEmployeeId}/schedule`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -2240,7 +2284,7 @@ function App() {
       )
 
       setSchedule(payload)
-      setSaveState({ status: 'success', message: 'Schedule saved.' })
+      setSaveState({ status: 'success', message: 'Availability saved.' })
     } catch (error) {
       setSaveState({ status: 'error', message: error.message })
       setErrorPopup(error.message)

@@ -100,14 +100,14 @@ Enforce these rules in the API and validator/service layer; UI limits are only c
 
 `frontend/src/App.jsx` selects the workspace from the roles returned by `/api/auth/me`:
 
-- `Admin` or `Manager`: management console, employee management, demand, roster, and holiday administration as authorized by the API;
+- `Admin` or `Manager`: management console, employee management, demand, roster, and holiday administration as authorized by the API. Linked managers also have a **My availability** tab for their own weekly availability;
 - `Driver`: availability and holiday tabs only;
 - `InStore`: in-store availability and holiday tabs;
 - other employee: shared availability and holiday workspace.
 
 The UI must not be treated as an authorization boundary. All data access still goes through protected API endpoints.
 
-Management permissions are role-scoped: managers can view the full availability roster, saved rosters, and demand plans, and can approve holiday requests. Demand imports/edits/deletes, roster generation/cancellation/settings, saved-roster edits, employee-level schedule access, and holiday CSV export require the `Admin` policy. The React controls mirror these restrictions, but the API and roster-generation hub enforce them independently.
+Management permissions are role-scoped: managers can view the full availability roster, saved rosters, and demand plans, and can approve holiday requests. Demand imports/edits/deletes, roster generation/cancellation/settings, saved-roster edits, another employee's individual availability, and holiday CSV export require administrator access. Drivers, in-store staff, and managers can read and replace their own availability for the next three weeks through `GET/PUT /api/employees/{employeeId}/schedule`; the API verifies the linked employee ID and active status. Selecting someone in the management employee directory never changes the manager's personal availability target. The React controls mirror these restrictions, but the API and roster-generation hub enforce them independently.
 
 `frontend/nginx.conf` proxies `/api/` and `/hubs/` to the backend and serves the SPA for all other paths. Keep frontend API calls same-origin and use `credentials: 'include'` for Identity cookies.
 
