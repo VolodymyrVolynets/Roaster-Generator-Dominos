@@ -31,6 +31,10 @@ public sealed class WeeklyScheduleResponse
 
     public DateOnly WeekEnd { get; init; }
 
+    public int MinimumEditableWeekOffset { get; set; } = 1;
+
+    public bool CanEdit { get; set; } = true;
+
     public IReadOnlyList<ScheduleDayResponse> Days { get; init; } = [];
 }
 

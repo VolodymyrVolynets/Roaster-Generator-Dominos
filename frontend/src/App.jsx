@@ -1710,7 +1710,7 @@ function AdminConsole({
   )
 }
 
-function TimeSelector({ id, label, value, onChange }) {
+function TimeSelector({ id, label, value, onChange, disabled = false }) {
   const selectedHour = value ? value.split(':')[0] : ''
 
   return (
@@ -1721,6 +1721,7 @@ function TimeSelector({ id, label, value, onChange }) {
         onChange={(event) =>
           onChange(event.target.value ? `${event.target.value}:00` : '')
         }
+        disabled={disabled}
       >
         <option value="">HH</option>
         {hours.map((hour) => (
@@ -1743,9 +1744,12 @@ function ScheduleEditor({
   updateDay,
   resetDay,
 }) {
+  const minimumEditableWeekOffset = schedule?.minimumEditableWeekOffset ?? minWeekOffset
+  const canEdit = schedule?.canEdit !== false
+
   function changeWeek(direction) {
     setWeekOffset((current) =>
-      Math.min(maxWeekOffset, Math.max(minWeekOffset, current + direction)),
+      Math.min(maxWeekOffset, Math.max(minimumEditableWeekOffset, current + direction)),
     )
   }
 
@@ -1766,7 +1770,7 @@ function ScheduleEditor({
             className="week-arrow"
             aria-label="Previous week"
             onClick={() => changeWeek(-1)}
-            disabled={weekOffset === minWeekOffset || scheduleState.status === 'loading'}
+            disabled={weekOffset <= minimumEditableWeekOffset || scheduleState.status === 'loading'}
           >
             ←
           </button>
@@ -1788,6 +1792,12 @@ function ScheduleEditor({
           </button>
         </div>
       </div>
+
+      {!canEdit && (
+        <p className="message info-message" role="status">
+          Availability for next week is locked from Saturday. Select the week after next to make changes.
+        </p>
+      )}
 
       <div className="schedule-table" role="table" aria-label="Weekly availability">
         <div className="schedule-row schedule-header" role="row">
@@ -1817,6 +1827,7 @@ function ScheduleEditor({
                 label={`${day.dayOfWeek} start time`}
                 value={day.startTime || ''}
                 onChange={(value) => updateDay(day.date, 'startTime', value)}
+                disabled={!canEdit}
               />
             </div>
             <div role="cell">
@@ -1828,6 +1839,7 @@ function ScheduleEditor({
                 label={`${day.dayOfWeek} finish time`}
                 value={day.finishTime || ''}
                 onChange={(value) => updateDay(day.date, 'finishTime', value)}
+                disabled={!canEdit}
               />
             </div>
             <div role="cell">
@@ -1835,7 +1847,7 @@ function ScheduleEditor({
                 type="button"
                 className="reset-button"
                 onClick={() => resetDay(day.date)}
-                disabled={!day.startTime && !day.finishTime}
+                disabled={!canEdit || (!day.startTime && !day.finishTime)}
               >
                 Reset
               </button>
@@ -1848,7 +1860,7 @@ function ScheduleEditor({
         <span className={`save-message ${saveState.status}`} aria-live="polite">
           {saveState.message || 'Leave both fields empty for a day off.'}
         </span>
-        <button type="submit" disabled={saveState.status === 'saving'}>
+        <button type="submit" disabled={!canEdit || saveState.status === 'saving'}>
           {saveState.status === 'saving' ? 'Saving…' : 'Save availability'}
         </button>
       </div>
@@ -2271,7 +2283,7 @@ function App() {
   async function saveSchedule(event) {
     event.preventDefault()
     if (!availabilityEmployeeId || schedule?.employeeId !== availabilityEmployeeId ||
-        scheduleState.status !== 'success' || saveState.status === 'saving') {
+        scheduleState.status !== 'success' || schedule?.canEdit === false || saveState.status === 'saving') {
       return
     }
     setSaveState({ status: 'saving' })

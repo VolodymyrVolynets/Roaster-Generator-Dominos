@@ -86,6 +86,8 @@ builder.Services.AddScoped<IValidator<DemandImportRequest>, DemandImportRequestV
 builder.Services.AddScoped<IValidator<DemandPlanUpdateRequest>, DemandPlanUpdateRequestValidator>();
 builder.Services.AddScoped<DemandService>();
 builder.Services.AddScoped<WeeklyScheduleService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<AvailabilityEditPolicy>();
 builder.Services.AddScoped<RosterPlanService>();
 builder.Services.AddScoped<RosterLabourService>();
 builder.Services.AddScoped<RosterSettingsService>();

@@ -109,6 +109,46 @@ public sealed class EmployeeAvailabilityAccessTests
     }
 
     [Fact]
+    public async Task EmployeesCannotEditNextWeekFromSaturdayButCanEditTheFollowingWeek()
+    {
+        // 23:30 UTC on Friday is 00:30 Saturday in Dublin during daylight saving time.
+        using var fixture = new ScheduleFixture([RoleNames.Driver],
+            now: new DateTimeOffset(2026, 9, 11, 23, 30, 0, TimeSpan.Zero));
+
+        var lockedWeek = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.False(lockedWeek.CanEdit);
+        Assert.Equal(2, lockedWeek.MinimumEditableWeekOffset);
+
+        var lockedResult = Assert.IsType<BadRequestObjectResult>(
+            await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(), default));
+        var problem = Assert.IsType<ValidationProblemDetails>(lockedResult.Value);
+        Assert.Contains(nameof(WeeklyScheduleRequest.WeekOffset), problem.Errors.Keys);
+        Assert.Contains(AvailabilityEditPolicy.WeekendLockMessage,
+            problem.Errors[nameof(WeeklyScheduleRequest.WeekOffset)]);
+
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(
+            fixture.EmployeeId, NewAvailability(2), default));
+        Assert.True(saved.CanEdit);
+        Assert.Equal(2, saved.MinimumEditableWeekOffset);
+        Assert.Equal(WeeklyScheduleService.GetWeekMonday(2), saved.WeekStart);
+    }
+
+    [Fact]
+    public async Task AdministratorsCanEditNextWeekOnSaturday()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Admin], linkUser: false,
+            now: new DateTimeOffset(2026, 9, 11, 23, 30, 0, TimeSpan.Zero));
+
+        var schedule = ReadSchedule(await fixture.Controller.GetSchedule(fixture.OtherEmployeeId, 1, default));
+        Assert.True(schedule.CanEdit);
+        Assert.Equal(1, schedule.MinimumEditableWeekOffset);
+
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(
+            fixture.OtherEmployeeId, NewAvailability(), default));
+        Assert.True(saved.CanEdit);
+    }
+
+    [Fact]
     public async Task ManagerAvailabilityStillValidatesTheEditableWeekAndShopHours()
     {
         using var fixture = new ScheduleFixture([RoleNames.Manager]);
@@ -135,12 +175,12 @@ public sealed class EmployeeAvailabilityAccessTests
     private static WeeklyScheduleResponse ReadSchedule(IActionResult result) =>
         Assert.IsType<WeeklyScheduleResponse>(Assert.IsType<OkObjectResult>(result).Value);
 
-    private static WeeklyScheduleRequest NewAvailability() => new()
+    private static WeeklyScheduleRequest NewAvailability(int weekOffset = 1) => new()
     {
-        WeekOffset = 1,
+        WeekOffset = weekOffset,
         Days = Enumerable.Range(0, 7).Select(day => new ScheduleDayRequest
         {
-            Date = WeeklyScheduleService.GetWeekMonday(1).AddDays(day),
+            Date = WeeklyScheduleService.GetWeekMonday(weekOffset).AddDays(day),
             StartTime = day == 0 ? new TimeOnly(14, 0) : null,
             FinishTime = day == 0 ? new TimeOnly(20, 0) : null
         }).ToList()
@@ -158,7 +198,7 @@ public sealed class EmployeeAvailabilityAccessTests
         public ApplicationUser User { get; }
         public EmployeesController Controller { get; }
 
-        public ScheduleFixture(string[] roles, bool linkUser = true)
+        public ScheduleFixture(string[] roles, bool linkUser = true, DateTimeOffset? now = null)
         {
             Db.Employees.AddRange(new Employee { Id = EmployeeId }, new Employee { Id = OtherEmployeeId });
             var monday = WeeklyScheduleService.GetWeekMonday(1);
@@ -180,7 +220,8 @@ public sealed class EmployeeAvailabilityAccessTests
             var claims = roles.Select(role => new Claim(ClaimTypes.Role, role)).ToList();
             claims.Add(new Claim(ClaimTypes.NameIdentifier, User.Id.ToString()));
             Controller = new EmployeesController(Db, userManager, new WeekSelectionRequestValidator(),
-                new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions())), new WeeklyScheduleService(Db))
+                new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions())), new WeeklyScheduleService(Db),
+                new AvailabilityEditPolicy(new FixedTimeProvider(now ?? new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero))))
             {
                 ControllerContext = new ControllerContext
                 {
@@ -198,5 +239,10 @@ public sealed class EmployeeAvailabilityAccessTests
             Db.Dispose();
             services.Dispose();
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }

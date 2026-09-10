@@ -20,7 +20,8 @@ public sealed class EmployeesController(
     UserManager<ApplicationUser> userManager,
     IValidator<WeekSelectionRequest> weekValidator,
     IValidator<WeeklyScheduleRequest> scheduleValidator,
-    WeeklyScheduleService schedules) : ApiControllerBase
+    WeeklyScheduleService schedules,
+    AvailabilityEditPolicy availabilityEdits) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetEmployees(CancellationToken cancellationToken)
@@ -91,9 +92,10 @@ public sealed class EmployeesController(
             selection.WeekOffset,
             cancellationToken);
 
-        return schedule is null
-            ? NotFound(new { message = "Employee not found." })
-            : Ok(schedule);
+        if (schedule is null) return NotFound(new { message = "Employee not found." });
+
+        ApplyEditAccess(schedule, selection.WeekOffset);
+        return Ok(schedule);
     }
 
     [HttpPut("{employeeId:guid}/schedule")]
@@ -116,6 +118,18 @@ public sealed class EmployeesController(
             return ValidationError(ToErrors(validationResult), "The shift schedule is invalid.");
         }
 
+        var minimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(
+            User.IsInRole(RoleNames.Admin));
+        if (request.WeekOffset < minimumEditableWeekOffset)
+        {
+            return ValidationError(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(request.WeekOffset)] = [AvailabilityEditPolicy.WeekendLockMessage]
+                },
+                "This availability week is locked.");
+        }
+
         if (employeeId == Guid.Empty)
         {
             return ValidationError(
@@ -131,9 +145,17 @@ public sealed class EmployeesController(
             request,
             cancellationToken);
 
-        return schedule is null
-            ? NotFound(new { message = "Employee not found." })
-            : Ok(schedule);
+        if (schedule is null) return NotFound(new { message = "Employee not found." });
+
+        ApplyEditAccess(schedule, request.WeekOffset);
+        return Ok(schedule);
+    }
+
+    private void ApplyEditAccess(WeeklyScheduleResponse schedule, int weekOffset)
+    {
+        schedule.MinimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(
+            User.IsInRole(RoleNames.Admin));
+        schedule.CanEdit = weekOffset >= schedule.MinimumEditableWeekOffset;
     }
 
     private async Task<IActionResult?> CheckScheduleAccessAsync(
