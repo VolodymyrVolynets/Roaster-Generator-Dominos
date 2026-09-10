@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calculateDemandSummary, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning.js'
+import { calculateDemandLabour, calculateDemandSummary, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning.js'
 
 const settings = { deliveriesPerDriverHour: 2.7 }
 
@@ -63,4 +63,59 @@ test('missing demand plans and closed hours show no driver hours', () => {
   assert.equal(summary.driverHours, 0)
   assert.equal(summary.targetSales, 0)
   assert.equal(summary.deliveries, 0)
+})
+
+test('planned labour uses demand and target-hour-weighted active driver pay', () => {
+  const plan = {
+    columns: [
+      { position: 0, label: 'Monday', targetSales: 100 },
+      { position: 5, label: 'Saturday', targetSales: 100 },
+      { position: 6, label: 'Sunday', targetSales: 100 },
+    ],
+    rows: [
+      { hour: 12, values: [
+        { position: 0, isOpen: true, demand: 2 },
+        { position: 5, isOpen: true, demand: 0 },
+        { position: 6, isOpen: true, demand: 1 },
+      ] },
+      { hour: 1, values: [
+        { position: 0, isOpen: true, demand: 0 },
+        { position: 5, isOpen: true, demand: 2 },
+        { position: 6, isOpen: true, demand: 1 },
+      ] },
+    ],
+  }
+  const employees = [
+    { isActive: true, roles: ['Driver'], targetHours: 10, hourlyRate: 10 },
+    { isActive: true, roles: ['Driver'], targetHours: 30, hourlyRate: 20 },
+    { isActive: false, roles: ['Driver'], targetHours: 100, hourlyRate: 100 },
+    { isActive: true, roles: ['Driver', 'Manager'], targetHours: 100, hourlyRate: 100 },
+  ]
+
+  const labour = calculateDemandLabour(plan, employees)
+
+  assert.equal(labour.eligibleDriverCount, 2)
+  assert.equal(labour.averageHourlyRate, 17.5)
+  assert.equal(labour.driverHours, 6)
+  assert.equal(labour.days[0].labourCost, 35)
+  assert.equal(labour.days[1].sundayPremiumHours, 2)
+  assert.equal(labour.days[1].labourCost, 43.75)
+  assert.equal(labour.days[2].sundayPremiumHours, 1)
+  assert.equal(labour.days[2].labourCost, 39.38)
+  assert.equal(labour.labourCost, 118.13)
+  assert.equal(labour.labourPercentage, 39.38)
+})
+
+test('planned labour is unavailable without eligible driver rates or complete demand', () => {
+  const plan = {
+    columns: [{ position: 0, label: 'Monday', targetSales: 100 }],
+    rows: [{ hour: 12, values: [{ position: 0, isOpen: true, demand: null }] }],
+  }
+
+  assert.equal(calculateDemandLabour(plan, []).labourCost, null)
+  const incomplete = calculateDemandLabour(plan, [
+    { isActive: true, roles: ['Driver'], targetHours: 20, hourlyRate: 14.5 },
+  ])
+  assert.equal(incomplete.isComplete, false)
+  assert.equal(incomplete.labourCost, null)
 })

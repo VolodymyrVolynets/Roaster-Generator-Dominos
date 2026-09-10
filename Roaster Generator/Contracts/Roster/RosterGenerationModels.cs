@@ -38,6 +38,20 @@ public sealed class RosterPlanResponse
 
     public DateTimeOffset UpdatedAtUtc { get; init; }
 
+    public string? DemandFingerprint { get; init; }
+
+    public string? AvailabilityFingerprint { get; init; }
+
+    public string FreshnessStatus { get; set; } = "unknown";
+
+    public IReadOnlyList<string> FreshnessWarnings { get; set; } = [];
+
+    public IReadOnlyList<RosterCoverageResponse>? CurrentCoverage { get; set; }
+
+    public int? CurrentDemandHours { get; set; }
+
+    public double? CurrentCoveragePercent { get; set; }
+
     public int TotalDemandHours { get; init; }
 
     public int TotalScheduledHours { get; init; }

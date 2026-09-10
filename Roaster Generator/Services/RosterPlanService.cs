@@ -40,7 +40,8 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
             .Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.InStoreProfile)
             .Include(p => p.Shifts).ThenInclude(s => s.Employee).ThenInclude(e => e.ManagerProfile)
             .SingleOrDefaultAsync(p => p.WeekStart == weekStart && p.RosterKind == rosterKind, ct);
-        return plan is null ? null : ToResponse(plan);
+        if (plan is null) return null;
+        return await AddFreshnessAsync(plan, ToResponse(plan), ct);
     }
 
     public async Task<object> GetHistoryAsync(CancellationToken ct, string rosterKind = RosterKinds.Drivers)
@@ -240,6 +241,8 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         return new RosterPlanResponse
         {
             Id = plan.Id, WeekStart = plan.WeekStart, RosterKind = plan.RosterKind, UpdatedAtUtc = plan.UpdatedAtUtc,
+            DemandFingerprint = loaded.DemandFingerprint, AvailabilityFingerprint = loaded.AvailabilityFingerprint,
+            FreshnessStatus = "current",
             TotalDemandHours = loaded.Input.Demand.Sum(d => d.RequiredDrivers), TotalScheduledHours = result.Shifts.Sum(s => s.DurationHours),
             CoveragePercent = coveragePercent, SolverStatus = result.Status, IsOptimal = result.Status == "optimal", SolveSeconds = result.WallTimeSeconds,
             Settings = loaded.Settings, Employees = employees, Warnings = warnings,
@@ -249,6 +252,113 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
             Coverage = coverage
         };
     }
+
+    private async Task<RosterPlanResponse> AddFreshnessAsync(
+        RosterPlan plan,
+        RosterPlanResponse response,
+        CancellationToken ct)
+    {
+        LoadedRosterInput loaded;
+        try
+        {
+            loaded = await inputs.LoadAsync(plan.WeekStart, ct, plan.RosterKind);
+        }
+        catch (RosterInputException exception)
+        {
+            response.FreshnessStatus = "stale";
+            response.FreshnessWarnings = new[]
+                {
+                    "The current demand or driver availability cannot be validated against this saved roster.",
+                    exception.Message
+                }
+                .Concat(exception.Diagnostics)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            return response;
+        }
+
+        var demandTracked = !string.IsNullOrWhiteSpace(response.DemandFingerprint);
+        var availabilityTracked = !string.IsNullOrWhiteSpace(response.AvailabilityFingerprint);
+        var demandChanged = demandTracked
+            ? !string.Equals(response.DemandFingerprint, loaded.DemandFingerprint, StringComparison.Ordinal)
+            : response.Coverage.Count > 0 && !SavedDemandMatches(response.Coverage, loaded.Input.Demand);
+        var availabilityChanged = availabilityTracked &&
+            !string.Equals(response.AvailabilityFingerprint, loaded.AvailabilityFingerprint, StringComparison.Ordinal);
+
+        if (!demandChanged && !availabilityChanged)
+        {
+            response.FreshnessStatus = demandTracked && availabilityTracked ? "current" : "unknown";
+            response.FreshnessWarnings = [];
+            return response;
+        }
+
+        var shifts = plan.Shifts.Select(ToSolverShift).ToArray();
+        var currentCoverage = BuildCurrentCoverage(loaded.Input, shifts);
+        var currentDemandHours = currentCoverage.Sum(slot => slot.Required);
+        var coveredDemand = currentCoverage.Sum(slot => Math.Min(slot.Required, slot.Scheduled));
+        var diagnostics = RosterSolver.Validate(loaded.Input, shifts);
+        var warnings = new List<string>();
+        if (demandChanged)
+            warnings.Add("Demand changed after this roster was saved. The highlighted coverage now uses the current demand template.");
+        if (availabilityChanged)
+            warnings.Add("Driver availability, eligibility, type, or target hours changed after this roster was saved.");
+        warnings.AddRange(diagnostics);
+
+        response.FreshnessStatus = "stale";
+        response.FreshnessWarnings = warnings.Distinct(StringComparer.Ordinal).ToArray();
+        response.CurrentCoverage = currentCoverage;
+        response.CurrentDemandHours = currentDemandHours;
+        response.CurrentCoveragePercent = currentDemandHours > 0
+            ? Math.Round(100d * coveredDemand / currentDemandHours, 2)
+            : 100;
+        return response;
+    }
+
+    private static bool SavedDemandMatches(
+        IReadOnlyList<RosterCoverageResponse> saved,
+        IReadOnlyList<RosterSolverDemand> current)
+    {
+        if (saved.Count != current.Count) return false;
+        var savedSlots = new List<(DateOnly Date, int Hour, int Required)>();
+        foreach (var slot in saved)
+        {
+            if (!TimeOnly.TryParseExact(slot.StartTime, "HH:mm", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var start))
+                return false;
+            savedSlots.Add((slot.Date, start.Hour + slot.StartDayOffset * 24, slot.Required));
+        }
+        var orderedSavedSlots = savedSlots
+            .OrderBy(slot => slot.Date)
+            .ThenBy(slot => slot.Hour);
+        var currentSlots = current
+            .Select(slot => (slot.Date, slot.Hour, Required: slot.RequiredDrivers))
+            .OrderBy(slot => slot.Date)
+            .ThenBy(slot => slot.Hour);
+        return orderedSavedSlots.SequenceEqual(currentSlots);
+    }
+
+    private static RosterSolverShift ToSolverShift(RosterShift shift)
+    {
+        var start = shift.StartTime.Hour;
+        if (start < 6) start += 24;
+        var finish = shift.FinishTime.Hour;
+        while (finish <= start) finish += 24;
+        return new RosterSolverShift(shift.EmployeeId, shift.Date, start, finish);
+    }
+
+    private static IReadOnlyList<RosterCoverageResponse> BuildCurrentCoverage(
+        RosterSolverInput input,
+        IReadOnlyList<RosterSolverShift> shifts) =>
+        input.Demand.OrderBy(demand => demand.Date).ThenBy(demand => demand.Hour)
+            .Select(demand => new RosterCoverageResponse
+            {
+                Date = demand.Date,
+                StartTime = $"{demand.Hour % 24:00}:00",
+                StartDayOffset = demand.Hour / 24,
+                Required = demand.RequiredDrivers,
+                Scheduled = shifts.Count(shift => shift.Date == demand.Date && shift.StartHour <= demand.Hour && shift.FinishHour > demand.Hour)
+            })
+            .ToArray();
 
     private static RosterPlanResponse ToResponse(RosterPlan plan)
     {

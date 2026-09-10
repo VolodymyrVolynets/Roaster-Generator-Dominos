@@ -148,6 +148,7 @@ public sealed class DriverOnlyRosterTests
         var saved = await plans.GetAsync(monday, default);
         Assert.Equal(currentDriver.Id, saved!.Id);
         Assert.Equal(6, saved.TotalScheduledHours);
+        Assert.Equal("unknown", saved.FreshnessStatus);
         var history = JsonSerializer.SerializeToElement(await plans.GetHistoryAsync(default));
         Assert.Equal(2, history.GetArrayLength());
         Assert.All(history.EnumerateArray(), item => Assert.Equal(RosterKinds.Drivers, item.GetProperty("RosterKind").GetString()));
@@ -158,6 +159,54 @@ public sealed class DriverOnlyRosterTests
         Assert.Equal(monday.ToDateTime(TimeOnly.MinValue), boundary.Finish);
         Assert.Equal(4, await db.RosterPlans.CountAsync());
         Assert.Equal(2, await db.RosterPlans.CountAsync(plan => plan.RosterKind == RosterKinds.Inside));
+    }
+
+    [Fact]
+    public async Task SavedRosterReportsCurrentDemandAndAvailabilityChanges()
+    {
+        using var db = NewDb();
+        var driver = AddEmployee(db, [RoleNames.Driver]);
+        AddDemand(db);
+        await db.SaveChangesAsync();
+
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var inputs = NewInputs(db);
+        var plans = new RosterPlanService(db, inputs);
+        var loaded = await inputs.LoadAsync(monday, default);
+        await plans.SaveAsync(loaded, new RosterSolverResult { Status = "optimal", Shifts = [] }, default);
+
+        var current = await plans.GetAsync(monday, default);
+        Assert.Equal("current", current!.FreshnessStatus);
+
+        var demandPlan = await db.DemandPlans
+            .Include(plan => plan.Columns)
+            .Include(plan => plan.Rows).ThenInclude(row => row.Values)
+            .SingleAsync();
+        var mondayColumn = demandPlan.Columns.Single(column => column.Position == 0);
+        var noon = demandPlan.Rows.Single(row => row.Hour == 12);
+        var mondayNoon = noon.Values.Single(value => value.DemandColumnId == mondayColumn.Id);
+        mondayNoon.Demand = 1;
+        await db.SaveChangesAsync();
+
+        var staleDemand = await plans.GetAsync(monday, default);
+        Assert.Equal("stale", staleDemand!.FreshnessStatus);
+        Assert.Contains(staleDemand.FreshnessWarnings,
+            warning => warning.Contains("Demand changed", StringComparison.Ordinal));
+        Assert.Contains(staleDemand.FreshnessWarnings,
+            warning => warning.Contains("Monday 12:00", StringComparison.Ordinal) &&
+                       warning.Contains("need 1 more driver", StringComparison.Ordinal));
+        Assert.Contains(staleDemand.CurrentCoverage!, slot =>
+            slot.Date == monday && slot.StartTime == "12:00" && slot.Required == 1 && slot.Scheduled == 0);
+
+        mondayNoon.Demand = 0;
+        var availability = await db.Shifts.SingleAsync(shift => shift.EmployeeId == driver.Id);
+        availability.FinishTime = new TimeOnly(19, 0);
+        await db.SaveChangesAsync();
+
+        var staleAvailability = await plans.GetAsync(monday, default);
+        Assert.Equal("stale", staleAvailability!.FreshnessStatus);
+        Assert.Contains(staleAvailability.FreshnessWarnings,
+            warning => warning.Contains("availability", StringComparison.OrdinalIgnoreCase));
     }
 
     private static AppDbContext NewDb()

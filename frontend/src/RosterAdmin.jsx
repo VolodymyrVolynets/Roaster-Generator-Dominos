@@ -610,11 +610,11 @@ function SavedRosterEmployeeTables({
 
   return <>
     <h3 className="roster-section-title">Employee shifts and target hours</h3>
-    <p className="demand-help">Target percentage is scheduled hours divided by target hours. Red dates indicate an hourly demand mismatch; the roster remains saved so the administrator can review and correct it.</p>
+    <p className="demand-help">Target percentage is scheduled hours divided by target hours. Red dates indicate an hourly mismatch against the current demand; the roster remains saved so the administrator can review and correct it.</p>
     {demandMismatchByDate.size > 0 && (
       <div className="roster-demand-warning" role="alert">
-        <strong>Demand mismatch saved with this roster</strong>
-        <p>Availability and hard shift rules passed. Red dates show where scheduled staff differ from the demand plan.</p>
+        <strong>Roster does not match current demand</strong>
+        <p>Red dates show where the saved shifts differ from the current demand plan.</p>
         <ul>
           {mismatchEntries.slice(0, 12).map(({ date, detail }) => (
             <li key={`${date}-${detail}`}><strong>{formatDate(date)}</strong> {detail}</li>
@@ -864,8 +864,9 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
   const dates = roster ? weekDates(roster.weekStart) : []
   const shifts = roster?.employees.flatMap((employee) => employee.shifts) || []
   const preferredShiftCount = shifts.filter((shift) => shift.durationHours >= 6 && shift.durationHours <= 8).length
+  const effectiveCoverage = roster?.currentCoverage ?? roster?.coverage ?? []
   const demandMismatchByDate = new Map()
-  for (const slot of roster?.coverage || []) {
+  for (const slot of effectiveCoverage) {
     if (slot.required === slot.scheduled) continue
     const details = demandMismatchByDate.get(slot.date) || []
     details.push(`${shiftTime(slot.startTime, slot.startDayOffset)}: required ${slot.required}, scheduled ${slot.scheduled}`)
@@ -913,6 +914,23 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       {roster && <>
         {!canEdit && <p className="message info-message" role="status">Read-only view for managers. Only administrators can edit saved roster shifts.</p>}
         <p className="roster-footnote">Week starting {formatDate(roster.weekStart)} · Saved {new Date(roster.updatedAtUtc).toLocaleString()}</p>
+        {roster.freshnessStatus === 'stale' && (
+          <div className="roster-demand-warning roster-input-stale-warning" role="alert">
+            <strong>Roster no longer matches current inputs</strong>
+            <p>Demand or driver scheduling inputs changed after this roster was saved. Review the details below, then regenerate or edit the roster.</p>
+            {!!roster.freshnessWarnings?.length && (
+              <ul>
+                {roster.freshnessWarnings.slice(0, 16).map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
+              </ul>
+            )}
+            {(roster.freshnessWarnings?.length ?? 0) > 16 && <small>Additional mismatches are highlighted in the roster tables.</small>}
+          </div>
+        )}
+        {roster.freshnessStatus === 'unknown' && (
+          <p className="message info-message" role="status">
+            This roster was saved before input-change tracking was added. Regenerate it once to detect future demand or availability changes.
+          </p>
+        )}
         {canEdit && editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
           <div>
             <span className="eyebrow">Administrator editing</span>
@@ -946,8 +964,8 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
         refreshKey={`${rosterKind}:${refreshKey}:${labourRefreshKey}`} editing={editing && !!roster} />
       {roster && <>
         <div className="roster-week-summary roster-result-metrics">
-          <Metric label="Demand coverage" value={roster.coveragePercent == null ? 'Unverified' : `${formatNumber(roster.coveragePercent)}%`} />
-          <Metric label="Scheduled / needed" value={`${formatNumber(roster.totalScheduledHours)} / ${formatNumber(roster.totalDemandHours)}h`} />
+          <Metric label="Demand coverage" value={(roster.currentCoveragePercent ?? roster.coveragePercent) == null ? 'Unverified' : `${formatNumber(roster.currentCoveragePercent ?? roster.coveragePercent)}%`} />
+          <Metric label="Scheduled / needed" value={`${formatNumber(roster.totalScheduledHours)} / ${formatNumber(roster.currentDemandHours ?? roster.totalDemandHours)}h`} />
           <Metric label="Target percentage spread" value={`${formatNumber(roster.fairnessSpreadPercentagePoints)} pp`} />
           <Metric label="Shortest rest" value={roster.minimumRestHours == null ? 'No shift pairs' : `${formatNumber(roster.minimumRestHours)}h`} />
           <Metric label="6–8 hour shifts" value={`${preferredShiftCount} / ${shifts.length}`} />

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
-import { calculateDemandSummary, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
+import { calculateDemandLabour, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
 import { getAvailabilityEmployeeId } from './availabilityAccess'
 import {
   compareEmployees,
@@ -529,7 +529,7 @@ function AdminHolidayPanel({ setErrorPopup, canExport = true }) {
   )
 }
 
-function DemandManager({ setErrorPopup, canEdit = true }) {
+function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [plan, setPlan] = useState(null)
@@ -730,10 +730,11 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
   const selectedDemandColumn = plan?.columns.find(
     (column) => column.position === selectedDemandDayPosition,
   )
-  const demandSummary = calculateDemandSummary(plan)
+  const demandSummary = calculateDemandLabour(plan, employees)
   const dailyStaffingRows = demandSummary.days
   const selectedDaySummary = dailyStaffingRows.find((day) => day.position === selectedDemandDayPosition)
-  const formatMoney = (value) => `€${Number(value ?? 0).toFixed(2)}`
+  const formatMoney = (value) => value == null ? '—' : `€${Number(value).toFixed(2)}`
+  const formatPercentage = (value) => value == null ? '—' : `${Number(value).toFixed(2)}%`
   const demandFields = [['deliveries', 'Deliveries'], ['demand', 'Drivers']]
   function demandCell(row, column, field, label) {
     const value = row.values.find((item) => item.position === column.position) || {}
@@ -802,13 +803,14 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
         <form onSubmit={canEdit ? savePlan : (event) => event.preventDefault()}>
           <div className="demand-labour-settings">
             <div>
-              <span className="eyebrow">Demand planning</span>
-              <h3>Productivity and sales targets</h3>
+              <span className="eyebrow">Planned labour</span>
+              <h3>Demand, sales targets and estimated labour</h3>
               <p>
                 Productivity changes recalculate the demand preview immediately;
                 save to apply it to generation. Raising productivity needs fewer staff, lowering it needs more.
                 Recalculation replaces manual staff counts; save productivity changes before applying staffing overrides.
-                Labour costs and percentages are available on Saved rosters, using actual shifts and employee pay rates.
+                Planned labour uses required driver-hours and the target-hour-weighted average pay rate of active drivers.
+                Saved rosters continue to calculate labour from the employees actually assigned.
               </p>
             </div>
             <div className="demand-productivity-grid">
@@ -826,9 +828,22 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
               <span>Weekly target sales</span>
               <strong>{formatMoney(demandSummary.targetSales)}</strong>
             </div>
-            <div className="demand-labour-weekly"><span>Driver demand</span><strong>{demandSummary.driverHours} hours</strong><small>Required driver-hours this week</small></div>
-            <div className="demand-labour-weekly"><span>Weekly workload</span><strong>{demandSummary.deliveries} deliveries</strong></div>
+            <div className="demand-labour-weekly">
+              <span>Planned labour cost</span>
+              <strong>{formatMoney(demandSummary.labourCost)}</strong>
+              <small>{demandSummary.driverHours} required hours · {formatMoney(demandSummary.averageHourlyRate)} average rate</small>
+            </div>
+            <div className="demand-labour-weekly">
+              <span>Planned labour</span>
+              <strong>{formatPercentage(demandSummary.labourPercentage)}</strong>
+              <small>{demandSummary.deliveries} deliveries</small>
+            </div>
           </div>
+
+          <p className="demand-labour-note">
+            This is a demand estimate, not the saved roster total. Sunday premium is applied to calendar-Sunday hours;
+            a dash means driver pay or required demand is unavailable, or target sales are zero.
+          </p>
 
           <div className="demand-labour-table-wrapper">
             <table className="demand-labour-table">
@@ -837,7 +852,9 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                   <th>Day</th>
                   <th>Target sales</th>
                   <th>Driver-hours</th>
-                  <th>Deliveries</th>
+                  <th>Sunday premium hours</th>
+                  <th>Planned labour cost</th>
+                  <th>Labour %</th>
                 </tr>
               </thead>
               <tbody>
@@ -857,7 +874,9 @@ function DemandManager({ setErrorPopup, canEdit = true }) {
                       />
                     </td>
                     <td>{day.requiredDriverHours}</td>
-                    <td>{day.deliveries}</td>
+                    <td>{day.sundayPremiumHours}</td>
+                    <td>{formatMoney(day.labourCost)}</td>
+                    <td className="demand-result">{formatPercentage(day.labourPercentage)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1664,7 +1683,11 @@ function AdminConsole({
             </section>
           )}
 
-          {activeTab === 'demand' && <DemandManager setErrorPopup={setErrorPopup} canEdit={authState.user.isAdmin} />}
+          {activeTab === 'demand' && <DemandManager
+            setErrorPopup={setErrorPopup}
+            employees={employees}
+            canEdit={authState.user.isAdmin}
+          />}
 
           {authState.user.isAdmin && (
             <RosterGenerationPanel

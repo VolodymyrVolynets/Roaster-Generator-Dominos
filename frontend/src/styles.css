@@ -584,7 +584,7 @@ input:focus {
 
 .demand-labour-table {
   width: 100%;
-  min-width: 460px;
+  min-width: 700px;
   border-collapse: collapse;
   color: #cbd5e1;
   font-size: 0.82rem;

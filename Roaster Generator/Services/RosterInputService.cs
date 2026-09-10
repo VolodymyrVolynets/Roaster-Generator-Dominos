@@ -16,7 +16,12 @@ public sealed class RosterInputException(string message, IReadOnlyList<string>? 
 }
 
 public sealed record LoadedRosterInput(RosterSolverInput Input, RosterSettingsRequest Settings,
-    string Fingerprint, IReadOnlyList<string> Warnings);
+    string Fingerprint, IReadOnlyList<string> Warnings)
+{
+    public string? DemandFingerprint { get; init; }
+
+    public string? AvailabilityFingerprint { get; init; }
+}
 
 public sealed class RosterInputService(AppDbContext db, RosterSettingsService settingsService,
     IOptions<ShopHoursOptions> shopHoursOptions)
@@ -108,23 +113,28 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                     e.TargetHours, ReadHistoryShiftCount(e))));
         }
         var input = new RosterSolverInput(weekStart, employees, availability, demand, boundaries, RosterSettingsService.ToOptions(settings), history, rosterKind);
-        // Scalars only: stable fingerprint catches changed availability, targets, demand or adjacent rosters before saving.
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        var demandFingerprint = Fingerprint(demand);
+        var availabilityFingerprint = Fingerprint(new
         {
-            rosterKind, DemandId = plan.Id, plan.UpdatedAtUtc, demand,
             Employees = employees.Select(e => new
             {
                 e.Id,
-                e.FirstName,
-                e.LastName,
                 Roles = RosterKinds.Roles(e),
                 TargetHours = TargetHours(e),
                 e.DriverProfile?.DriverType
             }),
-            Availability = availability.Select(s => new { s.EmployeeId, s.Date, s.StartTime, s.FinishTime }),
-            boundaries, settings, history
-        }))));
-        return new LoadedRosterInput(input, settings, fingerprint, warnings);
+            Availability = availability.Select(s => new { s.EmployeeId, s.Date, s.StartTime, s.FinishTime })
+        });
+        // Scalars only: stable fingerprint catches changed scheduling inputs before saving.
+        var fingerprint = Fingerprint(new
+        {
+            rosterKind, demandFingerprint, availabilityFingerprint, boundaries, settings, history
+        });
+        return new LoadedRosterInput(input, settings, fingerprint, warnings)
+        {
+            DemandFingerprint = demandFingerprint,
+            AvailabilityFingerprint = availabilityFingerprint
+        };
     }
 
     // Older snapshots may have scheduled totals without usable per-shift durations.
@@ -138,5 +148,8 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 ? employee.Shifts.Count
                 : null;
     }
+
+    private static string Fingerprint<T>(T value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value))));
 
 }
