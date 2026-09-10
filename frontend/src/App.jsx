@@ -842,86 +842,76 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
             </div>
           </div>
 
-          <div className="demand-labour-summary">
-            <div className="demand-labour-weekly">
-              <span>Weekly target sales</span>
-              <strong>{formatMoney(demandSummary.targetSales)}</strong>
-              <small>Used to calculate demand labour percentage</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Weekly deliveries</span>
-              <strong>{formatMetric(demandSummary.deliveries, 0)}</strong>
-              <small>{formatMetric(demandSummary.deliveriesPerEnteredDriverHour)} per entered driver-hour</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Entered driver demand</span>
-              <strong>{formatMetric(demandSummary.driverHours, 0)} hours</strong>
-              <small>{formatMetric(demandSummary.wholeDriverHours, 0)} whole-driver hours from deliveries</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Fractional ideal workload</span>
-              <strong>{formatMetric(demandSummary.idealDriverHours)} hours</strong>
-              <small>{formatSignedMetric(demandSummary.driverHourDifference)} entered hours versus ideal</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Actual demand labour</span>
-              <strong>{formatMoney(demandSummary.labourCost)}</strong>
-              <small>{formatPercentage(demandSummary.labourPercentage)} of {formatMoney(demandSummary.targetSales)} target sales</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Fractional ideal labour</span>
-              <strong>{formatMoney(demandSummary.idealLabourCost)}</strong>
-              <small>{formatPercentage(demandSummary.idealLabourPercentage)} of target sales</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Labour cost difference</span>
-              <strong className={Number(demandSummary.labourCostDifference) > 0 ? 'metric-warning' : ''}>
-                {formatSignedMoney(demandSummary.labourCostDifference)}
-              </strong>
-              <small>Entered demand minus fractional ideal</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Demand capacity use</span>
-              <strong>{formatPercentage(demandSummary.capacityUtilization)}</strong>
-              <small>{formatMetric(demandSummary.deliveryCapacity)} delivery capacity · {formatSignedMetric(demandSummary.unusedDeliveryCapacity)} spare</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Eligible driver pool</span>
-              <strong>{demandSummary.eligibleDriverCount} drivers</strong>
-              <small>{formatMetric(demandSummary.totalTargetHours)} target hours · demand uses {formatPercentage(demandSummary.demandToTargetHoursPercentage)}</small>
-            </div>
-            <div className="demand-labour-weekly">
-              <span>Cost assumptions</span>
-              <strong>{formatMoney(demandSummary.averageHourlyRate)}/hour</strong>
-              <small>{formatMetric(demandSummary.productivity)} deliveries per driver-hour · {formatMoney(demandSummary.labourCostPerDelivery)} per delivery</small>
-            </div>
+          <div className="demand-overview-groups">
+            <section className="demand-overview-group demand-overview-volume">
+              <div className="demand-overview-group-heading">
+                <span>1</span>
+                <div><h4>Work to deliver</h4><p>The expected orders and sales for the week.</p></div>
+              </div>
+              <dl>
+                <div><dt>Deliveries</dt><dd>{formatMetric(demandSummary.deliveries, 0)}</dd></div>
+                <div><dt>Target sales</dt><dd>{formatMoney(demandSummary.targetSales)}</dd></div>
+                <div><dt>Deliveries per entered hour</dt><dd>{formatMetric(demandSummary.deliveriesPerEnteredDriverHour)}</dd></div>
+              </dl>
+            </section>
+            <section className="demand-overview-group demand-overview-staffing">
+              <div className="demand-overview-group-heading">
+                <span>2</span>
+                <div><h4>Drivers required</h4><p>Compare the saved demand with the productivity calculation.</p></div>
+              </div>
+              <dl>
+                <div><dt>Entered demand</dt><dd>{formatMetric(demandSummary.driverHours, 0)} hours</dd></div>
+                <div><dt>Ideal workload</dt><dd>{formatMetric(demandSummary.idealDriverHours)} hours</dd></div>
+                <div><dt>Whole-driver need</dt><dd>{formatMetric(demandSummary.wholeDriverHours, 0)} hours</dd></div>
+                <div><dt>Entered minus ideal</dt><dd>{formatSignedMetric(demandSummary.driverHourDifference)} hours</dd></div>
+                <div><dt>Capacity used</dt><dd>{formatPercentage(demandSummary.capacityUtilization)}</dd></div>
+              </dl>
+            </section>
+            <section className="demand-overview-group demand-overview-cost">
+              <div className="demand-overview-group-heading">
+                <span>3</span>
+                <div><h4>Expected labour cost</h4><p>What the entered demand costs versus the fractional ideal.</p></div>
+              </div>
+              <dl>
+                <div><dt>Entered-demand labour</dt><dd>{formatMoney(demandSummary.labourCost)}</dd></div>
+                <div><dt>Ideal labour</dt><dd>{formatMoney(demandSummary.idealLabourCost)}</dd></div>
+                <div><dt>Cost difference</dt><dd className={Number(demandSummary.labourCostDifference) > 0 ? 'metric-warning' : ''}>{formatSignedMoney(demandSummary.labourCostDifference)}</dd></div>
+                <div><dt>Labour / sales</dt><dd>{formatPercentage(demandSummary.labourPercentage)}</dd></div>
+                <div><dt>Cost per delivery</dt><dd>{formatMoney(demandSummary.labourCostPerDelivery)}</dd></div>
+              </dl>
+            </section>
           </div>
 
-          <p className="demand-labour-note">
-            Fractional ideal figures divide deliveries by productivity without rounding. Whole-driver need rounds that result up;
-            entered demand may differ because of manual overrides or minimum shop cover. Sunday premium is applied to
-            calendar-Sunday hours. A dash means required deliveries, demand, pay, productivity, or sales data is unavailable.
-          </p>
+          <div className="demand-assumptions" aria-label="Labour calculation assumptions">
+            <span><strong>{formatMetric(demandSummary.productivity)}</strong> deliveries per driver-hour</span>
+            <span><strong>{formatMoney(demandSummary.averageHourlyRate)}</strong> average hourly pay</span>
+            <span><strong>{demandSummary.eligibleDriverCount}</strong> eligible drivers</span>
+            <span><strong>{formatMetric(demandSummary.totalTargetHours)}</strong> combined target hours</span>
+            <span>Demand uses <strong>{formatPercentage(demandSummary.demandToTargetHoursPercentage)}</strong> of target hours</span>
+          </div>
+
+          <details className="demand-metric-guide">
+            <summary>How these numbers are calculated</summary>
+            <div>
+              <p><strong>Ideal drivers</strong> = deliveries ÷ configured deliveries per driver-hour. This can be a decimal.</p>
+              <p><strong>Whole-driver need</strong> rounds ideal drivers up because a fraction of a person cannot be rostered.</p>
+              <p><strong>Entered demand</strong> is the Drivers value saved in the demand table. It may include minimum shop cover or manual changes.</p>
+              <p><strong>Entered-demand labour</strong> uses entered demand and average driver pay. It is not the named-employee cost from a saved roster.</p>
+              <p>Sunday premium is applied to calendar-Sunday hours. A dash means required data is unavailable.</p>
+            </div>
+          </details>
 
           <div className="demand-labour-table-wrapper">
-            <table className="demand-labour-table">
+            <table className="demand-labour-table demand-daily-table">
               <thead>
                 <tr>
                   <th>Day</th>
                   <th>Target sales</th>
                   <th>Deliveries</th>
-                  <th>Open hours</th>
-                  <th>Entered driver-hours</th>
-                  <th>Ideal driver-hours</th>
-                  <th>Whole-driver need</th>
-                  <th>Capacity used</th>
-                  <th>Deliveries / driver-hour</th>
-                  <th>Sunday premium hours</th>
-                  <th>Ideal labour</th>
-                  <th>Actual demand labour</th>
-                  <th>Cost difference</th>
-                  <th>Labour %</th>
-                  <th>Hourly staffing checks</th>
+                  <th>Driver hours</th>
+                  <th>Delivery capacity</th>
+                  <th>Demand labour</th>
+                  <th>Hourly checks</th>
                 </tr>
               </thead>
               <tbody>
@@ -940,28 +930,34 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                         aria-label={`${day.label} target sales`}
                       />
                     </td>
-                    <td>{formatMetric(day.deliveries, 0)}</td>
-                    <td>{day.openHours}</td>
-                    <td>{day.requiredDriverHours}</td>
-                    <td>{formatMetric(day.idealDriverHours)}</td>
-                    <td>{formatMetric(day.wholeDriverHours, 0)}</td>
-                    <td className={Number(day.capacityUtilization) > 100 ? 'metric-danger' : undefined}>
-                      {formatPercentage(day.capacityUtilization)}
+                    <td className="demand-stacked-cell">
+                      <strong>{formatMetric(day.deliveries, 0)}</strong>
+                      <small>{day.openHours} open hours</small>
                     </td>
-                    <td>{formatMetric(day.deliveriesPerEnteredDriverHour)}</td>
-                    <td>{day.sundayPremiumHours}</td>
-                    <td>{formatMoney(day.idealLabourCost)}</td>
-                    <td>{formatMoney(day.labourCost)}</td>
-                    <td className={Number(day.labourCostDifference) > 0 ? 'metric-warning' : undefined}>
-                      {formatSignedMoney(day.labourCostDifference)}
+                    <td className="demand-stacked-cell">
+                      <strong>{day.requiredDriverHours} entered</strong>
+                      <small>{formatMetric(day.idealDriverHours)} ideal · {formatMetric(day.wholeDriverHours, 0)} whole need</small>
                     </td>
-                    <td className="demand-result">{formatPercentage(day.labourPercentage)}</td>
-                    <td>
+                    <td className="demand-stacked-cell">
+                      <strong className={Number(day.capacityUtilization) > 100 ? 'metric-danger' : undefined}>
+                        {formatPercentage(day.capacityUtilization)} used
+                      </strong>
+                      <small>{formatMetric(day.deliveryCapacity)} capacity · {formatSignedMetric(day.unusedDeliveryCapacity)} spare</small>
+                      <small>{formatMetric(day.deliveriesPerEnteredDriverHour)} deliveries per driver-hour</small>
+                    </td>
+                    <td className="demand-stacked-cell">
+                      <strong>{formatMoney(day.labourCost)} entered</strong>
+                      <small>{formatMoney(day.idealLabourCost)} ideal · <span className={Number(day.labourCostDifference) > 0 ? 'metric-warning' : undefined}>{formatSignedMoney(day.labourCostDifference)}</span> difference</small>
+                      <small>{formatPercentage(day.labourPercentage)} of sales · {formatMoney(day.labourCostPerDelivery)} per delivery</small>
+                      {day.sundayPremiumHours > 0 && <small>{day.sundayPremiumHours} Sunday-premium hours</small>}
+                    </td>
+                    <td className="demand-stacked-cell">
                       <span className={day.understaffedHours > 0 ? 'metric-danger' : 'metric-success'}>
                         {day.understaffedHours} under
                       </span>
-                      {' · '}{day.matchedHours} met{' · '}{day.aboveMinimumHours} above
-                      {day.unknownHours > 0 && <> · {day.unknownHours} unknown</>}
+                      <small>{day.matchedHours} match whole need</small>
+                      <small>{day.aboveMinimumHours} above whole need</small>
+                      {day.unknownHours > 0 && <small>{day.unknownHours} missing data</small>}
                     </td>
                   </tr>
                 ))}
@@ -1006,17 +1002,10 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                     <th>Hour</th>
                     <th>Deliveries</th>
                     <th>Entered drivers</th>
-                    <th>Ideal drivers</th>
-                    <th>Whole drivers needed</th>
+                    <th>Ideal need</th>
                     <th>Staffing check</th>
-                    <th>Delivery capacity</th>
-                    <th>Spare capacity</th>
-                    <th>Capacity used</th>
-                    <th>Deliveries / driver</th>
-                    <th>Pay rate</th>
-                    <th>Ideal labour / hour</th>
-                    <th>Actual demand labour / hour</th>
-                    <th>Cost difference</th>
+                    <th>Capacity</th>
+                    <th>Labour / hour</th>
                     <th>Cost / delivery</th>
                   </tr>
                 </thead>
@@ -1026,31 +1015,39 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                     return (
                       <tr key={`${selectedDemandDayPosition}-${row.hour}`}>
                         <th>{String(row.hour).padStart(2, '0')}:00</th>
-                        <td>{formatMetric(row.deliveries)}</td>
-                        <td>{formatMetric(row.enteredDrivers, 0)}</td>
-                        <td>{formatMetric(row.idealDrivers)}</td>
-                        <td>{formatMetric(row.wholeDrivers, 0)}</td>
+                        <td className="demand-stacked-cell">
+                          <strong>{formatMetric(row.deliveries)}</strong>
+                          <small>{formatMetric(row.deliveriesPerEnteredDriver)} per entered driver</small>
+                        </td>
+                        <td><strong>{formatMetric(row.enteredDrivers, 0)}</strong></td>
+                        <td className="demand-stacked-cell">
+                          <strong>{formatMetric(row.idealDrivers)} drivers</strong>
+                          <small>{formatMetric(row.wholeDrivers, 0)} after rounding up</small>
+                        </td>
                         <td><span className={`staffing-status staffing-status-${statusDetails.tone}`}>{statusDetails.label}</span></td>
-                        <td>{formatMetric(row.deliveryCapacity)}</td>
-                        <td className={Number(row.unusedDeliveryCapacity) < 0 ? 'metric-danger' : undefined}>
-                          {formatSignedMetric(row.unusedDeliveryCapacity)}
+                        <td className="demand-stacked-cell">
+                          <strong className={Number(row.capacityUtilization) > 100 ? 'metric-danger' : undefined}>
+                            {formatPercentage(row.capacityUtilization)} used
+                          </strong>
+                          <small>{formatMetric(row.deliveryCapacity)} deliveries capacity</small>
+                          <small className={Number(row.unusedDeliveryCapacity) < 0 ? 'metric-danger' : undefined}>
+                            {formatSignedMetric(row.unusedDeliveryCapacity)} spare
+                          </small>
                         </td>
-                        <td className={Number(row.capacityUtilization) > 100 ? 'metric-danger' : undefined}>
-                          {formatPercentage(row.capacityUtilization)}
-                        </td>
-                        <td>{formatMetric(row.deliveriesPerEnteredDriver)}</td>
-                        <td>{formatMoney(demandSummary.averageHourlyRate)}{row.isSundayPremium ? ' × 1.25' : ''}</td>
-                        <td>{formatMoney(row.idealLabourCost)}</td>
-                        <td>{formatMoney(row.demandLabourCost)}</td>
-                        <td className={Number(row.labourCostDifference) > 0 ? 'metric-warning' : undefined}>
-                          {formatSignedMoney(row.labourCostDifference)}
+                        <td className="demand-stacked-cell">
+                          <strong>{formatMoney(row.demandLabourCost)} entered</strong>
+                          <small>{formatMoney(row.idealLabourCost)} ideal</small>
+                          <small className={Number(row.labourCostDifference) > 0 ? 'metric-warning' : undefined}>
+                            {formatSignedMoney(row.labourCostDifference)} difference
+                          </small>
+                          <small>{formatMoney(demandSummary.averageHourlyRate)} pay{row.isSundayPremium ? ' × 1.25 Sunday' : ''}</small>
                         </td>
                         <td>{formatMoney(row.labourCostPerDelivery)}</td>
                       </tr>
                     )
                   })}
                   {selectedDayHourlyRows.length === 0 && (
-                    <tr><td colSpan="15" className="demand-empty-hourly">No open demand hours are available for this day.</td></tr>
+                    <tr><td colSpan="8" className="demand-empty-hourly">No open demand hours are available for this day.</td></tr>
                   )}
                 </tbody>
               </table>
