@@ -25,6 +25,7 @@ const withSettingsDefaults = (settings) => ({ historyFairnessWeight: 100, histor
 const averageFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 const averageShiftHours = (shifts) => shifts.length ? Math.round(shifts.reduce((total, shift) => total + shift.durationHours, 0) * 100 / shifts.length) / 100 : 0
 const rosterKind = 'drivers'
+const hourOptions = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`)
 
 function WeekSelector({ value, onChange, disabled }) {
   return (
@@ -407,6 +408,88 @@ function rosterDraftShifts(roster) {
   return roster.employees.flatMap((employee) => employee.shifts.map((shift) => draftShift(employee.employeeId, shift)))
 }
 
+function RosterCellEditorDialog({ editor, setEditor, onApply, onRemove, onClose }) {
+  const startInputRef = useRef(null)
+  const finishDayOffset = Math.max(0, Math.floor(Number(editor.finishHour) / 24))
+  const duration = Number(editor.finishHour) - Number(editor.startHour)
+  const durationIsValid = duration >= 3 && duration <= 10
+
+  useEffect(() => {
+    startInputRef.current?.focus()
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setEditor(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [setEditor])
+
+  function updateClock(field, value, dayOffset) {
+    setEditor((current) => ({ ...current, [field]: Number(dayOffset) * 24 + clockHour(value) }))
+  }
+
+  function updateDayOffset(field, value) {
+    setEditor((current) => ({ ...current, [field]: Number(value) * 24 + (Number(current[field]) % 24) }))
+  }
+
+  return (
+    <div className="roster-cell-dialog-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section className="roster-cell-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-cell-dialog-title">
+        <div className="roster-cell-dialog-heading">
+          <div>
+            <span className="eyebrow">Edit roster shift</span>
+            <h3 id="roster-cell-dialog-title">{editor.employeeName}</h3>
+            <p>{formatDate(editor.date)}</p>
+          </div>
+          <button type="button" className="secondary-button roster-cell-dialog-close" onClick={onClose} aria-label="Close shift editor">×</button>
+        </div>
+        <form onSubmit={onApply}>
+          <div className="roster-cell-dialog-fields">
+            <label>
+              Start time
+              <select
+                ref={startInputRef}
+                value={hourInputValue(editor.startHour)}
+                onChange={(event) => updateClock('startHour', event.target.value, 0)}
+              >
+                {hourOptions.map((time) => <option key={time} value={time}>{time}</option>)}
+              </select>
+            </label>
+            <label>
+              Finish time
+              <select
+                value={hourInputValue(editor.finishHour)}
+                onChange={(event) => updateClock('finishHour', event.target.value, finishDayOffset)}
+              >
+                {hourOptions.map((time) => <option key={time} value={time}>{time}</option>)}
+              </select>
+            </label>
+            <label>
+              Finish day
+              <select value={finishDayOffset} onChange={(event) => updateDayOffset('finishHour', event.target.value)}>
+                <option value="0">Same date</option>
+                <option value="1">Following date</option>
+              </select>
+            </label>
+          </div>
+          <p className={`roster-cell-dialog-duration ${durationIsValid ? 'valid' : 'invalid'}`} role="status">
+            {durationIsValid
+              ? `${duration} hour shift`
+              : 'Shift duration must be between 3 and 10 hours, and finish must be after start.'}
+          </p>
+          <p className="roster-footnote">Changes are staged until you press Save roster changes.</p>
+          <div className="roster-cell-dialog-actions">
+            <button type="submit" disabled={!durationIsValid}>{editor.hasShift ? 'Apply times' : 'Add shift'}</button>
+            {editor.hasShift && <button type="button" className="danger-button" onClick={onRemove}>Remove shift</button>}
+            <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function minimumEmployeeRest(shifts) {
   const ordered = [...shifts].sort((left, right) => shiftStartHour(left) - shiftStartHour(right))
   if (ordered.length < 2) return null
@@ -513,7 +596,15 @@ function FairnessComparison({ roster, employeeGroups }) {
   </details>
 }
 
-function SavedRosterEmployeeTables({ roster, groupedRosterEmployees, dates, demandMismatchByDate }) {
+function SavedRosterEmployeeTables({
+  roster,
+  groupedRosterEmployees,
+  dates,
+  demandMismatchByDate,
+  editing = false,
+  draftShifts = [],
+  onEditCell,
+}) {
   const mismatchDetails = (date) => demandMismatchByDate.get(date)?.join(' · ')
   const mismatchEntries = [...demandMismatchByDate.entries()].flatMap(([date, details]) => details.map((detail) => ({ date, detail })))
 
@@ -546,7 +637,7 @@ function SavedRosterEmployeeTables({ roster, groupedRosterEmployees, dates, dema
           </div>
           {group.employees.length > 0 ? (
             <div className="demand-table-wrapper">
-              <table className="saved-roster-table">
+              <table className={`saved-roster-table${editing ? ' roster-table-editing' : ''}`}>
                 <caption className="visually-hidden">{group.label} roster for the week starting {roster.weekStart}</caption>
                 <thead><tr>
                   <th scope="col">Employee</th>
@@ -572,11 +663,39 @@ function SavedRosterEmployeeTables({ roster, groupedRosterEmployees, dates, dema
                     <td><strong className="roster-target-percentage">{percentage == null ? 'N/A' : `${formatNumber(percentage)}%`}</strong>{percentage == null && <small>Zero target · reserve</small>}</td>
                     {dates.map((date) => {
                       const mismatch = mismatchDetails(date)
-                      return <td key={date} className={`roster-shift-cell${mismatch ? ' demand-mismatch' : ''}`} title={mismatch || undefined}>
-                        {employee.shifts.filter((shift) => shift.date === date).map((shift, index) => <span className="roster-shift" key={index}>
-                          <span>{shiftTime(shift.startTime, shift.startDayOffset)}–{shiftTime(shift.finishTime, shift.finishDayOffset)}</span><small>{formatNumber(shift.durationHours)}h</small>
-                        </span>)}
-                        {!employee.shifts.some((shift) => shift.date === date) && <span className="roster-day-off">Off</span>}
+                      const cellShifts = editing
+                        ? draftShifts.filter((shift) => String(shift.employeeId) === String(employee.employeeId) && shift.date === date)
+                        : employee.shifts.filter((shift) => shift.date === date)
+                      const content = cellShifts.length > 0
+                        ? cellShifts.map((shift, index) => {
+                          const startTime = editing ? hourInputValue(shift.startHour) : shift.startTime
+                          const finishTime = editing ? hourInputValue(shift.finishHour) : shift.finishTime
+                          const startOffset = editing ? Math.floor(Number(shift.startHour) / 24) : shift.startDayOffset
+                          const finishOffset = editing ? Math.floor(Number(shift.finishHour) / 24) : shift.finishDayOffset
+                          const duration = editing ? Number(shift.finishHour) - Number(shift.startHour) : shift.durationHours
+                          return <span className="roster-shift" key={index}>
+                            <span>{shiftTime(startTime, startOffset)}–{shiftTime(finishTime, finishOffset)}</span><small>{formatNumber(duration)}h</small>
+                          </span>
+                        })
+                        : <span className="roster-day-off">Off</span>
+                      const title = [mismatch, editing ? `Edit ${employee.employeeName} on ${formatDate(date)}` : null].filter(Boolean).join(' · ')
+
+                      return <td
+                        key={date}
+                        className={`roster-shift-cell${mismatch ? ' demand-mismatch' : ''}${editing ? ' roster-shift-cell-editable' : ''}`}
+                        title={title || undefined}
+                      >
+                        {editing ? (
+                          <button
+                            type="button"
+                            className="roster-shift-cell-button"
+                            onClick={() => onEditCell(employee, date)}
+                            aria-label={`${cellShifts.length ? 'Edit' : 'Add'} shift for ${employee.employeeName} on ${formatDate(date)}`}
+                          >
+                            {content}
+                            <span className="roster-cell-edit-hint">Click to edit</span>
+                          </button>
+                        ) : content}
                       </td>
                     })}
                     <td>{rest == null ? '—' : `${formatNumber(rest)}h`}</td>
@@ -601,6 +720,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
   const [availableEmployees, setAvailableEmployees] = useState([])
   const [draftShifts, setDraftShifts] = useState([])
   const [editing, setEditing] = useState(false)
+  const [cellEditor, setCellEditor] = useState(null)
   const [editStatus, setEditStatus] = useState({ status: 'idle', message: '' })
   const [status, setStatus] = useState('loading')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -654,27 +774,61 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
     if (!roster) return
     setDraftShifts(rosterDraftShifts(roster))
     setEditing(false)
+    setCellEditor(null)
   }, [roster])
 
-  function updateDraftShift(index, changes) {
-    setDraftShifts((current) => current.map((shift, shiftIndex) => (
-      shiftIndex === index ? { ...shift, ...changes } : shift
+  function openCellEditor(employee, date) {
+    const existingShift = draftShifts.find((shift) => (
+      String(shift.employeeId) === String(employee.employeeId) && shift.date === date
+    ))
+
+    setCellEditor({
+      employeeId: String(employee.employeeId),
+      employeeName: employee.employeeName,
+      date,
+      startHour: existingShift?.startHour ?? 12,
+      finishHour: existingShift?.finishHour ?? 18,
+      hasShift: Boolean(existingShift),
+    })
+    setEditStatus({ status: 'idle', message: '' })
+  }
+
+  function applyCellEdit(event) {
+    event.preventDefault()
+    if (!cellEditor) return
+
+    const updatedShift = {
+      employeeId: cellEditor.employeeId,
+      date: cellEditor.date,
+      startHour: Number(cellEditor.startHour),
+      finishHour: Number(cellEditor.finishHour),
+    }
+    setDraftShifts((current) => {
+      const existingIndex = current.findIndex((shift) => (
+        String(shift.employeeId) === cellEditor.employeeId && shift.date === cellEditor.date
+      ))
+      if (existingIndex < 0) return [...current, updatedShift]
+      return current.map((shift, index) => index === existingIndex ? updatedShift : shift)
+    })
+    setCellEditor(null)
+    setEditStatus({ status: 'idle', message: '' })
+  }
+
+  function removeCellShift() {
+    if (!cellEditor) return
+    setDraftShifts((current) => current.filter((shift) => !(
+      String(shift.employeeId) === cellEditor.employeeId && shift.date === cellEditor.date
     )))
+    setCellEditor(null)
     setEditStatus({ status: 'idle', message: '' })
   }
 
-  function addDraftShift() {
-    const employeeId = String((availableEmployees[0] || roster?.employees[0])?.id || roster?.employees[0]?.employeeId || '')
-    setDraftShifts((current) => [
-      ...current,
-      { employeeId, date: roster.weekStart, startHour: 12, finishHour: 18 },
-    ])
-    setEditing(true)
-    setEditStatus({ status: 'idle', message: '' })
-  }
-
-  function removeDraftShift(index) {
-    setDraftShifts((current) => current.filter((_, shiftIndex) => shiftIndex !== index))
+  function toggleEditing() {
+    if (editing && roster) {
+      setDraftShifts(rosterDraftShifts(roster))
+      setCellEditor(null)
+    }
+    setEditing((value) => !value)
     setEditStatus({ status: 'idle', message: '' })
   }
 
@@ -700,6 +854,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       setLabourRefreshKey((value) => value + 1)
       setEditStatus({ status: 'success', message: 'Roster changes saved and revalidated.' })
       setEditing(false)
+      setCellEditor(null)
     } catch (error) {
       setEditStatus({ status: 'error', message: error.message })
       setErrorPopup(error.message)
@@ -749,7 +904,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       <div className="roster-generation-actions">
         <button type="button" className="secondary-button" disabled={status === 'loading'} onClick={() => setRefreshKey((value) => value + 1)}>Refresh saved roster</button>
         {roster && <button type="button" className="secondary-button" onClick={() => exportRosterCsv(roster, dates)}>Download CSV</button>}
-        {canEdit && roster && <button type="button" className="secondary-button" onClick={() => { setEditing((value) => !value); setEditStatus({ status: 'idle', message: '' }) }}>{editing ? 'Close roster editor' : 'Edit roster'}</button>}
+        {canEdit && roster && <button type="button" className="secondary-button" onClick={toggleEditing}>{editing ? 'Cancel editing' : 'Edit roster'}</button>}
       </div>
       {editStatus.message && !editing && <p className={`save-message ${editStatus.status}`} role="status">{editStatus.message}</p>}
       {status === 'loading' && <p className="message info-message" role="status">Loading saved roster…</p>}
@@ -758,60 +913,34 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       {roster && <>
         {!canEdit && <p className="message info-message" role="status">Read-only view for managers. Only administrators can edit saved roster shifts.</p>}
         <p className="roster-footnote">Week starting {formatDate(roster.weekStart)} · Saved {new Date(roster.updatedAtUtc).toLocaleString()}</p>
+        {canEdit && editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
+          <div>
+            <span className="eyebrow">Administrator editing</span>
+            <h3>Edit shifts directly in the roster</h3>
+          </div>
+          <p className="demand-help">Click any day cell below to add, change, or remove that employee’s shift. Changes are checked against availability, rest, driver support, and shift-length rules when saved.</p>
+          <div className="roster-generation-actions">
+            <button type="submit" disabled={editStatus.status === 'saving'}>{editStatus.status === 'saving' ? 'Validating and saving…' : 'Save roster changes'}</button>
+            <button type="button" className="secondary-button" onClick={toggleEditing}>Discard changes</button>
+            {editStatus.message && <span className={`save-message ${editStatus.status}`}>{editStatus.message}</span>}
+          </div>
+        </form>}
         <SavedRosterEmployeeTables
           roster={roster}
           groupedRosterEmployees={groupedRosterEmployees}
           dates={dates}
           demandMismatchByDate={demandMismatchByDate}
+          editing={canEdit && editing}
+          draftShifts={draftShifts}
+          onEditCell={openCellEditor}
         />
-        {canEdit && editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
-          <div className="section-heading">
-            <div><span className="eyebrow">Administrator</span><h3>Edit generated shifts</h3></div>
-            <button type="button" className="secondary-button" onClick={addDraftShift}>Add shift</button>
-          </div>
-          <p className="demand-help">Change an employee, date or time, add a shift, or remove one. Availability and other hard shift rules block invalid edits. Demand mismatches are saved as warnings and highlighted in red for review.</p>
-          <div className="roster-edit-list">
-            {draftShifts.map((shift, index) => {
-              const employee = roster.employees.find((item) => String(item.employeeId) === String(shift.employeeId))
-              const rosterEmployees = roster.employees.map((item) => ({ id: item.employeeId, firstName: item.employeeName, lastName: '' }))
-              const employeeOptions = [...availableEmployees, ...rosterEmployees.filter((item) => !availableEmployees.some((option) => String(option.id) === String(item.id)))]
-              const finishDayOffset = Math.max(0, Math.floor(Number(shift.finishHour) / 24))
-              return <div className="roster-edit-row" key={`${index}-${shift.employeeId}-${shift.date}`}>
-                <label>
-                  Employee
-                  <select value={shift.employeeId} onChange={(event) => updateDraftShift(index, { employeeId: event.target.value })}>
-                    {employeeOptions.map((option) => <option key={option.id} value={option.id}>{option.firstName} {option.lastName}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Date
-                  <input type="date" value={shift.date} min={roster.weekStart} max={weekDates(roster.weekStart)[6]} onChange={(event) => updateDraftShift(index, { date: event.target.value })} />
-                </label>
-                <label>
-                  Start
-                  <input type="time" step="3600" value={hourInputValue(shift.startHour)} onChange={(event) => updateDraftShift(index, { startHour: clockHour(event.target.value) })} />
-                </label>
-                <label>
-                  Finish
-                  <span className="roster-edit-finish">
-                    <input type="time" step="3600" value={hourInputValue(shift.finishHour)} onChange={(event) => updateDraftShift(index, { finishHour: finishDayOffset * 24 + clockHour(event.target.value) })} />
-                    <select value={finishDayOffset} onChange={(event) => updateDraftShift(index, { finishHour: Number(event.target.value) * 24 + (Number(shift.finishHour) % 24) })} aria-label="Finish day offset">
-                      <option value="0">Same day</option><option value="1">Next day</option>
-                    </select>
-                  </span>
-                </label>
-                <span className="roster-edit-duration">{Math.max(0, Number(shift.finishHour) - Number(shift.startHour))}h{employee ? '' : ' · unknown employee'}</span>
-                <button type="button" className="danger-button roster-edit-remove" onClick={() => removeDraftShift(index)}>Remove</button>
-              </div>
-            })}
-            {draftShifts.length === 0 && <p className="message info-message">No shifts. Save to keep the roster empty only when demand is zero.</p>}
-          </div>
-          <div className="roster-generation-actions">
-            <button type="submit" disabled={editStatus.status === 'saving'}>{editStatus.status === 'saving' ? 'Validating and saving…' : 'Save roster changes'}</button>
-            <button type="button" className="secondary-button" onClick={() => { setDraftShifts(rosterDraftShifts(roster)); setEditing(false); setEditStatus({ status: 'idle', message: '' }) }}>Cancel</button>
-            {editStatus.message && <span className={`save-message ${editStatus.status}`}>{editStatus.message}</span>}
-          </div>
-        </form>}
+        {cellEditor && <RosterCellEditorDialog
+          editor={cellEditor}
+          setEditor={setCellEditor}
+          onApply={applyCellEdit}
+          onRemove={removeCellShift}
+          onClose={() => setCellEditor(null)}
+        />}
       </>}
       <SavedRosterLabour fetchJson={fetchJson} query={labourQuery}
         refreshKey={`${rosterKind}:${refreshKey}:${labourRefreshKey}`} editing={editing && !!roster} />

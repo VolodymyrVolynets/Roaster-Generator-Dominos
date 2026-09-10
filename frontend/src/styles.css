@@ -775,71 +775,17 @@ input:focus {
   background: rgba(14, 116, 144, 0.12);
 }
 
-.roster-edit-panel .section-heading {
-  margin-bottom: 8px;
-}
-
 .roster-edit-panel h3 {
   margin: 4px 0 0;
   color: #f8fafc;
 }
 
-.roster-edit-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
+.roster-edit-panel .demand-help {
+  margin: 10px 0 0;
 }
 
-.roster-edit-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 1.35fr) repeat(3, minmax(130px, 0.8fr)) auto auto;
-  align-items: end;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.62);
-}
-
-.roster-edit-row label {
-  display: grid;
-  gap: 6px;
-  color: #cbd5e1;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.roster-edit-row input,
-.roster-edit-row select {
-  width: 100%;
-  min-height: 36px;
-  padding: 0 8px;
-  color: #f8fafc;
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  font: inherit;
-}
-
-.roster-edit-finish {
-  display: grid;
-  grid-template-columns: minmax(86px, 1fr) minmax(92px, 1fr);
-  gap: 6px;
-}
-
-.roster-edit-duration {
-  align-self: center;
-  color: #6ee7b7;
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.roster-edit-remove {
-  min-height: 36px;
-  padding: 0 10px;
-  font-size: 0.78rem;
+.roster-edit-panel .roster-generation-actions {
+  margin-top: 14px;
 }
 
 .hub-status {
@@ -1188,6 +1134,45 @@ input:focus {
 
 .roster-day-off {
   color: #64748b;
+}
+
+.saved-roster-table td.roster-shift-cell-editable {
+  padding: 0;
+}
+
+.roster-shift-cell-button {
+  width: 100%;
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font-weight: inherit;
+}
+
+.roster-shift-cell-button:hover:not(:disabled),
+.roster-shift-cell-button:focus-visible {
+  border-color: #38bdf8;
+  color: #e0f2fe;
+  background: rgba(14, 116, 144, 0.3);
+  box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.22);
+  outline: none;
+}
+
+.roster-shift-cell-button:hover:not(:disabled) .roster-day-off,
+.roster-shift-cell-button:focus-visible .roster-day-off {
+  color: #bae6fd;
+}
+
+.roster-cell-edit-hint {
+  display: block;
+  margin-top: 6px;
+  color: #7dd3fc;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .roster-demand-warning {
@@ -2089,6 +2074,106 @@ button {
     background: rgba(127, 29, 29, 0.55);
   }
 
+.roster-cell-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.roster-cell-dialog {
+  width: min(100%, 640px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid rgba(125, 211, 252, 0.42);
+  border-radius: 16px;
+  background: #0f172a;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.roster-cell-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.roster-cell-dialog-heading h3 {
+  margin: 4px 0 0;
+  color: #f8fafc;
+  font-size: 1.25rem;
+}
+
+.roster-cell-dialog-heading p {
+  margin: 5px 0 0;
+  color: #94a3b8;
+}
+
+.roster-cell-dialog-close {
+  flex: 0 0 38px;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  font-size: 1.25rem;
+}
+
+.roster-cell-dialog-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.roster-cell-dialog-fields label {
+  display: grid;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.roster-cell-dialog-duration {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.roster-cell-dialog-duration.valid {
+  color: #a7f3d0;
+  background: rgba(6, 95, 70, 0.35);
+}
+
+.roster-cell-dialog-duration.invalid {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+}
+
+.roster-cell-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+@media (max-width: 640px) {
+  .roster-cell-dialog {
+    padding: 18px;
+  }
+
+  .roster-cell-dialog-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .error-popup {
   position: fixed;
   top: 20px;
@@ -2302,15 +2387,6 @@ select:disabled {
 @media (max-width: 768px) {
   .demand-productivity-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .roster-edit-row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .roster-edit-row label:first-child,
-  .roster-edit-duration,
-  .roster-edit-remove {
-    grid-column: 1 / -1;
   }
 
   .demand-mobile-controls {
