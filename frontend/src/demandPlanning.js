@@ -1,5 +1,15 @@
 const number = (value) => Number(value ?? 0)
 const money = (value) => Math.round((value + Number.EPSILON) * 100) / 100
+const decimal = (value, digits = 2) => {
+  if (value == null || !Number.isFinite(Number(value))) return null
+  const factor = 10 ** digits
+  return Math.round((Number(value) + Number.EPSILON) * factor) / factor
+}
+const optionalNumber = (value) => {
+  if (value == null || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
 const staffRequired = (count, rate) => {
   if (count == null || count === '' || !Number.isFinite(Number(rate)) || Number(rate) <= 0) return null
   const ratio = Number(count) / Number(rate)
@@ -24,10 +34,10 @@ export function calculateDemandSummary(plan) {
     const requiredDriverHours = values.reduce((sum, value) => sum + number(value.demand), 0)
     const targetSales = number(column.targetSales)
     return { ...column, targetSales, requiredDriverHours,
-      deliveries: values.reduce((sum, value) => sum + number(value.deliveries), 0),
+      deliveries: decimal(values.reduce((sum, value) => sum + number(value.deliveries), 0), 4),
     }
   })
-  const total = (field) => days.reduce((sum, day) => sum + number(day[field]), 0)
+  const total = (field) => decimal(days.reduce((sum, day) => sum + number(day[field]), 0), 4)
   const targetSales = total('targetSales')
   return { days, targetSales,
     driverHours: total('requiredDriverHours'), deliveries: total('deliveries'),
@@ -36,6 +46,8 @@ export function calculateDemandSummary(plan) {
 
 export function calculateDemandLabour(plan, employees = []) {
   const summary = calculateDemandSummary(plan)
+  const productivity = optionalNumber(plan?.deliveriesPerDriverHour)
+  const hasProductivity = productivity != null && productivity > 0
   const eligibleDrivers = employees.filter((employee) => {
     const roles = (employee.roles || []).map((role) => String(role).toLowerCase())
     return employee.isActive && employee.targetHours != null && roles.includes('driver') &&
@@ -50,6 +62,8 @@ export function calculateDemandLabour(plan, employees = []) {
     ? weightedDrivers.reduce((sum, employee) => sum + Number(employee.hourlyRate) *
       (driversWithTargets.length > 0 ? Number(employee.targetHours) : 1), 0) / totalWeight
     : null
+  const totalTargetHours = eligibleDrivers.reduce((sum, employee) =>
+    sum + Math.max(0, number(employee.targetHours)), 0)
 
   const days = summary.days.map((day) => {
     const entries = (plan?.rows || []).map((row) => ({
@@ -58,34 +72,151 @@ export function calculateDemandLabour(plan, employees = []) {
     })).filter((entry) => entry.value && entry.value.isOpen !== false)
     const isComplete = averageHourlyRate != null && entries.every((entry) =>
       entry.value.demand != null && Number.isFinite(Number(entry.value.demand)) && Number(entry.value.demand) >= 0)
-    const sundayPremiumHours = entries.reduce((sum, entry) => {
+    const hourly = entries.map((entry) => {
+      const deliveries = optionalNumber(entry.value.deliveries)
+      const enteredDrivers = optionalNumber(entry.value.demand)
       const calendarDayPosition = (day.position + (entry.hour < 6 ? 1 : 0)) % 7
-      return sum + (calendarDayPosition === 6 ? number(entry.value.demand) : 0)
-    }, 0)
+      const isSundayPremium = calendarDayPosition === 6
+      const payMultiplier = isSundayPremium ? 1.25 : 1
+      const idealDriversRaw = deliveries != null && hasProductivity ? deliveries / productivity : null
+      const wholeDrivers = idealDriversRaw == null
+        ? null
+        : Math.max(0, Math.ceil(idealDriversRaw - Number.EPSILON * Math.max(1, idealDriversRaw) * 4))
+      const deliveryCapacityRaw = enteredDrivers != null && hasProductivity
+        ? enteredDrivers * productivity : null
+      const demandLabourCostRaw = enteredDrivers != null && averageHourlyRate != null
+        ? enteredDrivers * averageHourlyRate * payMultiplier : null
+      const idealLabourCostRaw = idealDriversRaw != null && averageHourlyRate != null
+        ? idealDriversRaw * averageHourlyRate * payMultiplier : null
+      let staffingStatus = 'unknown'
+      if (wholeDrivers != null && enteredDrivers != null) {
+        staffingStatus = enteredDrivers < wholeDrivers
+          ? 'under' : enteredDrivers > wholeDrivers ? 'above' : 'matched'
+      }
+
+      return {
+        hour: entry.hour,
+        isSundayPremium,
+        deliveries,
+        enteredDrivers,
+        idealDrivers: decimal(idealDriversRaw),
+        wholeDrivers,
+        driverDifference: wholeDrivers == null || enteredDrivers == null
+          ? null : decimal(enteredDrivers - wholeDrivers),
+        deliveryCapacity: decimal(deliveryCapacityRaw),
+        unusedDeliveryCapacity: deliveryCapacityRaw == null || deliveries == null
+          ? null : decimal(deliveryCapacityRaw - deliveries),
+        capacityUtilization: deliveryCapacityRaw > 0 && deliveries != null
+          ? decimal(deliveries / deliveryCapacityRaw * 100) : null,
+        deliveriesPerEnteredDriver: enteredDrivers > 0 && deliveries != null
+          ? decimal(deliveries / enteredDrivers) : null,
+        idealLabourCost: idealLabourCostRaw == null ? null : money(idealLabourCostRaw),
+        demandLabourCost: demandLabourCostRaw == null ? null : money(demandLabourCostRaw),
+        labourCostDifference: demandLabourCostRaw == null || idealLabourCostRaw == null
+          ? null : money(demandLabourCostRaw - idealLabourCostRaw),
+        labourCostPerDelivery: demandLabourCostRaw == null || deliveries == null || deliveries <= 0
+          ? null : money(demandLabourCostRaw / deliveries),
+        staffingStatus,
+        idealDriversRaw,
+        deliveryCapacityRaw,
+        demandLabourCostRaw,
+        idealLabourCostRaw,
+      }
+    })
+    const sundayPremiumHours = hourly.reduce((sum, entry) =>
+      sum + (entry.isSundayPremium ? number(entry.enteredDrivers) : 0), 0)
     const regularHours = day.requiredDriverHours - sundayPremiumHours
     const labourCost = isComplete
       ? money((regularHours + sundayPremiumHours * 1.25) * averageHourlyRate)
       : null
+    const idealComplete = averageHourlyRate != null && hasProductivity &&
+      hourly.every((entry) => entry.idealDriversRaw != null)
+    const idealDriverHoursRaw = idealComplete
+      ? hourly.reduce((sum, entry) => sum + entry.idealDriversRaw, 0) : null
+    const idealLabourCost = idealComplete
+      ? money(hourly.reduce((sum, entry) => sum + entry.idealLabourCostRaw, 0)) : null
+    const deliveryCapacity = hasProductivity && isComplete
+      ? day.requiredDriverHours * productivity : null
+    const staffingCount = (status) => hourly.filter((entry) => entry.staffingStatus === status).length
     return {
       ...day,
       sundayPremiumHours,
       labourCost,
       labourPercentage: labourCost != null && day.targetSales > 0
         ? money(labourCost / day.targetSales * 100) : null,
+      openHours: hourly.length,
+      idealDriverHours: decimal(idealDriverHoursRaw),
+      wholeDriverHours: hourly.every((entry) => entry.wholeDrivers != null)
+        ? hourly.reduce((sum, entry) => sum + entry.wholeDrivers, 0) : null,
+      driverHourDifference: idealDriverHoursRaw == null
+        ? null : decimal(day.requiredDriverHours - idealDriverHoursRaw),
+      deliveryCapacity: decimal(deliveryCapacity),
+      unusedDeliveryCapacity: deliveryCapacity == null
+        ? null : decimal(deliveryCapacity - day.deliveries),
+      capacityUtilization: deliveryCapacity > 0
+        ? decimal(day.deliveries / deliveryCapacity * 100) : null,
+      deliveriesPerEnteredDriverHour: day.requiredDriverHours > 0
+        ? decimal(day.deliveries / day.requiredDriverHours) : null,
+      idealLabourCost,
+      labourCostDifference: labourCost == null || idealLabourCost == null
+        ? null : money(labourCost - idealLabourCost),
+      labourCostPerDelivery: labourCost == null || day.deliveries <= 0
+        ? null : money(labourCost / day.deliveries),
+      understaffedHours: staffingCount('under'),
+      matchedHours: staffingCount('matched'),
+      aboveMinimumHours: staffingCount('above'),
+      unknownHours: staffingCount('unknown'),
+      hourly: hourly.map(({ idealDriversRaw, deliveryCapacityRaw, demandLabourCostRaw, idealLabourCostRaw, ...entry }) => entry),
       isComplete,
+      idealComplete,
     }
   })
   const isComplete = days.length > 0 && days.every((day) => day.isComplete)
+  const idealComplete = days.length > 0 && days.every((day) => day.idealComplete)
   const labourCost = isComplete ? money(days.reduce((sum, day) => sum + day.labourCost, 0)) : null
+  const idealLabourCost = idealComplete
+    ? money(days.reduce((sum, day) => sum + day.idealLabourCost, 0)) : null
+  const idealDriverHours = idealComplete
+    ? decimal(days.reduce((sum, day) => sum + day.idealDriverHours, 0)) : null
+  const deliveryCapacity = isComplete && hasProductivity
+    ? decimal(summary.driverHours * productivity) : null
 
   return {
     ...summary,
     days,
     eligibleDriverCount: eligibleDrivers.length,
+    totalTargetHours: decimal(totalTargetHours),
+    demandToTargetHoursPercentage: totalTargetHours > 0
+      ? decimal(summary.driverHours / totalTargetHours * 100) : null,
     averageHourlyRate: averageHourlyRate == null ? null : money(averageHourlyRate),
+    productivity: hasProductivity ? productivity : null,
+    idealDriverHours,
+    wholeDriverHours: days.every((day) => day.wholeDriverHours != null)
+      ? days.reduce((sum, day) => sum + day.wholeDriverHours, 0) : null,
+    driverHourDifference: idealDriverHours == null
+      ? null : decimal(summary.driverHours - idealDriverHours),
+    deliveryCapacity,
+    unusedDeliveryCapacity: deliveryCapacity == null
+      ? null : decimal(deliveryCapacity - summary.deliveries),
+    capacityUtilization: deliveryCapacity > 0
+      ? decimal(summary.deliveries / deliveryCapacity * 100) : null,
+    deliveriesPerEnteredDriverHour: summary.driverHours > 0
+      ? decimal(summary.deliveries / summary.driverHours) : null,
     labourCost,
+    idealLabourCost,
+    labourCostDifference: labourCost == null || idealLabourCost == null
+      ? null : money(labourCost - idealLabourCost),
+    labourCostPerDelivery: labourCost == null || summary.deliveries <= 0
+      ? null : money(labourCost / summary.deliveries),
     labourPercentage: labourCost != null && summary.targetSales > 0
       ? money(labourCost / summary.targetSales * 100) : null,
+    idealLabourPercentage: idealLabourCost != null && summary.targetSales > 0
+      ? money(idealLabourCost / summary.targetSales * 100) : null,
+    understaffedHours: days.reduce((sum, day) => sum + day.understaffedHours, 0),
+    matchedHours: days.reduce((sum, day) => sum + day.matchedHours, 0),
+    aboveMinimumHours: days.reduce((sum, day) => sum + day.aboveMinimumHours, 0),
+    unknownHours: days.reduce((sum, day) => sum + day.unknownHours, 0),
     isComplete,
+    idealComplete,
   }
 }

@@ -542,7 +542,7 @@ input:focus {
 
 .demand-labour-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -569,6 +569,12 @@ input:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.demand-labour-weekly small {
+  color: #94a3b8;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
 .demand-labour-note {
   margin: -4px 0 12px;
   color: #94a3b8;
@@ -584,7 +590,7 @@ input:focus {
 
 .demand-labour-table {
   width: 100%;
-  min-width: 700px;
+  min-width: 1420px;
   border-collapse: collapse;
   color: #cbd5e1;
   font-size: 0.82rem;
@@ -613,6 +619,144 @@ input:focus {
 
 .demand-labour-table input {
   width: 120px;
+}
+
+.demand-hourly-analysis {
+  margin: 24px 0 18px;
+  padding: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 14px;
+  background: rgba(8, 47, 73, 0.12);
+}
+
+.demand-hourly-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.demand-hourly-heading h3 {
+  margin: 4px 0 5px;
+  color: #f8fafc;
+  font-size: 1.05rem;
+}
+
+.demand-hourly-heading p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.demand-hourly-heading label {
+  display: grid;
+  flex: 0 0 190px;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.demand-hourly-heading select {
+  width: 100%;
+}
+
+.demand-hourly-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.demand-hourly-summary > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.demand-hourly-summary span {
+  color: #94a3b8;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.demand-hourly-summary strong {
+  color: #e0f2fe;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.demand-hourly-table-wrapper {
+  margin-bottom: 0;
+}
+
+.demand-hourly-table {
+  min-width: 1780px;
+}
+
+.demand-hourly-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.demand-hourly-table tbody th:first-child {
+  background: #172033;
+}
+
+.staffing-status {
+  display: inline-flex;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.staffing-status-matched {
+  color: #86efac;
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(22, 101, 52, 0.2);
+}
+
+.staffing-status-under {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.36);
+  background: rgba(127, 29, 29, 0.24);
+}
+
+.staffing-status-above {
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.32);
+  background: rgba(120, 53, 15, 0.22);
+}
+
+.staffing-status-unknown {
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(51, 65, 85, 0.35);
+}
+
+.metric-success {
+  color: #86efac;
+}
+
+.metric-warning {
+  color: #fcd34d !important;
+}
+
+.metric-danger {
+  color: #fca5a5;
+}
+
+.demand-empty-hourly {
+  padding: 22px !important;
+  color: #94a3b8;
+  text-align: center !important;
 }
 
 .saved-roster-labour {
@@ -2385,6 +2529,19 @@ select:disabled {
 }
 
 @media (max-width: 768px) {
+  .demand-hourly-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .demand-hourly-heading label {
+    flex-basis: auto;
+  }
+
+  .demand-hourly-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .demand-productivity-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

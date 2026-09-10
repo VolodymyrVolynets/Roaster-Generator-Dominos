@@ -106,6 +106,75 @@ test('planned labour uses demand and target-hour-weighted active driver pay', ()
   assert.equal(labour.labourPercentage, 39.38)
 })
 
+test('hourly labour analysis compares entered whole-driver demand with the fractional productivity ideal', () => {
+  const plan = {
+    deliveriesPerDriverHour: 2.7,
+    columns: [
+      { position: 0, label: 'Monday', targetSales: 100 },
+      { position: 5, label: 'Saturday', targetSales: 100 },
+    ],
+    rows: [
+      { hour: 12, values: [
+        { position: 0, isOpen: true, deliveries: 5.4, demand: 2 },
+      ] },
+      { hour: 1, values: [
+        { position: 0, isOpen: true, deliveries: 2.7, demand: 2 },
+        { position: 5, isOpen: true, deliveries: 2.7, demand: 1 },
+      ] },
+    ],
+  }
+  const employees = [
+    { isActive: true, roles: ['Driver'], targetHours: 20, hourlyRate: 10 },
+  ]
+
+  const labour = calculateDemandLabour(plan, employees)
+  const monday = labour.days[0]
+  const matchedHour = monday.hourly.find((hour) => hour.hour === 12)
+  const aboveHour = monday.hourly.find((hour) => hour.hour === 1)
+  const saturdayAfterMidnight = labour.days[1].hourly[0]
+
+  assert.equal(labour.driverHours, 5)
+  assert.equal(labour.idealDriverHours, 4)
+  assert.equal(labour.wholeDriverHours, 4)
+  assert.equal(labour.driverHourDifference, 1)
+  assert.equal(labour.deliveryCapacity, 13.5)
+  assert.equal(labour.capacityUtilization, 80)
+  assert.equal(labour.labourCost, 52.5)
+  assert.equal(labour.idealLabourCost, 42.5)
+  assert.equal(labour.labourCostDifference, 10)
+  assert.equal(labour.labourCostPerDelivery, 4.86)
+  assert.equal(labour.totalTargetHours, 20)
+  assert.equal(labour.demandToTargetHoursPercentage, 25)
+
+  assert.equal(monday.deliveries, 8.1)
+  assert.equal(monday.openHours, 2)
+  assert.equal(monday.capacityUtilization, 75)
+  assert.equal(monday.matchedHours, 1)
+  assert.equal(monday.aboveMinimumHours, 1)
+  assert.equal(monday.understaffedHours, 0)
+  assert.equal(matchedHour.idealDrivers, 2)
+  assert.equal(matchedHour.wholeDrivers, 2)
+  assert.equal(matchedHour.staffingStatus, 'matched')
+  assert.equal(aboveHour.idealDrivers, 1)
+  assert.equal(aboveHour.deliveryCapacity, 5.4)
+  assert.equal(aboveHour.capacityUtilization, 50)
+  assert.equal(aboveHour.labourCostDifference, 10)
+  assert.equal(aboveHour.staffingStatus, 'above')
+  assert.equal(saturdayAfterMidnight.isSundayPremium, true)
+  assert.equal(saturdayAfterMidnight.demandLabourCost, 12.5)
+
+  const understaffed = calculateDemandLabour({
+    deliveriesPerDriverHour: 2.7,
+    columns: [{ position: 0, label: 'Monday', targetSales: 0 }],
+    rows: [{ hour: 12, values: [{ position: 0, isOpen: true, deliveries: 5.4, demand: 1 }] }],
+  }, employees).days[0]
+  assert.equal(understaffed.understaffedHours, 1)
+  assert.equal(understaffed.hourly[0].staffingStatus, 'under')
+  assert.equal(understaffed.hourly[0].driverDifference, -1)
+  assert.equal(understaffed.hourly[0].unusedDeliveryCapacity, -2.7)
+  assert.equal(understaffed.hourly[0].capacityUtilization, 200)
+})
+
 test('planned labour is unavailable without eligible driver rates or complete demand', () => {
   const plan = {
     columns: [{ position: 0, label: 'Monday', targetSales: 100 }],
@@ -118,4 +187,6 @@ test('planned labour is unavailable without eligible driver rates or complete de
   ])
   assert.equal(incomplete.isComplete, false)
   assert.equal(incomplete.labourCost, null)
+  assert.equal(incomplete.idealComplete, false)
+  assert.equal(incomplete.idealLabourCost, null)
 })
