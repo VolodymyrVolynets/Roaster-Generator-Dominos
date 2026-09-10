@@ -28,10 +28,13 @@ test('editing deliveries updates driver staffing without mutating source data', 
 })
 
 test('productivity changes recalculate all row previews without mutating source data', () => {
-  const original = { ...settings, rows: [{ hour: 12, values: [{ position: 0, isOpen: true, deliveries: 12, demand: 5 }] }] }
-  const preview = recalculateDemandPlan({ ...original, deliveriesPerDriverHour: 6 })
+  const original = { ...settings, rows: [{ hour: 12, values: [{ position: 0, isOpen: true, deliveries: 12, demand: 5, insideDemand: 4 }] }] }
+  const preview = recalculateDemandPlan(
+    { ...original, deliveriesPerDriverHour: 6 }, ['demand', 'insideDemand'])
   assert.equal(preview.rows[0].values[0].demand, 2)
+  assert.equal(preview.rows[0].values[0].insideDemand, 2)
   assert.equal(original.rows[0].values[0].demand, 5)
+  assert.equal(original.rows[0].values[0].insideDemand, 4)
 })
 
 test('daily and weekly staffing use driver demand and sales without legacy pizza or inside totals', () => {
@@ -189,4 +192,32 @@ test('planned labour is unavailable without eligible driver rates or complete de
   assert.equal(incomplete.labourCost, null)
   assert.equal(incomplete.idealComplete, false)
   assert.equal(incomplete.idealLabourCost, null)
+})
+
+test('inside view uses independent inside demand and only eligible in-store employee pay', () => {
+  const plan = {
+    deliveriesPerDriverHour: 2.7,
+    columns: [{ position: 0, label: 'Monday', targetSales: 200 }],
+    rows: [{ hour: 12, values: [{
+      position: 0, isOpen: true, deliveries: 5.4, demand: 5, insideDemand: 2,
+    }] }],
+  }
+  const employees = [
+    { isActive: true, roles: ['InStore'], insideTargetHours: 10, hourlyRate: 12 },
+    { isActive: true, roles: ['Driver'], targetHours: 20, hourlyRate: 100 },
+    { isActive: true, roles: ['InStore', 'Manager'], insideTargetHours: 20, hourlyRate: 100 },
+    { isActive: false, roles: ['InStore'], insideTargetHours: 20, hourlyRate: 100 },
+  ]
+
+  const outside = calculateDemandLabour(plan, employees)
+  const inside = calculateDemandLabour(plan, employees, 'inside')
+
+  assert.equal(outside.driverHours, 5)
+  assert.equal(inside.area, 'inside')
+  assert.equal(inside.driverHours, 2)
+  assert.equal(inside.eligibleEmployeeCount, 1)
+  assert.equal(inside.averageHourlyRate, 12)
+  assert.equal(inside.totalTargetHours, 10)
+  assert.equal(inside.labourCost, 24)
+  assert.equal(inside.days[0].hourly[0].enteredDrivers, 2)
 })

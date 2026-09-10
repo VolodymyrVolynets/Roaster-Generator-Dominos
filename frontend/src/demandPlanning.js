@@ -19,6 +19,7 @@ const staffRequired = (count, rate) => {
 export function recalculateDemandValue(value, plan, fields = ['demand']) {
   const updated = { ...value }
   if (fields.includes('demand')) updated.demand = value.isOpen === false ? null : staffRequired(value.deliveries, plan.deliveriesPerDriverHour ?? 2.7)
+  if (fields.includes('insideDemand')) updated.insideDemand = value.isOpen === false ? null : staffRequired(value.deliveries, plan.deliveriesPerDriverHour ?? 2.7)
   return updated
 }
 
@@ -28,10 +29,10 @@ export function recalculateDemandPlan(plan, fields) {
   })) }
 }
 
-export function calculateDemandSummary(plan) {
+export function calculateDemandSummary(plan, demandField = 'demand') {
   const days = (plan?.columns || []).map((column) => {
     const values = plan.rows.map((row) => row.values.find((value) => value.position === column.position)).filter((value) => value && value.isOpen !== false)
-    const requiredDriverHours = values.reduce((sum, value) => sum + number(value.demand), 0)
+    const requiredDriverHours = values.reduce((sum, value) => sum + number(value[demandField]), 0)
     const targetSales = number(column.targetSales)
     return { ...column, targetSales, requiredDriverHours,
       deliveries: decimal(values.reduce((sum, value) => sum + number(value.deliveries), 0), 4),
@@ -44,26 +45,31 @@ export function calculateDemandSummary(plan) {
   }
 }
 
-export function calculateDemandLabour(plan, employees = []) {
-  const summary = calculateDemandSummary(plan)
+export function calculateDemandLabour(plan, employees = [], area = 'outside') {
+  const isInside = area === 'inside'
+  const demandField = isInside ? 'insideDemand' : 'demand'
+  const targetHoursField = isInside ? 'insideTargetHours' : 'targetHours'
+  const summary = calculateDemandSummary(plan, demandField)
   const productivity = optionalNumber(plan?.deliveriesPerDriverHour)
   const hasProductivity = productivity != null && productivity > 0
-  const eligibleDrivers = employees.filter((employee) => {
+  const eligibleEmployees = employees.filter((employee) => {
     const roles = (employee.roles || []).map((role) => String(role).toLowerCase())
-    return employee.isActive && employee.targetHours != null && roles.includes('driver') &&
-      !roles.includes('instore') && !roles.includes('manager') &&
+    const hasAreaRole = isInside
+      ? roles.includes('instore') && !roles.includes('manager')
+      : roles.includes('driver') && !roles.includes('instore') && !roles.includes('manager')
+    return employee.isActive && employee[targetHoursField] != null && hasAreaRole &&
       Number.isFinite(Number(employee.hourlyRate)) && Number(employee.hourlyRate) >= 0
   })
-  const driversWithTargets = eligibleDrivers.filter((employee) => Number(employee.targetHours) > 0)
-  const weightedDrivers = driversWithTargets.length > 0 ? driversWithTargets : eligibleDrivers
-  const totalWeight = weightedDrivers.reduce((sum, employee) =>
-    sum + (driversWithTargets.length > 0 ? Number(employee.targetHours) : 1), 0)
+  const employeesWithTargets = eligibleEmployees.filter((employee) => Number(employee[targetHoursField]) > 0)
+  const weightedEmployees = employeesWithTargets.length > 0 ? employeesWithTargets : eligibleEmployees
+  const totalWeight = weightedEmployees.reduce((sum, employee) =>
+    sum + (employeesWithTargets.length > 0 ? Number(employee[targetHoursField]) : 1), 0)
   const averageHourlyRate = totalWeight > 0
-    ? weightedDrivers.reduce((sum, employee) => sum + Number(employee.hourlyRate) *
-      (driversWithTargets.length > 0 ? Number(employee.targetHours) : 1), 0) / totalWeight
+    ? weightedEmployees.reduce((sum, employee) => sum + Number(employee.hourlyRate) *
+      (employeesWithTargets.length > 0 ? Number(employee[targetHoursField]) : 1), 0) / totalWeight
     : null
-  const totalTargetHours = eligibleDrivers.reduce((sum, employee) =>
-    sum + Math.max(0, number(employee.targetHours)), 0)
+  const totalTargetHours = eligibleEmployees.reduce((sum, employee) =>
+    sum + Math.max(0, number(employee[targetHoursField])), 0)
 
   const days = summary.days.map((day) => {
     const entries = (plan?.rows || []).map((row) => ({
@@ -71,10 +77,10 @@ export function calculateDemandLabour(plan, employees = []) {
       value: row.values.find((value) => value.position === day.position),
     })).filter((entry) => entry.value && entry.value.isOpen !== false)
     const isComplete = averageHourlyRate != null && entries.every((entry) =>
-      entry.value.demand != null && Number.isFinite(Number(entry.value.demand)) && Number(entry.value.demand) >= 0)
+      entry.value[demandField] != null && Number.isFinite(Number(entry.value[demandField])) && Number(entry.value[demandField]) >= 0)
     const hourly = entries.map((entry) => {
       const deliveries = optionalNumber(entry.value.deliveries)
-      const enteredDrivers = optionalNumber(entry.value.demand)
+      const enteredDrivers = optionalNumber(entry.value[demandField])
       const calendarDayPosition = (day.position + (entry.hour < 6 ? 1 : 0)) % 7
       const isSundayPremium = calendarDayPosition === 6
       const payMultiplier = isSundayPremium ? 1.25 : 1
@@ -184,7 +190,9 @@ export function calculateDemandLabour(plan, employees = []) {
   return {
     ...summary,
     days,
-    eligibleDriverCount: eligibleDrivers.length,
+    area,
+    eligibleEmployeeCount: eligibleEmployees.length,
+    eligibleDriverCount: eligibleEmployees.length,
     totalTargetHours: decimal(totalTargetHours),
     demandToTargetHoursPercentage: totalTargetHours > 0
       ? decimal(summary.driverHours / totalTargetHours * 100) : null,

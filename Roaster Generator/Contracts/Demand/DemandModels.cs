@@ -55,6 +55,7 @@ public sealed class DemandValueRequest
 
     private decimal? deliveries;
     private int? demand;
+    private int? insideDemand;
 
     public decimal? Deliveries
     {
@@ -68,8 +69,15 @@ public sealed class DemandValueRequest
         set { demand = value; DemandSpecified = true; }
     }
 
+    public int? InsideDemand
+    {
+        get => insideDemand;
+        set { insideDemand = value; InsideDemandSpecified = true; }
+    }
+
     internal bool DeliveriesSpecified { get; private set; }
     internal bool DemandSpecified { get; private set; }
+    internal bool InsideDemandSpecified { get; private set; }
 }
 
 public sealed class DemandPlanSummaryResponse
@@ -103,6 +111,8 @@ public sealed class DemandPlanResponse
 
     public int WeeklyDriverHours { get; init; }
 
+    public int WeeklyInsideHours { get; init; }
+
     public decimal WeeklyTargetSales { get; init; }
 
     public List<DemandColumnResponse> Columns { get; init; } = [];
@@ -120,6 +130,8 @@ public sealed class DemandColumnResponse
 
     public int TotalHours { get; init; }
 
+    public int InsideTotalHours { get; init; }
+
     public decimal TargetSales { get; init; }
 }
 
@@ -132,6 +144,8 @@ public sealed class DemandStaffingDayResponse
     public decimal TargetSales { get; init; }
 
     public int RequiredDriverHours { get; init; }
+
+    public int RequiredInsideHours { get; init; }
 
 }
 
@@ -151,4 +165,6 @@ public sealed class DemandValueResponse
     public decimal? Deliveries { get; init; }
 
     public int? Demand { get; init; }
+
+    public int? InsideDemand { get; init; }
 }
