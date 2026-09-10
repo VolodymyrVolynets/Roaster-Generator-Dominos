@@ -1072,6 +1072,8 @@ function AdminConsole({
         })
         .sort((first, second) => first.employeeName.localeCompare(second.employeeName, undefined, { sensitivity: 'base' })),
     }))
+  const employeesWithoutAvailability = (availability?.employees || [])
+    .filter((employeeSchedule) => !employeeSchedule.days.some((day) => day.startTime && day.finishTime))
   const editableRoles = authState.user.isAdmin
     ? ['Driver', 'InStore', 'Manager', 'Admin']
     : ['Driver', 'InStore', 'Manager']
@@ -1458,6 +1460,15 @@ function AdminConsole({
                     {dateFormatter.format(parseDate(availability.weekStart))} –{' '}
                     {dateFormatter.format(parseDate(availability.weekEnd))}
                   </div>
+                  {employeesWithoutAvailability.length > 0 && (
+                    <div className="availability-missing-summary" role="status">
+                      <strong>
+                        {employeesWithoutAvailability.length}{' '}
+                        {employeesWithoutAvailability.length === 1 ? 'driver has' : 'drivers have'} no availability entered
+                      </strong>
+                      <span>Highlighted rows need attention before roster generation.</span>
+                    </div>
+                  )}
                   <div className="roster-role-groups availability-role-groups">
                     {groupedAvailability.map((group) => (
                       <section className={`roster-role-group roster-role-group-${group.id}`} key={group.id}>
@@ -1478,18 +1489,31 @@ function AdminConsole({
                                 <span key={day.date}>{day.dayOfWeek.slice(0, 3)}</span>
                               ))}
                             </div>
-                            {group.employees.map((employeeSchedule) => (
-                              <div className="availability-row" role="row" key={employeeSchedule.employeeId}>
-                                <strong>{employeeSchedule.employeeName}</strong>
-                                {employeeSchedule.days.map((day) => (
-                                  <span key={day.date}>
-                                    {day.startTime && day.finishTime
-                                      ? `${day.startTime}–${day.finishTime}`
-                                      : 'Off'}
-                                  </span>
-                                ))}
-                              </div>
-                            ))}
+                            {group.employees.map((employeeSchedule) => {
+                              const hasAvailability = employeeSchedule.days.some((day) => day.startTime && day.finishTime)
+
+                              return (
+                                <div
+                                  className={`availability-row ${hasAvailability ? '' : 'availability-row-missing'}`}
+                                  role="row"
+                                  key={employeeSchedule.employeeId}
+                                >
+                                  <strong className="availability-employee-name">
+                                    <span>{employeeSchedule.employeeName}</span>
+                                    {!hasAvailability && (
+                                      <span className="availability-missing-badge">No availability entered</span>
+                                    )}
+                                  </strong>
+                                  {employeeSchedule.days.map((day) => (
+                                    <span key={day.date}>
+                                      {day.startTime && day.finishTime
+                                        ? `${day.startTime}–${day.finishTime}`
+                                        : 'Off'}
+                                    </span>
+                                  ))}
+                                </div>
+                              )
+                            })}
                           </div>
                         ) : (
                           <p className="roster-role-group-empty">No active employees in this group for the selected week.</p>
