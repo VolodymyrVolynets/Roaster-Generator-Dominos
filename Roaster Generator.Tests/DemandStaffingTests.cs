@@ -60,7 +60,6 @@ public sealed class DemandStaffingTests
 
         Assert.Null(parsed.Rows[0].Values[0].Deliveries);
         Assert.Null(parsed.Rows[0].Values[0].Demand);
-        Assert.Null(parsed.Rows[0].Values[0].InsideDemand);
         Assert.Equal(3m, parsed.Rows[0].Values[1].Deliveries);
         Assert.Equal(8m, parsed.Rows[0].Values[6].Deliveries);
     }
@@ -88,7 +87,7 @@ public sealed class DemandStaffingTests
     }
 
     [Fact]
-    public void RecalculationUsesSharedProductivityForOutsideAndInsideDemand()
+    public void RecalculationUsesSavedDriverProductivity()
     {
         var content = string.Join('\n', new[] { 11, 12, 0, 1 }.Select(hour =>
             $"{hour},ignored,8,ignored,8,ignored,8,ignored,8,ignored,8,ignored,8,ignored,8"));
@@ -96,11 +95,7 @@ public sealed class DemandStaffingTests
 
         var recalculated = DemandService.Recalculate(parsed, 4m);
 
-        Assert.All(recalculated.Rows, row => Assert.All(row.Values, value =>
-        {
-            Assert.Equal(2, value.Demand);
-            Assert.Equal(2, value.InsideDemand);
-        }));
+        Assert.All(recalculated.Rows, row => Assert.All(row.Values, value => Assert.Equal(2, value.Demand)));
     }
 
     [Fact]
@@ -118,13 +113,11 @@ public sealed class DemandStaffingTests
         {
             Assert.Equal(8m, value.Deliveries);
             Assert.Equal(3, value.Demand);
-            Assert.Equal(3, value.InsideDemand);
         });
         Assert.All(normalized.Rows.Single(row => row.Hour == 1).Values, value =>
         {
             Assert.Null(value.Deliveries);
             Assert.Null(value.Demand);
-            Assert.Null(value.InsideDemand);
         });
     }
 
@@ -136,15 +129,11 @@ public sealed class DemandStaffingTests
 
         var normalized = Service(db).NormalizeAndValidateDemand(parsed, Monday);
 
-        Assert.All(Assert.Single(normalized.Rows).Values, value =>
-        {
-            Assert.Null(value.Demand);
-            Assert.Null(value.InsideDemand);
-        });
+        Assert.All(Assert.Single(normalized.Rows).Values, value => Assert.Null(value.Demand));
     }
 
     [Fact]
-    public void StaffingTotalsReturnIndependentOutsideAndInsideDemandAndExcludeClosedHours()
+    public void StaffingTotalsShowOnlyDriversAndSalesAndExcludeClosedHours()
     {
         using var db = NewDb();
         var plan = new DemandPlan { WeekStart = Monday };
@@ -171,22 +160,16 @@ public sealed class DemandStaffingTests
 
         var response = Service(db).ToResponse(plan);
         Assert.Equal(4, response.WeeklyDriverHours);
-        Assert.Equal(6, response.WeeklyInsideHours);
         Assert.Equal(200m, response.WeeklyTargetSales);
         var sunday = response.DailyStaffing.Single(day => day.Position == 6);
         Assert.Equal(2, sunday.RequiredDriverHours);
-        Assert.Equal(3, sunday.RequiredInsideHours);
         Assert.Equal(100m, sunday.TargetSales);
-        Assert.All(response.Rows.Single(row => row.Hour == 11).Values, value =>
-        {
-            Assert.False(value.IsOpen);
-            Assert.NotNull(value.InsideDemand);
-        });
+        Assert.All(response.Rows.Single(row => row.Hour == 11).Values, value => Assert.False(value.IsOpen));
         var json = JsonSerializer.Serialize(response, WebJson);
         Assert.DoesNotContain("hourlyRate", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("labour", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("pizza", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("insideDemand", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("inside", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -207,13 +190,13 @@ public sealed class DemandStaffingTests
         Assert.True(new DemandPlanUpdateRequestValidator().Validate(ValidRequest()).IsValid);
         var result = new DemandValueRequestValidator().Validate(new DemandValueRequest
         {
-            Position = 0, Deliveries = -1m, Demand = -1, InsideDemand = -1
+            Position = 0, Deliveries = -1m, Demand = -1
         });
-        Assert.Equal(3, result.Errors.Count);
+        Assert.Equal(2, result.Errors.Count);
     }
 
     [Fact]
-    public void LegacyPizzaFieldsAreIgnoredButInsideDemandIsValidated()
+    public void RemovedPizzaAndInsideRequestFieldsDoNotBlockDriverEdits()
     {
         var json = JsonSerializer.Serialize(ValidRequest(), WebJson);
         var request = JsonSerializer.Deserialize<DemandPlanUpdateRequest>(
@@ -221,8 +204,7 @@ public sealed class DemandStaffingTests
         request.Rows[0].Values[0] = JsonSerializer.Deserialize<DemandValueRequest>(
             "{\"position\":0,\"deliveries\":8,\"demand\":3,\"pizzas\":\"unknown\",\"insideDemand\":-1}", WebJson)!;
 
-        var result = new DemandPlanUpdateRequestValidator().Validate(request);
-        Assert.Contains(result.Errors, error => error.PropertyName.EndsWith(nameof(DemandValueRequest.InsideDemand)));
+        Assert.True(new DemandPlanUpdateRequestValidator().Validate(request).IsValid);
     }
 
     [Fact]
@@ -233,19 +215,6 @@ public sealed class DemandStaffingTests
 
         Assert.Equal(8m, result.Deliveries);
         Assert.Equal(7, result.Demand);
-        Assert.Equal(3, result.InsideDemand);
-    }
-
-    [Fact]
-    public void InsideOnlyEditPreservesOutsideDemandAndDeliveries()
-    {
-        var edit = JsonSerializer.Deserialize<DemandValueRequest>(
-            "{\"position\":0,\"insideDemand\":6}", WebJson)!;
-        var result = DemandService.ApplyValueEdit(PreviousValue(), edit, SavedSettings());
-
-        Assert.Equal(8m, result.Deliveries);
-        Assert.Equal(4, result.Demand);
-        Assert.Equal(6, result.InsideDemand);
     }
 
     [Fact]
@@ -256,7 +225,6 @@ public sealed class DemandStaffingTests
 
         Assert.Null(result.Deliveries);
         Assert.Null(result.Demand);
-        Assert.Null(result.InsideDemand);
     }
 
     [Fact]
@@ -268,24 +236,18 @@ public sealed class DemandStaffingTests
         }, SavedSettings());
 
         Assert.Equal(4, result.Demand);
-        Assert.Equal(4, result.InsideDemand);
     }
 
     [Fact]
     public void ExplicitManualStaffCountSurvivesDeliveryEditsUntilRecalculationRequested()
     {
-        var edit = new DemandValueRequest
-        {
-            Position = 0, Deliveries = 12.1m, Demand = 5, InsideDemand = 6
-        };
+        var edit = new DemandValueRequest { Position = 0, Deliveries = 12.1m, Demand = 5 };
         var manual = DemandService.ApplyValueEdit(PreviousValue(), edit, SavedSettings());
         Assert.Equal(5, manual.Demand);
-        Assert.Equal(6, manual.InsideDemand);
 
         var recalculated = DemandService.ApplyValueEdit(PreviousValue(), edit,
             SavedSettings() with { Recalculate = true });
         Assert.Equal(4, recalculated.Demand);
-        Assert.Equal(4, recalculated.InsideDemand);
     }
 
     [Fact]
@@ -314,7 +276,7 @@ public sealed class DemandStaffingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task DeliveryUpdatesAndReimportsRefreshBothStaffingViews(bool reimport)
+    public async Task UpdatingOrReimportingDriverDemandPreservesStoredInsideData(bool reimport)
     {
         using var db = NewDb();
         var service = Service(db);
@@ -372,67 +334,8 @@ public sealed class DemandStaffingTests
             Assert.Equal(4m, value.Deliveries);
             Assert.Equal(reimport ? 2 : 1, value.Demand);
             Assert.Equal(40m, value.Pizzas);
-            Assert.Equal(reimport ? 2 : 1, value.InsideDemand);
+            Assert.Equal(3, value.InsideDemand);
         });
-    }
-
-    [Fact]
-    public async Task UpdatePersistsIndependentOutsideAndInsideAdjustments()
-    {
-        using var db = NewDb();
-        var service = Service(db);
-        var imported = await service.ImportTextAsync(new DemandImportRequest
-        {
-            Name = "Week", WeekStart = Monday,
-            Content = "12,,8,,8,,8,,8,,8,,8,,8"
-        }, CancellationToken.None);
-        var request = new DemandPlanUpdateRequest
-        {
-            Name = imported.Name,
-            WeekStart = imported.WeekStart,
-            DeliveriesPerDriverHour = imported.DeliveriesPerDriverHour,
-            Columns = imported.Columns.Select(column => new DemandColumnRequest
-            {
-                Position = column.Position, TargetSales = column.TargetSales
-            }).ToList(),
-            Rows = imported.Rows.Select(row => new DemandRowRequest
-            {
-                Hour = row.Hour,
-                Values = row.Values.Select(value => new DemandValueRequest
-                {
-                    Position = value.Position,
-                    Deliveries = value.Deliveries,
-                    Demand = value.Demand,
-                    InsideDemand = value.InsideDemand
-                }).ToList()
-            }).ToList()
-        };
-        var edited = request.Rows.Single(row => row.Hour == 12).Values.Single(value => value.Position == 0);
-        edited.Demand = 7;
-        edited.InsideDemand = 4;
-
-        var updated = await service.UpdateAsync(imported.Id, request, CancellationToken.None);
-        var saved = updated.Rows.Single(row => row.Hour == 12).Values.Single(value => value.Position == 0);
-
-        Assert.Equal(7, saved.Demand);
-        Assert.Equal(4, saved.InsideDemand);
-    }
-
-    [Fact]
-    public void LegacyNullInsideDemandFallsBackToOutsideDemand()
-    {
-        using var db = NewDb();
-        var plan = new DemandPlan { WeekStart = Monday };
-        var column = new DemandColumn { Id = Guid.NewGuid(), Position = 0 };
-        var row = new DemandRow { Hour = 12 };
-        row.Values.Add(new DemandValue { DemandColumnId = column.Id, Demand = 2, InsideDemand = null });
-        plan.Columns.Add(column);
-        plan.Rows.Add(row);
-
-        var response = Service(db).ToResponse(plan);
-
-        Assert.Equal(2, response.WeeklyInsideHours);
-        Assert.Equal(2, Assert.Single(Assert.Single(response.Rows).Values).InsideDemand);
     }
 
     private static AppDbContext NewDb() => new(new DbContextOptionsBuilder<AppDbContext>()
@@ -453,7 +356,7 @@ public sealed class DemandStaffingTests
             Hour = 12,
             Values = Enumerable.Range(0, 7).Select(position => new DemandValueRequest
             {
-                Position = position, Deliveries = 0, Demand = 0, InsideDemand = 0
+                Position = position, Deliveries = 0, Demand = 0
             }).ToList()
         }]
     };

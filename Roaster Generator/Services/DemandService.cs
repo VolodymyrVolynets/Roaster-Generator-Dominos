@@ -167,7 +167,6 @@ public sealed class DemandService(
                 var value = valuesByPosition[parsedValue.Position];
                 value.Deliveries = parsedValue.Deliveries;
                 value.Demand = parsedValue.Demand;
-                value.InsideDemand = parsedValue.InsideDemand;
             }
         }
 
@@ -309,7 +308,6 @@ public sealed class DemandService(
 
                 value.Deliveries = parsedValue.Deliveries;
                 value.Demand = parsedValue.Demand;
-                value.InsideDemand = parsedValue.InsideDemand;
             }
 
             var staleValues = row.Values
@@ -385,8 +383,7 @@ public sealed class DemandService(
                     DemandRowId = row.Id,
                     DemandColumnId = column.Id,
                     Deliveries = parsedValue.Deliveries,
-                    Demand = parsedValue.Demand,
-                    InsideDemand = parsedValue.InsideDemand
+                    Demand = parsedValue.Demand
                 };
 
                 row.Values.Add(value);
@@ -413,7 +410,6 @@ public sealed class DemandService(
                 Position = column.Position,
                 Label = GetColumnLabel(column.Position),
                 TotalHours = CalculateTotalHours(plan, column),
-                InsideTotalHours = CalculateTotalHours(plan, column, inside: true),
                 TargetSales = column.TargetSales
             })
             .ToList();
@@ -424,8 +420,7 @@ public sealed class DemandService(
                 Position = column.Position,
                 Label = column.Label,
                 TargetSales = column.TargetSales,
-                RequiredDriverHours = column.TotalHours,
-                RequiredInsideHours = column.InsideTotalHours
+                RequiredDriverHours = column.TotalHours
             })
             .ToList();
 
@@ -437,7 +432,6 @@ public sealed class DemandService(
             UpdatedAtUtc = plan.UpdatedAtUtc,
             DeliveriesPerDriverHour = plan.DeliveriesPerDriverHour,
             WeeklyDriverHours = dailyStaffing.Sum(item => item.RequiredDriverHours),
-            WeeklyInsideHours = dailyStaffing.Sum(item => item.RequiredInsideHours),
             WeeklyTargetSales = dailyStaffing.Sum(item => item.TargetSales),
             Columns = columns,
             DailyStaffing = dailyStaffing,
@@ -454,8 +448,7 @@ public sealed class DemandService(
                             Position = columnsById[value.DemandColumnId].Position,
                             IsOpen = IsShopOpen(plan.WeekStart, columnsById[value.DemandColumnId].Position, row.Hour),
                             Deliveries = value.Deliveries,
-                            Demand = value.Demand,
-                            InsideDemand = value.InsideDemand ?? value.Demand
+                            Demand = value.Demand
                         })
                         .ToList()
                 })
@@ -565,9 +558,10 @@ public sealed class DemandService(
                 // Source exports retain pizza/delivery pairs; only delivery columns are imported.
                 var deliveries = ParseDecimal(GetCell(dataRow.Cells, activeIndexes, position * 2 + 1), $"{label} deliveries");
 
-                var demand = DemandStaffing.Drivers(
-                    deliveries, DemandStaffing.DefaultDeliveriesPerDriverHour);
-                values.Add(new ParsedDemandValue(position, deliveries, demand, demand));
+                values.Add(new ParsedDemandValue(
+                    position,
+                    deliveries,
+                    DemandStaffing.Drivers(deliveries, DemandStaffing.DefaultDeliveriesPerDriverHour)));
             }
 
             parsedRows.Add(new ParsedDemandRow(dataRow.Hour, values));
@@ -642,19 +636,14 @@ public sealed class DemandService(
             (previous.Deliveries != deliveries && !value.DemandSpecified)
             ? DemandStaffing.Drivers(deliveries, settings.DeliveriesPerDriverHour)
             : value.DemandSpecified ? value.Demand : previous.Demand;
-        var insideDemand = settings.Recalculate ||
-            (previous.Deliveries != deliveries && !value.InsideDemandSpecified)
-            ? DemandStaffing.Drivers(deliveries, settings.DeliveriesPerDriverHour)
-            : value.InsideDemandSpecified ? value.InsideDemand : previous.InsideDemand;
-        return new(value.Position, deliveries, driverDemand, insideDemand);
+        return new(value.Position, deliveries, driverDemand);
     }
 
     internal static ParsedDemand Recalculate(ParsedDemand parsed, decimal deliveriesPerDriverHour) =>
         new(parsed.Columns, parsed.Rows.Select(row => new ParsedDemandRow(row.Hour,
             row.Values.Select(value => value with
             {
-                Demand = DemandStaffing.Drivers(value.Deliveries, deliveriesPerDriverHour),
-                InsideDemand = DemandStaffing.Drivers(value.Deliveries, deliveriesPerDriverHour)
+                Demand = DemandStaffing.Drivers(value.Deliveries, deliveriesPerDriverHour)
             }).ToList())).ToList());
 
     internal ParsedDemand NormalizeAndValidateDemand(ParsedDemand parsed, DateOnly weekStart)
@@ -709,7 +698,7 @@ public sealed class DemandService(
                     values = parsed.Columns
                         .ToDictionary(
                             item => item.Position,
-                            item => new ParsedDemandValue(item.Position, null, null, null));
+                            item => new ParsedDemandValue(item.Position, null, null));
                     valuesByHour[hour] = values;
                 }
 
@@ -719,8 +708,7 @@ public sealed class DemandService(
                     values[column.Position] = new ParsedDemandValue(
                         column.Position,
                         lastProvided.Value.Deliveries,
-                        lastProvided.Value.Demand,
-                        lastProvided.Value.InsideDemand);
+                        lastProvided.Value.Demand);
                 }
             }
         }
@@ -733,7 +721,7 @@ public sealed class DemandService(
                     .OrderBy(column => column.Position)
                     .Select(column => item.Value.TryGetValue(column.Position, out var existingValue)
                             ? existingValue
-                            : new ParsedDemandValue(column.Position, null, null, null))
+                            : new ParsedDemandValue(column.Position, null, null))
                     .ToList()))
             .ToList();
         var normalized = new ParsedDemand(parsed.Columns, normalizedRows);
@@ -742,17 +730,17 @@ public sealed class DemandService(
     }
 
     private static bool HasInput(ParsedDemandValue value) =>
-        value.Deliveries is not null || value.Demand is not null || value.InsideDemand is not null;
+        value.Deliveries is not null || value.Demand is not null;
 
     private static IEnumerable<int> GetDisplayHours() =>
         Enumerable.Range(6, 18).Concat(Enumerable.Range(0, 6));
 
-    private int CalculateTotalHours(DemandPlan plan, DemandColumn column, bool inside = false)
+    private int CalculateTotalHours(DemandPlan plan, DemandColumn column)
     {
         return plan.Rows
             .Where(row => IsShopOpen(plan.WeekStart, column.Position, row.Hour))
             .Select(row => row.Values.FirstOrDefault(value => value.DemandColumnId == column.Id))
-            .Sum(value => inside ? value?.InsideDemand ?? value?.Demand ?? 0 : value?.Demand ?? 0);
+            .Sum(value => value?.Demand ?? 0);
     }
 
     private bool IsShopOpen(DateOnly weekStart, int columnPosition, int hour)
@@ -808,6 +796,5 @@ public sealed class DemandService(
     internal sealed record ParsedDemandValue(
         int Position,
         decimal? Deliveries,
-        int? Demand,
-        int? InsideDemand);
+        int? Demand);
 }

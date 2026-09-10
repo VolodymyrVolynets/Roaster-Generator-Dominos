@@ -149,12 +149,7 @@ public sealed class DemandValueRequestValidator : AbstractValidator<DemandValueR
         RuleFor(value => value.Demand)
             .GreaterThanOrEqualTo(0)
             .When(value => value.Demand.HasValue)
-            .WithMessage("Outside demand cannot be negative.");
-
-        RuleFor(value => value.InsideDemand)
-            .GreaterThanOrEqualTo(0)
-            .When(value => value.InsideDemand.HasValue)
-            .WithMessage("Inside demand cannot be negative.");
+            .WithMessage("Demand cannot be negative.");
 
         RuleFor(value => value.Deliveries)
             .InclusiveBetween(0m, DemandStaffing.MaximumWorkload)
