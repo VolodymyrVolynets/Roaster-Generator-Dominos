@@ -97,6 +97,18 @@ Endpoints:
 - employee: `GET/POST /api/holidays`, `PUT/DELETE /api/holidays/{id}`;
 - admin: `GET /api/admin/holidays`, `GET /api/admin/holidays/export`, `POST /api/admin/holidays/{id}/approve`, `POST /api/admin/holidays/approve-all`.
 
+## Sick leave
+
+`SickLeaveRequest` belongs to an employee and stores an inclusive start/finish date, review status and a required private sick-note attachment. Employees submit PDF, PNG, JPEG, GIF, WebP or BMP files up to 10 MB. The server verifies the file signature as well as the extension; attachments are never exposed as static files.
+
+- employees can list, submit, download and remove only their own pending requests through `/api/sick-leave`;
+- managers and administrators list and review requests through `/api/admin/sick-leave`;
+- approval or rejection atomically clears the attachment bytes and all attachment metadata while retaining dates, reviewer, decision and timestamps as history;
+- requested or approved date ranges for the same employee may not overlap;
+- approved sick-leave dates remove that driver's entered availability from roster generation and saved-roster validation; pending or rejected requests do not affect scheduling.
+
+Sick-note contents are stored temporarily in PostgreSQL so review and permanent deletion happen in the same database transaction. Treat the contents as confidential medical information and do not include them in logs or general employee responses.
+
 Enforce these rules in the API and validator/service layer; UI limits are only convenience checks.
 
 ## Frontend workspaces

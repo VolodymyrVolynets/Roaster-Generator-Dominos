@@ -7,6 +7,7 @@ using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Services;
 
@@ -72,8 +73,19 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             .OrderBy(employee => employee.Id)
             .ToListAsync(ct);
         var ids = employees.Select(e => e.Id).ToArray();
+        var approvedSickLeave = await db.SickLeaveRequests.AsNoTracking()
+            .Where(request => ids.Contains(request.EmployeeId) &&
+                              request.Status == SickLeaveStatus.Approved &&
+                              request.StartDate < weekEnd && request.FinishDate >= weekStart)
+            .Select(request => new { request.EmployeeId, request.StartDate, request.FinishDate })
+            .ToListAsync(ct);
+        var unavailableDates = approvedSickLeave
+            .SelectMany(request => Enumerable.Range(0, request.FinishDate.DayNumber - request.StartDate.DayNumber + 1)
+                .Select(offset => (request.EmployeeId, Date: request.StartDate.AddDays(offset))))
+            .ToHashSet();
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekEnd)
             .OrderBy(s => s.EmployeeId).ThenBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync(ct);
+        availability = availability.Where(shift => !unavailableDates.Contains((shift.EmployeeId, shift.Date))).ToList();
         var boundaryEntities = await db.RosterShifts.AsNoTracking()
             .Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart.AddDays(-3) && s.Date < weekEnd.AddDays(3)
                 && s.RosterPlan.RosterKind == RosterKinds.Drivers && (s.Date < weekStart || s.Date >= weekEnd))
@@ -90,6 +102,9 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         var settings = await settingsService.GetAsync(ct);
         foreach (var employee in employees)
         {
+            var sickDates = unavailableDates.Count(item => item.EmployeeId == employee.Id && item.Date >= weekStart && item.Date < weekEnd);
+            if (sickDates > 0)
+                warnings.Add($"{employee.FirstName} {employee.LastName}: approved sick leave removes availability on {sickDates} day{(sickDates == 1 ? string.Empty : "s")} this week.");
             if (TargetHours(employee) == 0)
                 warnings.Add($"{employee.FirstName} {employee.LastName}: target hours are 0; available as a reserve, excluded from percentage balancing (percentage is undefined).");
             else if (!availability.Any(s => s.EmployeeId == employee.Id))
