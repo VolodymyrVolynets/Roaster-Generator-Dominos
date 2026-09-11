@@ -12,6 +12,7 @@ using Roaster_Generator.Contracts.Employees;
 using Roaster_Generator.Contracts.Holidays;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Contracts.Schedules;
+using Roaster_Generator.Contracts.SickLeave;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
 using Roaster_Generator.Security;
@@ -82,6 +83,7 @@ builder.Services.AddControllers()
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IValidator<EmployeeRequest>, EmployeeRequestValidator>();
 builder.Services.AddScoped<IValidator<HolidayHoursRequest>, HolidayRequestValidator>();
+builder.Services.AddScoped<IValidator<SickLeaveCreateRequest>, SickLeaveRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandImportRequest>, DemandImportRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandPlanUpdateRequest>, DemandPlanUpdateRequestValidator>();
 builder.Services.AddScoped<DemandService>();

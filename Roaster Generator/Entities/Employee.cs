@@ -28,5 +28,7 @@ public sealed class Employee
 
     public ICollection<RosterShift> RosterShifts { get; set; } = new List<RosterShift>();
 
+    public ICollection<SickLeaveRequest> SickLeaveRequests { get; set; } = new List<SickLeaveRequest>();
+
     public ApplicationUser? User { get; set; }
 }

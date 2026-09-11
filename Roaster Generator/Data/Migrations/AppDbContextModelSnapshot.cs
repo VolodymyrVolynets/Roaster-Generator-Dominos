@@ -712,6 +712,31 @@ namespace Roaster_Generator.Data.Migrations
                     b.ToTable("holiday_requests", (string)null);
                 });
 
+            modelBuilder.Entity("Roaster_Generator.Entities.SickLeaveRequest", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid").HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+                    b.Property<byte[]>("AttachmentContent").HasColumnType("bytea").HasColumnName("attachment_content");
+                    b.Property<DateTimeOffset?>("AttachmentDeletedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("attachment_deleted_at_utc");
+                    b.Property<string>("AttachmentContentType").HasMaxLength(64).HasColumnType("character varying(64)").HasColumnName("attachment_content_type");
+                    b.Property<string>("AttachmentFileName").HasMaxLength(255).HasColumnType("character varying(255)").HasColumnName("attachment_file_name");
+                    b.Property<long?>("AttachmentFileSize").HasColumnType("bigint").HasColumnName("attachment_file_size");
+                    b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("created_at_utc");
+                    b.Property<Guid>("EmployeeId").HasColumnType("uuid").HasColumnName("employee_id");
+                    b.Property<DateOnly>("FinishDate").HasColumnType("date").HasColumnName("finish_date");
+                    b.Property<string>("RejectionReason").HasMaxLength(500).HasColumnType("character varying(500)").HasColumnName("rejection_reason");
+                    b.Property<int>("Revision").IsConcurrencyToken().HasColumnType("integer").HasColumnName("revision");
+                    b.Property<DateTimeOffset?>("ReviewedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("reviewed_at_utc");
+                    b.Property<string>("ReviewedByName").HasMaxLength(256).HasColumnType("character varying(256)").HasColumnName("reviewed_by_name");
+                    b.Property<Guid?>("ReviewedByUserId").HasColumnType("uuid").HasColumnName("reviewed_by_user_id");
+                    b.Property<DateOnly>("StartDate").HasColumnType("date").HasColumnName("start_date");
+                    b.Property<string>("Status").IsRequired().ValueGeneratedOnAdd().HasMaxLength(16).HasColumnType("character varying(16)").HasDefaultValue("Requested").HasColumnName("status");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("updated_at_utc");
+                    b.HasKey("Id");
+                    b.HasIndex("EmployeeId", "Status");
+                    b.HasIndex("StartDate", "FinishDate");
+                    b.ToTable("sick_leave_requests", (string)null);
+                });
+
             modelBuilder.Entity("Roaster_Generator.Entities.InStoreProfile", b =>
                 {
                     b.Property<Guid>("EmployeeId")
@@ -1137,6 +1162,16 @@ namespace Roaster_Generator.Data.Migrations
                     b.Navigation("Employee");
                 });
 
+            modelBuilder.Entity("Roaster_Generator.Entities.SickLeaveRequest", b =>
+                {
+                    b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
+                        .WithMany("SickLeaveRequests")
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                    b.Navigation("Employee");
+                });
+
             modelBuilder.Entity("Roaster_Generator.Entities.InStoreProfile", b =>
                 {
                     b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
@@ -1217,6 +1252,8 @@ namespace Roaster_Generator.Data.Migrations
                     b.Navigation("RosterShifts");
 
                     b.Navigation("Shifts");
+
+                    b.Navigation("SickLeaveRequests");
 
                     b.Navigation("User");
                 });
