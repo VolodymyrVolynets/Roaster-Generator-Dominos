@@ -175,6 +175,21 @@ public sealed class RosterShiftResponse
     public int FinishDayOffset { get; init; }
 }
 
+public sealed class PersonalRosterResponse
+{
+    public DateOnly WeekStart { get; init; }
+
+    public DateOnly WeekEnd => WeekStart.AddDays(6);
+
+    public bool HasPublishedRoster { get; init; }
+
+    public DateTimeOffset? PublishedAtUtc { get; init; }
+
+    public int ScheduledHours { get; init; }
+
+    public IReadOnlyList<RosterShiftResponse> Shifts { get; init; } = [];
+}
+
 public sealed class RosterTimerProgressResponse
 {
     public string RosterKind { get; init; } = "drivers";

@@ -2196,6 +2196,100 @@ function DriverWorkspace(props) {
   )
 }
 
+const personalRosterDateFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+})
+
+function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup }) {
+  const [rosterState, setRosterState] = useState({ status: 'loading', roster: null, message: '' })
+
+  useEffect(() => {
+    let cancelled = false
+    setRosterState({ status: 'loading', roster: null, message: '' })
+    fetchJson(`/api/roster/me?weekOffset=${weekOffset}`, { cache: 'no-store' })
+      .then((roster) => {
+        if (!cancelled) setRosterState({ status: 'success', roster, message: '' })
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setRosterState({ status: 'error', roster: null, message: error.message })
+        setErrorPopup(error.message)
+      })
+    return () => { cancelled = true }
+  }, [weekOffset, setErrorPopup])
+
+  const roster = rosterState.roster
+  const days = roster ? Array.from({ length: 7 }, (_, dayOffset) => {
+    const date = parseDate(roster.weekStart)
+    date.setDate(date.getDate() + dayOffset)
+    const dateValue = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    return {
+      date: dateValue,
+      label: personalRosterDateFormatter.format(date),
+      shifts: roster.shifts.filter((shift) => shift.date === dateValue),
+    }
+  }) : []
+
+  function changeWeek(direction) {
+    setWeekOffset((current) => Math.min(maxWeekOffset, Math.max(minWeekOffset, current + direction)))
+  }
+
+  return (
+    <section className="personal-roster" aria-labelledby="personal-roster-heading">
+      <div className="schedule-heading personal-roster-heading">
+        <div>
+          <span className="eyebrow">Your shifts</span>
+          <h2 id="personal-roster-heading">My roster</h2>
+          <p className="personal-roster-intro">Only your scheduled shifts are shown here.</p>
+        </div>
+        <div className="week-navigation" aria-label="Roster week navigation">
+          <button type="button" className="week-arrow" aria-label="Previous roster week"
+            onClick={() => changeWeek(-1)} disabled={weekOffset === minWeekOffset || rosterState.status === 'loading'}>←</button>
+          <div className="week-range">
+            <strong>{weekLabels[weekOffset]}</strong>
+            {roster && <span>{dateFormatter.format(parseDate(roster.weekStart))} – {dateFormatter.format(parseDate(roster.weekEnd))}</span>}
+          </div>
+          <button type="button" className="week-arrow" aria-label="Next roster week"
+            onClick={() => changeWeek(1)} disabled={weekOffset === maxWeekOffset || rosterState.status === 'loading'}>→</button>
+        </div>
+      </div>
+
+      {rosterState.status === 'loading' && <p className="message info-message" role="status">Loading your roster…</p>}
+      {rosterState.status === 'error' && <p className="message error-message" role="alert">{rosterState.message}</p>}
+      {rosterState.status === 'success' && !roster.hasPublishedRoster && (
+        <div className="personal-roster-empty" role="status">
+          <strong>No roster published yet</strong>
+          <span>Your shifts will appear here when the roster for this week is ready.</span>
+        </div>
+      )}
+      {rosterState.status === 'success' && roster.hasPublishedRoster && <>
+        <div className="personal-roster-summary">
+          <span>Scheduled this week</span>
+          <strong>{roster.scheduledHours} {roster.scheduledHours === 1 ? 'hour' : 'hours'}</strong>
+        </div>
+        <div className="personal-roster-days">
+          {days.map((day) => <article className={`personal-roster-day${day.shifts.length ? ' has-shift' : ''}`} key={day.date}>
+            <header>
+              <strong>{day.label}</strong>
+              <span>{day.shifts.length ? 'Working' : 'Day off'}</span>
+            </header>
+            {day.shifts.length ? day.shifts.map((shift, index) => (
+              <div className="personal-roster-shift" key={`${shift.date}-${shift.startTime}-${index}`}>
+                <span className="personal-roster-time">
+                  {shift.startTime}{shift.startDayOffset > 0 ? ' next day' : ''} – {shift.finishTime}{shift.finishDayOffset > 0 ? ' next day' : ''}
+                </span>
+                <span>{shift.durationHours} {shift.durationHours === 1 ? 'hour' : 'hours'}</span>
+              </div>
+            )) : <p>Enjoy your day off.</p>}
+          </article>)}
+        </div>
+      </>}
+    </section>
+  )
+}
+
 function InStoreWorkspace(props) {
   return (
     <EmployeeWorkspace
@@ -2262,6 +2356,15 @@ function EmployeeWorkspace({
             >
               Availability
             </button>
+            {variant === 'driver' && (
+              <button
+                type="button"
+                className={activeTab === 'roster' ? 'workspace-tab active' : 'workspace-tab'}
+                onClick={() => setActiveTab('roster')}
+              >
+                My roster
+              </button>
+            )}
             <button
               type="button"
               className={activeTab === 'holiday' ? 'workspace-tab active' : 'workspace-tab'}
@@ -2278,6 +2381,8 @@ function EmployeeWorkspace({
             <HolidayPanel setErrorPopup={setErrorPopup} />
           ) : activeTab === 'sick-leave' ? (
             <SickLeavePanel setErrorPopup={setErrorPopup} />
+          ) : activeTab === 'roster' && variant === 'driver' ? (
+            <PersonalRosterPanel weekOffset={weekOffset} setWeekOffset={setWeekOffset} setErrorPopup={setErrorPopup} />
           ) : (
             <>
               {children}

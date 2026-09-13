@@ -116,7 +116,7 @@ Enforce these rules in the API and validator/service layer; UI limits are only c
 `frontend/src/App.jsx` selects the workspace from the roles returned by `/api/auth/me`:
 
 - `Admin` or `Manager`: management console, employee management, demand, roster, and holiday administration as authorized by the API. Linked managers also have a **My availability** tab for their own weekly availability;
-- `Driver`: availability and holiday tabs only;
+- `Driver`: availability, personal roster, holiday, and sick-leave tabs. The personal roster endpoint and view expose only the signed-in active driver's shifts and no other employee or driver-profile details;
 - `InStore`: in-store availability and holiday tabs;
 - other employee: shared availability and holiday workspace.
 

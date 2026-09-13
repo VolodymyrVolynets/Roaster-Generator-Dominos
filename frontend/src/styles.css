@@ -151,6 +151,117 @@ h2 {
   background: #7dd3fc;
 }
 
+.personal-roster {
+  margin-top: 30px;
+}
+
+.personal-roster-intro {
+  margin: 8px 0 0;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.personal-roster-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 24px 0 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 14px;
+  color: #bae6fd;
+  background: rgba(14, 116, 144, 0.14);
+}
+
+.personal-roster-summary strong {
+  color: #f8fafc;
+  font-size: 1.15rem;
+}
+
+.personal-roster-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.personal-roster-day {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.personal-roster-day.has-shift {
+  border-color: rgba(110, 231, 183, 0.42);
+  background: linear-gradient(145deg, rgba(6, 78, 59, 0.3), rgba(15, 23, 42, 0.8));
+}
+
+.personal-roster-day header {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.personal-roster-day header strong {
+  color: #f8fafc;
+  font-size: 0.94rem;
+}
+
+.personal-roster-day header span,
+.personal-roster-shift > span:last-child {
+  color: #94a3b8;
+  font-size: 0.76rem;
+}
+
+.personal-roster-day.has-shift header span {
+  color: #6ee7b7;
+}
+
+.personal-roster-day p {
+  margin: 14px 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.personal-roster-shift {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+}
+
+.personal-roster-time {
+  color: #ecfdf5;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.personal-roster-empty {
+  display: grid;
+  gap: 7px;
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  color: #94a3b8;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.personal-roster-empty strong {
+  color: #e2e8f0;
+  font-size: 1.05rem;
+}
+
+@media (max-width: 1100px) {
+  .personal-roster-days {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .role-badge {
   padding: 6px 10px;
   border: 1px solid rgba(125, 211, 252, 0.35);
@@ -2715,11 +2826,48 @@ select:disabled {
   }
 
   .workspace-tabs {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .workspace-tab {
     width: 100%;
+    padding-inline: 10px;
+  }
+
+  .personal-roster {
+    margin-top: 24px;
+  }
+
+  .personal-roster-heading {
+    gap: 20px;
+  }
+
+  .personal-roster-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .personal-roster-days {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-roster-day {
+    padding: 16px;
+  }
+
+  .personal-roster-day header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .personal-roster-shift {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
   }
 
   .section-heading {
