@@ -71,6 +71,11 @@ function formatDateInput(date) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
 }
 
+function parseDateInput(value) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day))
+}
+
 function getWeekStartValue(weekOffset) {
   const monday = getMonday(new Date())
   monday.setUTCDate(monday.getUTCDate() + Number(weekOffset) * 7)
@@ -78,10 +83,45 @@ function getWeekStartValue(weekOffset) {
 }
 
 function getWeekOffsetFromDate(value) {
-  const [year, month, day] = value.split('-').map(Number)
-  const selectedMonday = getMonday(new Date(Date.UTC(year, month - 1, day)))
+  const selectedMonday = getMonday(parseDateInput(value))
   const currentMonday = getMonday(new Date())
   return Math.round((selectedMonday.getTime() - currentMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+}
+
+const weekPickerDateFormatter = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+const weekPickerMonthFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+const weekPickerDayFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+const weekPickerWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function getCalendarMonthStart(weekOffset) {
+  const selectedWeek = parseDateInput(getWeekStartValue(weekOffset))
+  return new Date(Date.UTC(selectedWeek.getUTCFullYear(), selectedWeek.getUTCMonth(), 1))
+}
+
+function getCalendarDays(monthStart) {
+  const firstDay = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), 1))
+  const gridStart = getMonday(firstDay)
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(gridStart)
+    day.setUTCDate(day.getUTCDate() + index)
+    return day
+  })
 }
 
 function getShiftDuration(startTime, finishTime) {
@@ -1311,20 +1351,143 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
 }
 
 function WeekSelector({ weekOffset, onChange, disabled = false, allowAllWeeks = false }) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [visibleMonth, setVisibleMonth] = useState(() => getCalendarMonthStart(weekOffset))
+  const pickerDialogRef = useRef(null)
+
+  useEffect(() => {
+    if (pickerOpen) pickerDialogRef.current?.focus()
+  }, [pickerOpen])
+
+  const selectedWeekStart = parseDateInput(getWeekStartValue(weekOffset))
+  const calendarDays = getCalendarDays(visibleMonth)
+
+  function openPicker() {
+    setVisibleMonth(getCalendarMonthStart(weekOffset))
+    setPickerOpen(true)
+  }
+
+  function chooseDay(day) {
+    onChange(getWeekOffsetFromDate(formatDateInput(day)))
+    setPickerOpen(false)
+  }
+
+  function changeMonth(months) {
+    setVisibleMonth((current) => new Date(Date.UTC(
+      current.getUTCFullYear(),
+      current.getUTCMonth() + months,
+      1,
+    )))
+  }
+
   if (allowAllWeeks) {
     return (
-      <label className="week-selector">
-        Week starting
-        <input
-          type="date"
-          value={getWeekStartValue(weekOffset)}
-          onChange={(event) => {
-            if (event.target.value) onChange(getWeekOffsetFromDate(event.target.value))
-          }}
-          disabled={disabled}
-          aria-label="Availability week starting"
-        />
-      </label>
+      <>
+        <div className="week-selector">
+          <span>Week starting</span>
+          <button
+            type="button"
+            className="week-picker-trigger"
+            onClick={openPicker}
+            disabled={disabled}
+            aria-haspopup="dialog"
+            aria-expanded={pickerOpen}
+          >
+            <span>{weekPickerDateFormatter.format(selectedWeekStart)}</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+        </div>
+
+        {pickerOpen && (
+          <div
+            className="week-picker-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setPickerOpen(false)
+            }}
+          >
+            <section
+              ref={pickerDialogRef}
+              className="week-picker-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="week-picker-dialog-title"
+              tabIndex="-1"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setPickerOpen(false)
+              }}
+            >
+              <div className="week-picker-dialog-heading">
+                <div>
+                  <span className="eyebrow">Choose availability week</span>
+                  <h3 id="week-picker-dialog-title">{weekPickerMonthFormatter.format(visibleMonth)}</h3>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button week-picker-close"
+                  onClick={() => setPickerOpen(false)}
+                  aria-label="Close week picker"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="week-picker-month-nav">
+                <button
+                  type="button"
+                  className="secondary-button week-picker-nav-button"
+                  onClick={() => changeMonth(-1)}
+                  aria-label="Previous month"
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button week-picker-current"
+                  onClick={() => chooseDay(getMonday(new Date()))}
+                >
+                  Current week
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button week-picker-nav-button"
+                  onClick={() => changeMonth(1)}
+                  aria-label="Next month"
+                >
+                  →
+                </button>
+              </div>
+
+              <p className="week-picker-help">
+                Choose any day. The complete Monday–Sunday week will be shown.
+              </p>
+
+              <div className="week-picker-grid week-picker-weekdays" aria-hidden="true">
+                {weekPickerWeekdays.map((day) => <span key={day}>{day}</span>)}
+              </div>
+              <div className="week-picker-grid" aria-label="Select an availability week">
+                {calendarDays.map((day) => {
+                  const inVisibleMonth = day.getUTCMonth() === visibleMonth.getUTCMonth()
+                  const inSelectedWeek = getMonday(day).getTime() === selectedWeekStart.getTime()
+
+                  return (
+                    <button
+                      type="button"
+                      className={`week-picker-day ${inVisibleMonth ? '' : 'outside-month'} ${inSelectedWeek ? 'selected-week' : ''}`}
+                      key={formatDateInput(day)}
+                      onClick={() => chooseDay(day)}
+                      aria-label={weekPickerDayFormatter.format(day)}
+                      aria-pressed={inSelectedWeek}
+                    >
+                      {day.getUTCDate()}
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          </div>
+        )}
+      </>
     )
   }
 
