@@ -9,6 +9,7 @@ using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
 using Roaster_Generator.Security;
 using Roaster_Generator.Services;
+using Roaster_Generator.Validation;
 
 namespace Roaster_Generator.Controllers;
 
@@ -19,6 +20,7 @@ public sealed class EmployeesController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
     IValidator<WeekSelectionRequest> weekValidator,
+    AdminWeekSelectionRequestValidator adminWeekValidator,
     IValidator<WeeklyScheduleRequest> scheduleValidator,
     WeeklyScheduleService schedules,
     AvailabilityEditPolicy availabilityEdits) : ApiControllerBase
@@ -80,7 +82,9 @@ public sealed class EmployeesController(
         {
             WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
         };
-        var validationResult = await weekValidator.ValidateAsync(selection, cancellationToken);
+        var validationResult = await (User.IsInRole(RoleNames.Admin)
+            ? adminWeekValidator
+            : weekValidator).ValidateAsync(selection, cancellationToken);
 
         if (!validationResult.IsValid)
         {
@@ -155,7 +159,8 @@ public sealed class EmployeesController(
     {
         schedule.MinimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(
             User.IsInRole(RoleNames.Admin));
-        schedule.CanEdit = weekOffset >= schedule.MinimumEditableWeekOffset;
+        schedule.CanEdit = weekOffset >= schedule.MinimumEditableWeekOffset &&
+            weekOffset <= WeeklyScheduleService.MaxWeekOffset;
     }
 
     private async Task<IActionResult?> CheckScheduleAccessAsync(

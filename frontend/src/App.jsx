@@ -60,6 +60,30 @@ function getNextMondayValue() {
   return date.toISOString().slice(0, 10)
 }
 
+function getMonday(date) {
+  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+  const daysSinceMonday = (monday.getUTCDay() + 6) % 7
+  monday.setUTCDate(monday.getUTCDate() - daysSinceMonday)
+  return monday
+}
+
+function formatDateInput(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
+function getWeekStartValue(weekOffset) {
+  const monday = getMonday(new Date())
+  monday.setUTCDate(monday.getUTCDate() + Number(weekOffset) * 7)
+  return formatDateInput(monday)
+}
+
+function getWeekOffsetFromDate(value) {
+  const [year, month, day] = value.split('-').map(Number)
+  const selectedMonday = getMonday(new Date(Date.UTC(year, month - 1, day)))
+  const currentMonday = getMonday(new Date())
+  return Math.round((selectedMonday.getTime() - currentMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+}
+
 function getShiftDuration(startTime, finishTime) {
   if (!startTime || !finishTime) {
     return null
@@ -1286,7 +1310,24 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
   )
 }
 
-function WeekSelector({ weekOffset, onChange, disabled = false }) {
+function WeekSelector({ weekOffset, onChange, disabled = false, allowAllWeeks = false }) {
+  if (allowAllWeeks) {
+    return (
+      <label className="week-selector">
+        Week starting
+        <input
+          type="date"
+          value={getWeekStartValue(weekOffset)}
+          onChange={(event) => {
+            if (event.target.value) onChange(getWeekOffsetFromDate(event.target.value))
+          }}
+          disabled={disabled}
+          aria-label="Availability week starting"
+        />
+      </label>
+    )
+  }
+
   return (
     <label className="week-selector">
       Week
@@ -1787,7 +1828,11 @@ function AdminConsole({
                   <span className="eyebrow">Admin overview</span>
                   <h2>Driver availability roster</h2>
                 </div>
-                <WeekSelector weekOffset={weekOffset} onChange={setWeekOffset} />
+                <WeekSelector
+                  weekOffset={weekOffset}
+                  onChange={setWeekOffset}
+                  allowAllWeeks={authState.user.isAdmin}
+                />
               </div>
 
               {availability && (
@@ -1900,7 +1945,11 @@ function AdminConsole({
                   <span className="eyebrow">Administration</span>
                   <h2>Employee availability</h2>
                 </div>
-                <WeekSelector weekOffset={weekOffset} onChange={setWeekOffset} />
+                <WeekSelector
+                  weekOffset={weekOffset}
+                  onChange={setWeekOffset}
+                  allowAllWeeks={authState.user.isAdmin}
+                />
               </div>
 
               <div className="employee-picker">
@@ -1940,6 +1989,12 @@ function AdminConsole({
                     </span>
                   </div>
 
+                  {schedule.canEdit === false && (
+                    <p className="message info-message" role="status">
+                      This week is outside the three-week editing window and is read-only.
+                    </p>
+                  )}
+
                   <div className="schedule-table" role="table" aria-label="Employee schedule">
                     <div className="schedule-row schedule-header" role="row">
                       <span role="columnheader">Day</span>
@@ -1964,6 +2019,7 @@ function AdminConsole({
                             label={`${day.dayOfWeek} start time`}
                             value={day.startTime || ''}
                             onChange={(value) => updateDay(day.date, 'startTime', value)}
+                            disabled={schedule.canEdit === false}
                           />
                         </div>
                         <div role="cell">
@@ -1972,6 +2028,7 @@ function AdminConsole({
                             label={`${day.dayOfWeek} finish time`}
                             value={day.finishTime || ''}
                             onChange={(value) => updateDay(day.date, 'finishTime', value)}
+                            disabled={schedule.canEdit === false}
                           />
                         </div>
                         <div role="cell">
@@ -1979,7 +2036,7 @@ function AdminConsole({
                             type="button"
                             className="reset-button"
                             onClick={() => resetDay(day.date)}
-                            disabled={!day.startTime && !day.finishTime}
+                            disabled={schedule.canEdit === false || (!day.startTime && !day.finishTime)}
                           >
                             Reset
                           </button>
@@ -1991,7 +2048,7 @@ function AdminConsole({
                     <span className={`save-message ${saveState.status}`} aria-live="polite">
                       {saveState.message || 'Leave both fields empty for a day off.'}
                     </span>
-                    <button type="submit" disabled={saveState.status === 'saving'}>
+                    <button type="submit" disabled={schedule.canEdit === false || saveState.status === 'saving'}>
                       {saveState.status === 'saving' ? 'Saving…' : 'Save availability'}
                     </button>
                   </div>

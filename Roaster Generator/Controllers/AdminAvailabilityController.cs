@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Security;
 using Roaster_Generator.Services;
+using Roaster_Generator.Validation;
 
 namespace Roaster_Generator.Controllers;
 
@@ -12,6 +13,7 @@ namespace Roaster_Generator.Controllers;
 [Route("api/admin/availability")]
 public sealed class AdminAvailabilityController(
     IValidator<WeekSelectionRequest> weekValidator,
+    AdminWeekSelectionRequestValidator adminWeekValidator,
     WeeklyScheduleService schedules) : ApiControllerBase
 {
     [HttpGet]
@@ -23,7 +25,9 @@ public sealed class AdminAvailabilityController(
         {
             WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
         };
-        var validationResult = await weekValidator.ValidateAsync(selection, cancellationToken);
+        var validationResult = await (User.IsInRole(RoleNames.Admin)
+            ? adminWeekValidator
+            : weekValidator).ValidateAsync(selection, cancellationToken);
 
         if (!validationResult.IsValid)
         {

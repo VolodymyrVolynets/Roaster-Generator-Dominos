@@ -109,6 +109,24 @@ public sealed class EmployeeAvailabilityAccessTests
     }
 
     [Fact]
+    public async Task AdministratorsCanReadSchedulesOutsideTheThreeWeekEditHorizon()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Admin], linkUser: false);
+        var weekStart = WeeklyScheduleService.GetWeekMonday(4);
+        fixture.Db.Shifts.Add(new Shift
+        {
+            Id = Guid.NewGuid(), EmployeeId = fixture.OtherEmployeeId, Date = weekStart,
+            StartTime = new TimeOnly(10, 0), FinishTime = new TimeOnly(18, 0)
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        var schedule = ReadSchedule(await fixture.Controller.GetSchedule(fixture.OtherEmployeeId, 4, default));
+
+        Assert.Equal("10:00", schedule.Days[0].StartTime);
+        Assert.False(schedule.CanEdit);
+    }
+
+    [Fact]
     public async Task EmployeesCannotEditNextWeekFromSaturdayButCanEditTheFollowingWeek()
     {
         // 23:30 UTC on Friday is 00:30 Saturday in Dublin during daylight saving time.
@@ -220,6 +238,7 @@ public sealed class EmployeeAvailabilityAccessTests
             var claims = roles.Select(role => new Claim(ClaimTypes.Role, role)).ToList();
             claims.Add(new Claim(ClaimTypes.NameIdentifier, User.Id.ToString()));
             Controller = new EmployeesController(Db, userManager, new WeekSelectionRequestValidator(),
+                new AdminWeekSelectionRequestValidator(),
                 new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions())), new WeeklyScheduleService(Db),
                 new AvailabilityEditPolicy(new FixedTimeProvider(now ?? new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero))))
             {

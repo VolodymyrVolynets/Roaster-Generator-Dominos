@@ -126,6 +126,16 @@ public sealed class WeekSelectionRequestValidator : AbstractValidator<WeekSelect
     }
 }
 
+public sealed class AdminWeekSelectionRequestValidator : AbstractValidator<WeekSelectionRequest>
+{
+    public AdminWeekSelectionRequestValidator()
+    {
+        RuleFor(request => request.WeekOffset)
+            .Must(WeeklyScheduleService.IsValidWeekOffset)
+            .WithMessage("Select a valid availability week.");
+    }
+}
+
 public sealed class ScheduleDayRequestValidator : AbstractValidator<ScheduleDayRequest>
 {
     public ScheduleDayRequestValidator()

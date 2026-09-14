@@ -98,6 +98,7 @@ builder.Services.AddSingleton<RosterTimerService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<RosterTimerService>());
 builder.Services.AddScoped<IValidator<WeeklyScheduleRequest>, WeeklyScheduleRequestValidator>();
 builder.Services.AddScoped<IValidator<WeekSelectionRequest>, WeekSelectionRequestValidator>();
+builder.Services.AddScoped<AdminWeekSelectionRequestValidator>();
 builder.Services.AddScoped<IValidator<RosterPlanUpdateRequest>, RosterPlanUpdateRequestValidator>();
 builder.Services.AddScoped<IValidator<RosterSettingsRequest>, RosterSettingsRequestValidator>();
 builder.Services.AddScoped<IValidator<RosterLabourRequest>, RosterLabourRequestValidator>();

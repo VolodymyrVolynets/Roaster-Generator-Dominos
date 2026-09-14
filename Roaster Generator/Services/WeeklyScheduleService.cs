@@ -130,7 +130,24 @@ public sealed class WeeklyScheduleService(AppDbContext db)
     }
 
     public static DateOnly GetWeekMonday(int weekOffset) =>
-        GetCurrentWeekMonday().AddDays(weekOffset * 7);
+        GetCurrentWeekMonday().AddDays(checked(weekOffset * 7));
+
+    public static bool IsValidWeekOffset(int weekOffset)
+    {
+        try
+        {
+            _ = GetWeekMonday(weekOffset);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+    }
 
     private static WeeklyScheduleResponse BuildResponse(
         Employee employee,
