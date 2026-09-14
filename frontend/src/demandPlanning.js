@@ -66,16 +66,10 @@ export function calculateDemandLabour(plan, employees = []) {
     return employee.isActive && eligibleRole &&
       Number.isFinite(Number(employee.hourlyRate)) && Number(employee.hourlyRate) >= 0
   })
-  const driversWithTargets = inside ? [] : eligibleDrivers.filter((employee) => Number(employee.targetHours) > 0)
-  const weightedDrivers = driversWithTargets.length > 0 ? driversWithTargets : eligibleDrivers
-  const totalWeight = weightedDrivers.reduce((sum, employee) =>
-    sum + (driversWithTargets.length > 0 ? Number(employee.targetHours) : 1), 0)
+  const totalWeight = eligibleDrivers.length
   const averageHourlyRate = totalWeight > 0
-    ? weightedDrivers.reduce((sum, employee) => sum + Number(employee.hourlyRate) *
-      (driversWithTargets.length > 0 ? Number(employee.targetHours) : 1), 0) / totalWeight
+    ? eligibleDrivers.reduce((sum, employee) => sum + Number(employee.hourlyRate), 0) / totalWeight
     : null
-  const totalTargetHours = inside ? null : eligibleDrivers.reduce((sum, employee) =>
-    sum + Math.max(0, number(employee.targetHours)), 0)
   const workloadField = inside ? 'pizzas' : 'deliveries'
   const demandField = inside ? 'insideDemand' : 'demand'
 
@@ -199,9 +193,6 @@ export function calculateDemandLabour(plan, employees = []) {
     ...summary,
     days,
     eligibleDriverCount: eligibleDrivers.length,
-    totalTargetHours: decimal(totalTargetHours),
-    demandToTargetHoursPercentage: totalTargetHours > 0
-      ? decimal(summary.driverHours / totalTargetHours * 100) : null,
     averageHourlyRate: averageHourlyRate == null ? null : money(averageHourlyRate),
     productivity: hasProductivity ? productivity : null,
     idealDriverHours,

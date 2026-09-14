@@ -21,11 +21,6 @@ public sealed class EmployeeRequestValidator : AbstractValidator<EmployeeRequest
             .Must(value => !string.IsNullOrWhiteSpace(value))
             .WithMessage("Last name is required.");
 
-        RuleFor(request => request.TargetHours)
-            .InclusiveBetween(3, 168)
-            .When(HasDriverRole)
-            .WithMessage("Target hours must be between 3 and 168 per week.");
-
         RuleFor(request => request.PayrollNumber)
             .MaximumLength(64)
             .When(request => request.PayrollNumber is not null)
@@ -39,13 +34,6 @@ public sealed class EmployeeRequestValidator : AbstractValidator<EmployeeRequest
         RuleFor(request => request.HourlyRate)
             .Must(rate => !rate.HasValue || decimal.Round(rate.Value, 2) == rate.Value)
             .WithMessage("Hourly rate must have no more than two decimal places.");
-
-        RuleFor(request => request.InsideTargetHours)
-            .InclusiveBetween(3, 168)
-            .When(request => request.Roles?.Any(role =>
-                string.Equals(role, RoleNames.InStore, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(role, RoleNames.Manager, StringComparison.OrdinalIgnoreCase)) == true)
-            .WithMessage("Inside target hours must be between 3 and 168 per week.");
 
         RuleFor(request => request.Roles)
             .NotNull()

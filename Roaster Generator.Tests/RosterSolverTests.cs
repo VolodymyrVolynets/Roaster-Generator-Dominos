@@ -82,7 +82,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void EqualizesThePercentageOfDifferentTargetHours()
+    public void IgnoresLegacyManualTargetsAndBalancesIdenticalAvailability()
     {
         var lowTarget = Driver(targetHours: 20);
         var highTarget = Driver(targetHours: 40);
@@ -104,8 +104,8 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         var result = solver.Solve(input);
 
         AssertExactRoster(input, result);
-        Assert.Equal(6, result.Shifts.Where(shift => shift.EmployeeId == lowTarget.Id).Sum(shift => shift.DurationHours));
-        Assert.Equal(12, result.Shifts.Where(shift => shift.EmployeeId == highTarget.Id).Sum(shift => shift.DurationHours));
+        Assert.Equal(9, result.Shifts.Where(shift => shift.EmployeeId == lowTarget.Id).Sum(shift => shift.DurationHours));
+        Assert.Equal(9, result.Shifts.Where(shift => shift.EmployeeId == highTarget.Id).Sum(shift => shift.DurationHours));
     }
 
     [Fact]

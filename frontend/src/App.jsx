@@ -28,8 +28,6 @@ const emptyEmployeeForm = {
   payrollNumber: '',
   hourlyRate: 14.5,
   roles: ['Driver'],
-  targetHours: 20,
-  insideTargetHours: 20,
   driverType: 'Car',
 }
 
@@ -41,8 +39,6 @@ const employeeFieldLabels = {
   payrollNumber: 'Payroll number',
   hourlyRate: 'Hourly pay rate',
   roles: 'Roles',
-  targetHours: 'Target hours',
-  insideTargetHours: 'Inside target hours',
   driverType: 'Driver type',
   identity: 'Employee login',
 }
@@ -1622,8 +1618,6 @@ function AdminConsole({
     updateEmployeeForm('payrollNumber', '')
     updateEmployeeForm('hourlyRate', 14.5)
     updateEmployeeForm('roles', ['Driver'])
-    updateEmployeeForm('targetHours', 20)
-    updateEmployeeForm('insideTargetHours', 20)
     updateEmployeeForm('driverType', 'Car')
   }
 
@@ -1671,7 +1665,6 @@ function AdminConsole({
   const phoneNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'phoneNumber')
   const payrollNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'payrollNumber')
   const roleErrors = getEmployeeFieldErrors(employeeSaveState, 'roles')
-  const targetHoursErrors = getEmployeeFieldErrors(employeeSaveState, 'targetHours')
   const hourlyRateErrors = getEmployeeFieldErrors(employeeSaveState, 'hourlyRate')
   const driverTypeErrors = getEmployeeFieldErrors(employeeSaveState, 'driverType')
 
@@ -1810,7 +1803,6 @@ function AdminConsole({
                           {employeeHasRole(employee, 'Driver') && (
                             <>
                               <span>Driver type: {employee.driverType || 'Car'}</span>
-                              <span>Target hours: {employee.targetHours}</span>
                             </>
                           )}
                           <span className="employee-card-status">
@@ -1976,22 +1968,6 @@ function AdminConsole({
                             <option value="EBike">E-bike</option>
                           </select>
                           <EmployeeFieldError field="driverType" messages={driverTypeErrors} />
-                        </div>
-                        <div className="employee-form-field">
-                          <label htmlFor="admin-employee-target-hours">Driver target hours per week</label>
-                          <input
-                            id="admin-employee-target-hours"
-                            type="number"
-                            min="3"
-                            max="168"
-                            step="1"
-                            value={employeeForm.targetHours}
-                            onChange={(event) => updateEmployeeForm('targetHours', Number(event.target.value))}
-                            aria-invalid={targetHoursErrors.length > 0}
-                            aria-describedby={targetHoursErrors.length > 0 ? 'admin-employee-targetHours-error' : undefined}
-                            required
-                          />
-                          <EmployeeFieldError field="targetHours" messages={targetHoursErrors} />
                         </div>
                       </>
                     )}
@@ -2535,12 +2511,14 @@ function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup }) {
         <div className="personal-roster-empty" role="status">
           <strong>No roster published yet</strong>
           <span>Your shifts will appear here when the roster for this week is ready.</span>
+          {roster.approximateHours != null && <span>Approximate hours from your useful availability: {Number(roster.approximateHours).toFixed(1)}h</span>}
         </div>
       )}
       {rosterState.status === 'success' && roster.hasPublishedRoster && <>
         <div className="personal-roster-summary">
           <span>Scheduled this week</span>
           <strong>{roster.scheduledHours} {roster.scheduledHours === 1 ? 'hour' : 'hours'}</strong>
+          {roster.approximateHours != null && <small>Approximate before scheduling: {Number(roster.approximateHours).toFixed(1)}h</small>}
         </div>
         <div className="personal-roster-days">
           {days.map((day) => <article className={`personal-roster-day${day.shifts.length ? ' has-shift' : ''}`} key={day.date}>
@@ -2827,8 +2805,6 @@ function App() {
         payrollNumber: employee.payrollNumber || '',
         hourlyRate: employee.hourlyRate ?? 14.5,
         roles: employee.roles?.length ? employee.roles : ['Driver'],
-        targetHours: employee.targetHours ?? 20,
-        insideTargetHours: employee.insideTargetHours ?? 20,
         driverType: employee.driverType || 'Car',
       })
     }

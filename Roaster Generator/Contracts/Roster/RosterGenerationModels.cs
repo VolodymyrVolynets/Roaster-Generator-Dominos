@@ -123,6 +123,16 @@ public sealed class RosterWeekSummaryResponse
     public int EnteredAvailabilityHours { get; init; }
 
     public int DriversWithoutAvailability { get; init; }
+
+    public IReadOnlyList<RosterExpectedHoursResponse> ApproximateHours { get; init; } = [];
+}
+
+public sealed class RosterExpectedHoursResponse
+{
+    public Guid EmployeeId { get; init; }
+    public string EmployeeName { get; init; } = string.Empty;
+    public double ApproximateHours { get; init; }
+    public double CapacityHours { get; init; }
 }
 
 public sealed class RosterEmployeeResponse
@@ -133,6 +143,8 @@ public sealed class RosterEmployeeResponse
     public string EmployeeName { get; init; } = string.Empty;
 
     public int TargetHours { get; init; }
+
+    public double ApproximateHours { get; init; }
 
     public int ScheduledHours { get; init; }
 
@@ -187,6 +199,8 @@ public sealed class PersonalRosterResponse
 
     public int ScheduledHours { get; init; }
 
+    public double? ApproximateHours { get; init; }
+
     public IReadOnlyList<RosterShiftResponse> Shifts { get; init; } = [];
 }
 
@@ -231,6 +245,7 @@ public sealed class RosterCoverageResponse
 
 public sealed class RosterSettingsRequest
 {
+    public double FairHoursAlpha { get; set; } = 0.7;
     public int TargetHoursWeight { get; set; } = 100;
     public int HistoryFairnessWeight { get; set; } = 100;
     public int HistoryShiftLengthWeight { get; set; } = 100;

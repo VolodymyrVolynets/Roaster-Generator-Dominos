@@ -15,6 +15,7 @@ public sealed class RosterSettingsService(AppDbContext db)
     {
         var settings = await db.RosterGenerationSettings
             .SingleAsync(s => s.Id == RosterGenerationSettings.SingletonId, ct);
+        settings.FairHoursAlpha = (decimal)request.FairHoursAlpha;
         settings.TargetHoursWeight = request.TargetHoursWeight;
         settings.HistoryFairnessWeight = request.HistoryFairnessWeight;
         settings.HistoryShiftLengthWeight = request.HistoryShiftLengthWeight;
@@ -33,6 +34,7 @@ public sealed class RosterSettingsService(AppDbContext db)
 
     public static RosterSettingsRequest ToResponse(RosterGenerationSettings settings) => new()
     {
+        FairHoursAlpha = (double)settings.FairHoursAlpha,
         TargetHoursWeight = settings.TargetHoursWeight,
         HistoryFairnessWeight = settings.HistoryFairnessWeight,
         HistoryShiftLengthWeight = settings.HistoryShiftLengthWeight,
@@ -49,6 +51,7 @@ public sealed class RosterSettingsService(AppDbContext db)
 
     public static RosterSolverOptions ToOptions(RosterSettingsRequest settings) => new()
     {
+        FairHoursAlpha = settings.FairHoursAlpha,
         TargetHoursWeight = settings.TargetHoursWeight,
         HistoryFairnessWeight = settings.HistoryFairnessWeight,
         HistoryShiftLengthWeight = settings.HistoryShiftLengthWeight,

@@ -352,7 +352,6 @@ public sealed class AdminEmployeesController(
         if (roles.Contains(RoleNames.Driver, StringComparer.Ordinal))
         {
             employee.DriverProfile ??= new DriverProfile { EmployeeId = employee.Id };
-            employee.DriverProfile.TargetHours = request.TargetHours;
             employee.DriverProfile.DriverType = request.DriverType;
         }
         else if (employee.DriverProfile is not null)
@@ -364,7 +363,6 @@ public sealed class AdminEmployeesController(
         if (roles.Contains(RoleNames.InStore, StringComparer.Ordinal))
         {
             employee.InStoreProfile ??= new InStoreProfile { EmployeeId = employee.Id };
-            employee.InStoreProfile.TargetHours = request.InsideTargetHours;
         }
         else if (employee.InStoreProfile is not null)
         {
@@ -375,7 +373,6 @@ public sealed class AdminEmployeesController(
         if (roles.Contains(RoleNames.Manager, StringComparer.Ordinal))
         {
             employee.ManagerProfile ??= new ManagerProfile { EmployeeId = employee.Id };
-            employee.ManagerProfile.TargetHours = request.InsideTargetHours;
         }
         else if (employee.ManagerProfile is not null)
         {

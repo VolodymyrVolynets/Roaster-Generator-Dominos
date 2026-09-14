@@ -19,7 +19,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class PersonalRosterController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
-    IValidator<WeekSelectionRequest> weekValidator) : ApiControllerBase
+    IValidator<WeekSelectionRequest> weekValidator,
+    RosterInputService? rosterInputs = null) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(
@@ -46,6 +47,20 @@ public sealed class PersonalRosterController(
         }
 
         var weekStart = WeeklyScheduleService.GetWeekMonday(selection.WeekOffset);
+        double? approximateHours = null;
+        if (rosterInputs is not null)
+        {
+            try
+            {
+                var loaded = await rosterInputs.LoadAsync(weekStart, cancellationToken);
+                approximateHours = loaded.Input.ExpectedHoursByEmployee?
+                    .GetValueOrDefault(employeeId)?.ExpectedHours;
+            }
+            catch (RosterInputException)
+            {
+                // Demand or availability may be incomplete before a roster can be generated.
+            }
+        }
         var plan = await db.RosterPlans
             .AsNoTracking()
             .SingleOrDefaultAsync(
@@ -54,7 +69,7 @@ public sealed class PersonalRosterController(
 
         if (plan is null)
         {
-            return Ok(new PersonalRosterResponse { WeekStart = weekStart });
+            return Ok(new PersonalRosterResponse { WeekStart = weekStart, ApproximateHours = approximateHours });
         }
 
         var shiftEntities = await db.RosterShifts
@@ -81,6 +96,7 @@ public sealed class PersonalRosterController(
             HasPublishedRoster = true,
             PublishedAtUtc = plan.UpdatedAtUtc,
             ScheduledHours = shifts.Sum(shift => shift.DurationHours),
+            ApproximateHours = approximateHours,
             Shifts = shifts
         });
     }

@@ -272,15 +272,17 @@ public sealed partial class RosterSolverTests
     }
 
     [Fact]
-    public void InsideTargetValidationUsesTheSelectedRosterKind()
+    public void AutomaticallyCalculatedHoursCannotExceedUsefulCapacity()
     {
         var employee = Driver(targetHours: 20);
-        employee.InStoreProfile = new InStoreProfile { TargetHours = -1 };
-        var input = Input([employee], [], []);
+        var invalid = new Dictionary<Guid, FairDriverHoursAllocation>
+        {
+            [employee.Id] = new(employee.Id, 12, 6, 1, 1)
+        };
+        var input = Input([employee], [], []) with { ExpectedHoursByEmployee = invalid };
 
-        Assert.Empty(RosterSolverInputValidator.ValidateInput(input));
-        Assert.Contains(RosterSolverInputValidator.ValidateInput(input with { RosterKind = RosterKinds.Inside }),
-            error => error.Contains("Employee target hours"));
+        Assert.Contains(RosterSolverInputValidator.ValidateInput(input),
+            error => error.Contains("Automatically calculated hours"));
     }
 
     private static Employee InsideEmployee(bool manager = false, int targetHours = 20) => new()

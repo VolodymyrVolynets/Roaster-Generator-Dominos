@@ -65,7 +65,7 @@ test('missing demand plans and closed hours show no driver hours', () => {
   assert.equal(summary.deliveries, 0)
 })
 
-test('planned labour uses demand and target-hour-weighted active driver pay', () => {
+test('planned labour uses demand and average active driver pay', () => {
   const plan = {
     columns: [
       { position: 0, label: 'Monday', targetSales: 100 },
@@ -95,15 +95,15 @@ test('planned labour uses demand and target-hour-weighted active driver pay', ()
   const labour = calculateDemandLabour(plan, employees)
 
   assert.equal(labour.eligibleDriverCount, 2)
-  assert.equal(labour.averageHourlyRate, 17.5)
+  assert.equal(labour.averageHourlyRate, 15)
   assert.equal(labour.driverHours, 6)
-  assert.equal(labour.days[0].labourCost, 35)
+  assert.equal(labour.days[0].labourCost, 30)
   assert.equal(labour.days[1].sundayPremiumHours, 2)
-  assert.equal(labour.days[1].labourCost, 43.75)
+  assert.equal(labour.days[1].labourCost, 37.5)
   assert.equal(labour.days[2].sundayPremiumHours, 1)
-  assert.equal(labour.days[2].labourCost, 39.38)
-  assert.equal(labour.labourCost, 118.13)
-  assert.equal(labour.labourPercentage, 39.38)
+  assert.equal(labour.days[2].labourCost, 33.75)
+  assert.equal(labour.labourCost, 101.25)
+  assert.equal(labour.labourPercentage, 33.75)
 })
 
 test('hourly labour analysis compares entered whole-driver demand with the fractional productivity ideal', () => {
@@ -143,9 +143,6 @@ test('hourly labour analysis compares entered whole-driver demand with the fract
   assert.equal(labour.idealLabourCost, 42.5)
   assert.equal(labour.labourCostDifference, 10)
   assert.equal(labour.labourCostPerDelivery, 4.86)
-  assert.equal(labour.totalTargetHours, 20)
-  assert.equal(labour.demandToTargetHoursPercentage, 25)
-
   assert.equal(monday.deliveries, 8.1)
   assert.equal(monday.openHours, 2)
   assert.equal(monday.capacityUtilization, 75)

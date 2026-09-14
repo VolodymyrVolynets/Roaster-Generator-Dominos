@@ -93,6 +93,7 @@ builder.Services.AddSingleton<AvailabilityEditPolicy>();
 builder.Services.AddScoped<RosterPlanService>();
 builder.Services.AddScoped<RosterLabourService>();
 builder.Services.AddScoped<RosterSettingsService>();
+builder.Services.AddScoped<IFairDriverHoursCalculator, FairDriverHoursCalculator>();
 builder.Services.AddScoped<RosterInputService>();
 builder.Services.AddSingleton<RosterTimerService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<RosterTimerService>());

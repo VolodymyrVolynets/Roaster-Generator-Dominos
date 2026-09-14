@@ -11,7 +11,8 @@ public sealed record RosterSolverInput(
     IReadOnlyList<RosterSolverBoundaryShift> BoundaryShifts,
     RosterSolverOptions Options,
     IReadOnlyList<RosterSolverHistory>? History = null,
-    string RosterKind = RosterKinds.Drivers);
+    string RosterKind = RosterKinds.Drivers,
+    IReadOnlyDictionary<Guid, FairDriverHoursAllocation>? ExpectedHoursByEmployee = null);
 
 public sealed record RosterSolverHistory(Guid EmployeeId, DateOnly WeekStart, int ScheduledHours, int TargetHours,
     int? ShiftCount = null);
@@ -29,6 +30,7 @@ public sealed record RosterSolverProgress(string Stage, int Progress, string Mes
 
 public sealed class RosterSolverOptions
 {
+    public double FairHoursAlpha { get; init; } = 0.7;
     public int TargetHoursWeight { get; init; } = 100;
     public int HistoryFairnessWeight { get; init; } = 100;
     public int HistoryShiftLengthWeight { get; init; } = 100;

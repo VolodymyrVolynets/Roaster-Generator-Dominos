@@ -17,6 +17,12 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             .HasColumnType("uuid")
             .ValueGeneratedNever();
 
+        builder.Property(settings => settings.FairHoursAlpha)
+            .HasColumnName("fair_hours_alpha")
+            .HasColumnType("numeric(3,2)")
+            .HasDefaultValue(0.7m)
+            .IsRequired();
+
         builder.Property(settings => settings.TargetHoursWeight)
             .HasColumnName("target_hours_weight")
             .HasDefaultValue(100)
@@ -86,6 +92,7 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
         builder.HasData(new RosterGenerationSettings
         {
             Id = RosterGenerationSettings.SingletonId,
+            FairHoursAlpha = 0.7m,
             TargetHoursWeight = 100,
             LongShiftBonus = 25,
             ShortShiftPenalty = 10,

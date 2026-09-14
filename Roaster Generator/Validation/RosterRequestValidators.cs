@@ -9,6 +9,7 @@ public sealed class RosterSettingsRequestValidator : AbstractValidator<RosterSet
 {
     public RosterSettingsRequestValidator()
     {
+        RuleFor(request => request.FairHoursAlpha).InclusiveBetween(0, 1);
         RuleFor(request => request.TargetHoursWeight).InclusiveBetween(0, 1000);
         RuleFor(request => request.HistoryFairnessWeight).InclusiveBetween(0, 1000);
         RuleFor(request => request.HistoryShiftLengthWeight).InclusiveBetween(0, 1000);

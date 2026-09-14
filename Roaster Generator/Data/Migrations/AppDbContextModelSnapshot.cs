@@ -820,6 +820,12 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(1000)
                         .HasColumnName("fairness_spread_weight");
 
+                    b.Property<decimal>("FairHoursAlpha")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(3,2)")
+                        .HasDefaultValue(0.7m)
+                        .HasColumnName("fair_hours_alpha");
+
                     b.Property<int>("GenerationCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -917,6 +923,7 @@ namespace Roaster_Generator.Data.Migrations
                             DailyShiftCountPenalty = 25,
                             EliteCount = 2,
                             ExactSearchNodeLimit = 500000,
+                            FairHoursAlpha = 0.7m,
                             FairnessSpreadWeight = 1000,
                             GenerationCount = 150,
                             HistoryFairnessWeight = 100,

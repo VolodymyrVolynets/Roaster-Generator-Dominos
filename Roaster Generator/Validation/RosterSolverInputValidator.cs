@@ -47,6 +47,11 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                     context.AddFailure("Solve time must be between 1 and 120 seconds.");
                 }
 
+                if (!double.IsFinite(options.FairHoursAlpha) || options.FairHoursAlpha is < 0 or > 1)
+                {
+                    context.AddFailure("Fair-hours alpha must be between 0 and 1.");
+                }
+
                 var weights = new[]
                 {
                     options.TargetHoursWeight,
@@ -69,9 +74,18 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                     context.AddFailure("The employee list contains duplicate IDs.");
                 }
 
-                if (input.Employees.Any(employee => TargetHours(employee, input.RosterKind) is < 0 or > 168))
+                if (input.ExpectedHoursByEmployee is not null && input.ExpectedHoursByEmployee.Values.Any(item =>
+                    !double.IsFinite(item.ExpectedHours) || item.ExpectedHours is < 0 or > 70 ||
+                    !double.IsFinite(item.CapacityHours) || item.CapacityHours is < 0 or > 70 ||
+                    item.ExpectedHours > item.CapacityHours + 0.001))
                 {
-                    context.AddFailure("Employee target hours must be between 0 and 168.");
+                    context.AddFailure("Automatically calculated hours must be finite, between 0 and 70, and no greater than useful availability capacity.");
+                }
+
+                if (input.ExpectedHoursByEmployee is not null && input.ExpectedHoursByEmployee.Keys
+                    .Except(input.Employees.Select(employee => employee.Id)).Any())
+                {
+                    context.AddFailure("Automatically calculated hours contain an employee outside the roster input.");
                 }
 
                 if (input.Demand.Any(slot =>
@@ -141,6 +155,4 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
 
     private static int AbsoluteHour(DateOnly weekStart, DateOnly date, int hour) =>
         (date.DayNumber - weekStart.DayNumber) * 24 + hour;
-
-    private static int TargetHours(Employee employee, string rosterKind) => RosterKinds.TargetHours(employee, rosterKind);
 }

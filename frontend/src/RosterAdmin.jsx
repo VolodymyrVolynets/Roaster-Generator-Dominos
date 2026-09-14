@@ -5,10 +5,10 @@ import { compareRosterEmployees, driverRosterOnly, employeeHasRole, getRosterRol
 import SavedRosterLabour from './SavedRosterLabour'
 
 const weightFields = [
-  ['targetHoursWeight', 'Equal target percentages', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s target percentage; reduce it when availability or exact coverage needs more flexibility. Set to 0 to disable it.'],
+  ['targetHoursWeight', 'Match approximate hours', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s automatically calculated share; reduce it when shift shape or rest needs more flexibility. Set to 0 to disable it.'],
   ['historyFairnessWeight', 'Compensate previous weeks', 'Uses up to four saved weeks. Increase it to give more hours to employees who have been below the group percentage and fewer to those above it; reduce it to focus mostly on this week.'],
-  ['historyShiftLengthWeight', 'Compensate previous short shifts', 'Uses actual shift lengths from the previous four saved weeks. Increase it to prefer longer shifts for employees whose earlier shifts were shorter than the group average, with a preferred length between 6 and 8 hours. This is balanced against availability, demand and target-hour fairness. Set to 0 to disable; default: 100.'],
-  ['fairnessSpreadWeight', 'Avoid gaps above 30 percentage points', 'Adds a strong penalty when target-percentage spread exceeds 30 points. Increase it to close large gaps; reduce it if coverage, availability, or shift shape needs more flexibility.'],
+  ['historyShiftLengthWeight', 'Compensate previous short shifts', 'Uses actual shift lengths from the previous four saved weeks. Increase it to prefer longer shifts for employees whose earlier shifts were shorter than the group average, with a preferred length between 6 and 8 hours. This is balanced against availability, demand and approximate-hours fairness. Set to 0 to disable; default: 100.'],
+  ['fairnessSpreadWeight', 'Avoid gaps above 30 percentage points', 'Adds a strong penalty when approximate-hours percentages differ by more than 30 points. Increase it to close large gaps; reduce it if coverage, availability, or shift shape needs more flexibility.'],
   ['longShiftBonus', 'Longer shifts', 'Rewards shifts in the preferred 6–8 hour range, with longer legal shifts scoring better. Increase it to join adjacent demand into longer shifts; very high values can make target balancing harder.'],
   ['shortShiftPenalty', 'Avoid short shifts', 'Penalises shifts below 6 hours while the hard minimum remains 3 hours. Increase it to avoid 3–5 hour shifts; reduce it when sparse demand makes short coverage useful.'],
   ['dailyShiftCountPenalty', 'Fewer shifts', 'Penalises multiple shifts for one employee on the same business day. Increase it to consolidate coverage into fewer shifts; reduce it when gaps or availability require separate shifts.'],
@@ -21,9 +21,10 @@ const formatNumber = (value) => numberFormatter.format(Number(value ?? 0))
 const formatStage = (stage) => (stage || 'starting').replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 const parseDate = (value) => new Date(`${value}T12:00:00`)
 const formatDate = (value) => value ? dateFormatter.format(parseDate(value)) : ''
-const withSettingsDefaults = (settings) => ({ historyFairnessWeight: 100, historyShiftLengthWeight: 100, fairnessSpreadWeight: 1000, latestShiftStartHour: 20, ...settings })
+const withSettingsDefaults = (settings) => ({ fairHoursAlpha: 0.7, historyFairnessWeight: 100, historyShiftLengthWeight: 100, fairnessSpreadWeight: 1000, latestShiftStartHour: 20, ...settings })
 const averageFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 const averageShiftHours = (shifts) => shifts.length ? Math.round(shifts.reduce((total, shift) => total + shift.durationHours, 0) * 100 / shifts.length) / 100 : 0
+const approximateHours = (employee) => employee.approximateHours ?? employee.targetHours ?? 0
 const rosterKind = 'drivers'
 const hourOptions = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`)
 
@@ -48,7 +49,7 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
       <p className="demand-help">
         Demand is exact at every hour. Every shift must be 3–10 hours, within availability, and start no later than {settings?.latestShiftStartHour ?? 20}:00.
         Shifts may finish after the latest start time or overnight, with at most one shift per business day.
-        Employees with a zero-hour target may cover demand as reserves and are excluded from percentage balancing.
+        Approximate hours are calculated automatically from useful availability, hourly demand, and how many drivers can cover each hour.
         Weight fields use a 0–1000 scale: higher values give that preference more influence and 0 disables it. Exact coverage,
         availability, and hard shift rules always apply. Start with the defaults, then raise one weight at a time when a specific
         outcome needs more influence.
@@ -60,6 +61,12 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
         <form onSubmit={saveSettings}>
           <fieldset className="roster-settings-fields" disabled={saving || running}>
             <div className="roster-settings-grid">
+              <label>
+                <span>Availability fairness alpha</span>
+                <input type="number" min="0" max="1" step="0.05" required value={settings.fairHoursAlpha}
+                  onChange={(event) => setSettings({ ...settings, fairHoursAlpha: event.target.value === '' ? '' : Number(event.target.value) })} />
+                <small>Controls how strongly additional useful availability increases approximate hours. 1 is proportional, 0 is nearly equal among drivers with useful availability, and 0.7 is the balanced default.</small>
+              </label>
               {weightFields.map(([field, label, help]) => (
                 <label key={field}>
                   <span>{label}</span>
@@ -279,7 +286,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
         <WeekSelector value={weekOffset} onChange={setWeekOffset} disabled={running} />
       </div>
       <p className="demand-help">
-        Build an exact demand match, then balance target percentages, past-hour differences, shift lengths, and rest.
+        Build an exact demand match, then balance automatically calculated approximate hours, past-hour differences, shift lengths, and rest.
         A successful roster is saved automatically. An impossible week is explained in the activity log.
         {' '}Every e-bike shift must have a car or moped driver alongside it.
       </p>
@@ -291,6 +298,19 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
             <Metric label="Availability entered" value={`${formatNumber(summary.enteredAvailabilityHours)}h`} />
             <Metric label="Employees with no availability" value={summary.employeesWithoutAvailability ?? summary.driversWithoutAvailability} />
           </div>
+          {summary.approximateHours?.length > 0 && <details className="roster-fairness-details">
+            <summary><span>Approximate driver hours</span><small>Calculated from this week’s demand and availability</small></summary>
+            <div className="demand-table-wrapper">
+              <table className="saved-roster-table">
+                <thead><tr><th>Driver</th><th>Approximate hours</th><th>Useful capacity</th></tr></thead>
+                <tbody>{summary.approximateHours.map((employee) => <tr key={employee.employeeId}>
+                  <th>{employee.employeeName}</th>
+                  <td>{formatNumber(employee.approximateHours)}h</td>
+                  <td>{formatNumber(employee.capacityHours)}h</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </details>}
           {!summary.demandPlanExists && <p className="message info-message">Import a demand plan before generating this week.</p>}
         </>
       )}
@@ -497,12 +517,13 @@ function minimumEmployeeRest(shifts) {
 }
 
 function exportRosterCsv(roster, dates) {
-  const rows = [['Employee', 'Target hours', 'Scheduled hours', 'Average hours per shift', 'Target %', 'Previous saved weeks',
-    'Previous scheduled hours', 'Previous target hours', 'Previous target %', 'Previous shifts with known durations', 'Previous average hours per shift', 'History-adjusted goal hours this week', 'Cumulative target %', ...dates]]
+  const rows = [['Employee', 'Approximate hours', 'Scheduled hours', 'Average hours per shift', 'Approximate hours %', 'Previous saved weeks',
+    'Previous scheduled hours', 'Previous approximate hours', 'Previous %', 'Previous shifts with known durations', 'Previous average hours per shift', 'History-adjusted goal hours this week', 'Cumulative %', ...dates]]
   for (const employee of roster.employees) {
-    rows.push([employee.employeeName, employee.targetHours, employee.scheduledHours,
+    const expected = approximateHours(employee)
+    rows.push([employee.employeeName, expected, employee.scheduledHours,
       employee.averageHoursPerShift ?? averageShiftHours(employee.shifts),
-      employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : ''),
+      employee.targetPercentage ?? (expected > 0 ? employee.scheduledHours / expected * 100 : ''),
       employee.historyWeeks ?? '', employee.previousScheduledHours ?? '', employee.previousTargetHours ?? '',
       employee.previousTargetPercentage ?? '', employee.previousShiftCount ?? '', employee.previousAverageHoursPerShift ?? '',
       employee.balancedTargetHours ?? '', employee.cumulativeTargetPercentage ?? '',
@@ -530,8 +551,8 @@ function FairnessComparison({ roster, employeeGroups }) {
     ? employeeGroups
     : [{ id: 'all', label: 'Employees', employees: roster.employees }]
   const warnings = []
-  if (currentSpread > 30) warnings.push(`This week’s target percentages differ by ${formatNumber(currentSpread)} percentage points, above the 30-point review threshold.`)
-  if (hasHistory && cumulativeSpread > 30) warnings.push(`The cumulative target percentages differ by ${formatNumber(cumulativeSpread)} percentage points across the saved history and this week.`)
+  if (currentSpread > 30) warnings.push(`This week’s approximate-hours percentages differ by ${formatNumber(currentSpread)} percentage points, above the 30-point review threshold.`)
+  if (hasHistory && cumulativeSpread > 30) warnings.push(`The cumulative approximate-hours percentages differ by ${formatNumber(cumulativeSpread)} percentage points across the saved history and this week.`)
   if (warnings.length) warnings.push('Past-hour compensation, availability, exact demand, shift lengths, and rest limits may affect the gap. The search time budget can also limit improvement; review the individual percentages before using this roster.')
   return <details className="roster-fairness-details">
     <summary>
@@ -540,8 +561,8 @@ function FairnessComparison({ roster, employeeGroups }) {
     </summary>
     <section className="roster-fairness-section" aria-label="Fairness across five weeks">
       <p className="demand-help">
-        Compare this week with up to four earlier saved weeks. Each percentage is scheduled hours divided by target hours;
-        the cumulative percentage uses the combined hours and targets. The history-adjusted goal gradually compensates for
+        Compare this week with up to four earlier saved weeks. Each percentage is scheduled hours divided by automatically calculated approximate hours;
+        the cumulative percentage uses the combined scheduled and approximate hours. The history-adjusted goal gradually compensates for
         the employee’s difference from the group’s previous percentage, divided across the saved weeks and capped at a
         15-percentage-point correction this week. This reference goal is balanced with your weights and the shift rules.
         Previous average shift length uses recorded shift durations from those four weeks; older weeks without duration
@@ -556,24 +577,25 @@ function FairnessComparison({ roster, employeeGroups }) {
       {warnings.length > 0 && <DiagnosticList entries={warnings} title="Review the remaining fairness gap" />}
       <div className="demand-table-wrapper">
         <table className="saved-roster-table roster-fairness-table">
-          <caption className="visually-hidden">Previous weeks, current week, and cumulative target-hour percentages</caption>
+          <caption className="visually-hidden">Previous weeks, current week, and cumulative approximate-hours percentages</caption>
           <thead><tr>
             <th scope="col">Employee</th>
             <th scope="col">Previous weeks</th>
-            <th scope="col">Previous hours / target</th>
-            <th scope="col">Previous target %</th>
+            <th scope="col">Previous scheduled / approximate</th>
+            <th scope="col">Previous %</th>
             <th scope="col">Previous average shift</th>
             <th scope="col">This week’s average shift</th>
-            <th scope="col">This week’s target %</th>
+            <th scope="col">This week’s %</th>
             <th scope="col">History-adjusted goal</th>
-            <th scope="col">Cumulative target %</th>
+            <th scope="col">Cumulative %</th>
           </tr></thead>
           <tbody>{groups.flatMap((group) => [
             <tr className={`roster-group-divider roster-group-divider-${group.id}`} key={`${group.id}-heading`}>
               <th colSpan="9" scope="rowgroup">{group.label}</th>
             </tr>,
             ...group.employees.map((employee) => {
-              const currentPercentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
+              const expected = approximateHours(employee)
+              const currentPercentage = employee.targetPercentage ?? (expected > 0 ? employee.scheduledHours / expected * 100 : null)
               const priorPercentage = employee.previousTargetPercentage
               const cumulativePercentage = employee.cumulativeTargetPercentage
               return <tr key={employee.employeeId}>
@@ -584,7 +606,7 @@ function FairnessComparison({ roster, employeeGroups }) {
                 <td>{employee.previousAverageHoursPerShift == null ? 'No recorded shifts' : `${averageFormatter.format(employee.previousAverageHoursPerShift)}h`}
                   {employee.previousShiftCount != null && <small>{employee.previousShiftCount} recorded shifts</small>}</td>
                 <td>{averageFormatter.format(employee.averageHoursPerShift ?? averageShiftHours(employee.shifts))}h</td>
-                <td><strong className="roster-target-percentage">{currentPercentage == null ? 'N/A' : `${formatNumber(currentPercentage)}%`}</strong><small>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h</small></td>
+                <td><strong className="roster-target-percentage">{currentPercentage == null ? 'N/A' : `${formatNumber(currentPercentage)}%`}</strong><small>{formatNumber(employee.scheduledHours)} / {formatNumber(expected)}h</small></td>
                 <td>{employee.balancedTargetHours == null ? '—' : `${formatNumber(employee.balancedTargetHours)}h`}</td>
                 <td><strong className="roster-target-percentage">{cumulativePercentage == null ? '—' : `${formatNumber(cumulativePercentage)}%`}</strong></td>
               </tr>
@@ -609,8 +631,8 @@ function SavedRosterEmployeeTables({
   const mismatchEntries = [...demandMismatchByDate.entries()].flatMap(([date, details]) => details.map((detail) => ({ date, detail })))
 
   return <>
-    <h3 className="roster-section-title">Employee shifts and target hours</h3>
-    <p className="demand-help">Target percentage is scheduled hours divided by target hours. Red dates indicate an hourly mismatch against the current demand; the roster remains saved so the administrator can review and correct it.</p>
+    <h3 className="roster-section-title">Employee shifts and approximate hours</h3>
+    <p className="demand-help">The percentage compares scheduled hours with each driver’s automatically calculated approximate hours. Red dates indicate an hourly mismatch against the current demand; the roster remains saved so the administrator can review and correct it.</p>
     {demandMismatchByDate.size > 0 && (
       <div className="roster-demand-warning" role="alert">
         <strong>Roster does not match current demand</strong>
@@ -641,8 +663,8 @@ function SavedRosterEmployeeTables({
                 <caption className="visually-hidden">{group.label} roster for the week starting {roster.weekStart}</caption>
                 <thead><tr>
                   <th scope="col">Employee</th>
-                  <th scope="col">Hours / target</th>
-                  <th scope="col">Target %</th>
+                  <th scope="col">Scheduled / approximate</th>
+                  <th scope="col">Approximate %</th>
                   {dates.map((date) => {
                     const mismatch = mismatchDetails(date)
                     return <th scope="col" key={date} className={mismatch ? 'demand-mismatch' : ''} title={mismatch || undefined}>
@@ -653,14 +675,15 @@ function SavedRosterEmployeeTables({
                   <th scope="col">Shortest rest*</th>
                 </tr></thead>
                 <tbody>{group.employees.map((employee) => {
-                  const percentage = employee.targetPercentage ?? (employee.targetHours > 0 ? employee.scheduledHours / employee.targetHours * 100 : null)
+                  const expected = approximateHours(employee)
+                  const percentage = employee.targetPercentage ?? (expected > 0 ? employee.scheduledHours / expected * 100 : null)
                   const rest = minimumEmployeeRest(employee.shifts)
                   return <tr key={employee.employeeId}>
                     <th scope="row">{employee.employeeName}</th>
-                    <td>{formatNumber(employee.scheduledHours)} / {formatNumber(employee.targetHours)}h
+                    <td>{formatNumber(employee.scheduledHours)} / {formatNumber(expected)}h
                       <small>{employee.shifts.length ? `Avg ${averageFormatter.format(employee.averageHoursPerShift ?? averageShiftHours(employee.shifts))}h per shift` : 'No shifts'}</small>
                     </td>
-                    <td><strong className="roster-target-percentage">{percentage == null ? 'N/A' : `${formatNumber(percentage)}%`}</strong>{percentage == null && <small>Zero target · reserve</small>}</td>
+                    <td><strong className="roster-target-percentage">{percentage == null ? 'N/A' : `${formatNumber(percentage)}%`}</strong>{percentage == null && <small>No useful demand overlap</small>}</td>
                     {dates.map((date) => {
                       const mismatch = mismatchDetails(date)
                       const cellShifts = editing

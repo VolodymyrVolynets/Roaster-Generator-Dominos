@@ -25,12 +25,15 @@ public sealed record LoadedRosterInput(RosterSolverInput Input, RosterSettingsRe
 }
 
 public sealed class RosterInputService(AppDbContext db, RosterSettingsService settingsService,
-    IOptions<ShopHoursOptions> shopHoursOptions)
+    IOptions<ShopHoursOptions> shopHoursOptions,
+    IFairDriverHoursCalculator? fairHoursCalculator = null)
 {
+    private readonly IFairDriverHoursCalculator fairHoursCalculator =
+        fairHoursCalculator ?? new FairDriverHoursCalculator();
+
     public async Task<LoadedRosterInput> LoadAsync(DateOnly weekStart, CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
         RosterKinds.EnsureEnabled(rosterKind);
-        int TargetHours(Employee employee) => RosterKinds.TargetHours(employee, rosterKind);
         var weekEnd = weekStart.AddDays(7);
         var plan = await db.DemandPlans.AsNoTracking().Include(p => p.Columns)
             .Include(p => p.Rows).ThenInclude(r => r.Values)
@@ -99,16 +102,23 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 s.Date.ToDateTime(TimeOnly.MinValue).AddHours(finishHour));
         }).ToList();
         var settings = await settingsService.GetAsync(ct);
+        var fairHours = fairHoursCalculator.Calculate(
+            employees,
+            availability,
+            demand,
+            settings.FairHoursAlpha);
         foreach (var employee in employees)
         {
             var sickDates = unavailableDates.Count(item => item.EmployeeId == employee.Id && item.Date >= weekStart && item.Date < weekEnd);
             if (sickDates > 0)
                 warnings.Add($"{employee.FirstName} {employee.LastName}: approved sick leave removes availability on {sickDates} day{(sickDates == 1 ? string.Empty : "s")} this week.");
-            if (TargetHours(employee) == 0)
-                warnings.Add($"{employee.FirstName} {employee.LastName}: target hours are 0; available as a reserve, excluded from percentage balancing (percentage is undefined).");
-            else if (!availability.Any(s => s.EmployeeId == employee.Id))
-                warnings.Add($"{employee.FirstName} {employee.LastName}: no availability entered; target percentage will be 0%.");
+            if (!availability.Any(s => s.EmployeeId == employee.Id))
+                warnings.Add($"{employee.FirstName} {employee.LastName}: no availability entered; approximate hours are 0.");
+            else if (fairHours.Drivers.GetValueOrDefault(employee.Id)?.ExpectedHours == 0)
+                warnings.Add($"{employee.FirstName} {employee.LastName}: availability does not overlap any positive demand; approximate hours are 0.");
         }
+        if (fairHours.UnallocatedDemandHours > 0.001)
+            warnings.Add($"Useful availability can receive {fairHours.TotalAllocatedHours:F1} of {fairHours.TotalDemandHours:F1} demanded driver-hours; {fairHours.UnallocatedDemandHours:F1} hours could not be allocated approximately.");
         var historyPlans = await db.RosterPlans.AsNoTracking()
             .Where(p => p.WeekStart >= weekStart.AddDays(-28) && p.WeekStart < weekStart && p.RosterKind == rosterKind)
             .OrderBy(p => p.WeekStart).Select(p => new { p.WeekStart, p.SnapshotJson }).ToListAsync(ct);
@@ -126,7 +136,8 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 .Select(e => new RosterSolverHistory(e.EmployeeId, historicalPlan.WeekStart, e.ScheduledHours,
                     e.TargetHours, ReadHistoryShiftCount(e))));
         }
-        var input = new RosterSolverInput(weekStart, employees, availability, demand, boundaries, RosterSettingsService.ToOptions(settings), history, rosterKind);
+        var input = new RosterSolverInput(weekStart, employees, availability, demand, boundaries,
+            RosterSettingsService.ToOptions(settings), history, rosterKind, fairHours.Drivers);
         var demandFingerprint = Fingerprint(demand);
         var availabilityFingerprint = Fingerprint(new
         {
@@ -134,10 +145,10 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             {
                 e.Id,
                 Roles = RosterKinds.Roles(e),
-                TargetHours = TargetHours(e),
                 e.DriverProfile?.DriverType
             }),
-            Availability = availability.Select(s => new { s.EmployeeId, s.Date, s.StartTime, s.FinishTime })
+            Availability = availability.Select(s => new { s.EmployeeId, s.Date, s.StartTime, s.FinishTime }),
+            ApproximateHours = fairHours.Drivers.Values.OrderBy(item => item.EmployeeId)
         });
         // Scalars only: stable fingerprint catches changed scheduling inputs before saving.
         var fingerprint = Fingerprint(new

@@ -19,16 +19,33 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         var demandExists = await db.DemandPlans.AnyAsync(plan =>
             plan.WeekStart == weekStart && plan.DemandKind == DemandKinds.Outside, ct);
         var required = 0;
+        IReadOnlyList<RosterExpectedHoursResponse> approximateHours = [];
         if (demandExists)
         {
-            try { required = (await inputs.LoadAsync(weekStart, ct, rosterKind)).Input.Demand.Sum(d => d.RequiredDrivers); }
+            try
+            {
+                var loaded = await inputs.LoadAsync(weekStart, ct, rosterKind);
+                required = loaded.Input.Demand.Sum(d => d.RequiredDrivers);
+                approximateHours = loaded.Input.Employees
+                    .OrderBy(employee => employee.LastName).ThenBy(employee => employee.FirstName)
+                    .Select(employee => new RosterExpectedHoursResponse
+                    {
+                        EmployeeId = employee.Id,
+                        EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
+                        ApproximateHours = loaded.Input.ExpectedHoursByEmployee?
+                            .GetValueOrDefault(employee.Id)?.ExpectedHours ?? 0,
+                        CapacityHours = loaded.Input.ExpectedHoursByEmployee?
+                            .GetValueOrDefault(employee.Id)?.CapacityHours ?? 0
+                    }).ToArray();
+            }
             catch (RosterInputException) { /* Generation supplies the detailed demand validation errors. */ }
         }
         return new RosterWeekSummaryResponse
         {
             RosterKind = rosterKind, WeekStart = weekStart, DemandPlanExists = demandExists, RequiredDriverHours = required,
             EnteredAvailabilityHours = availability.Sum(s => Duration(s.StartTime, s.FinishTime)),
-            DriversWithoutAvailability = ids.Count - availability.Select(s => s.EmployeeId).Distinct().Count()
+            DriversWithoutAvailability = ids.Count - availability.Select(s => s.EmployeeId).Distinct().Count(),
+            ApproximateHours = approximateHours
         };
     }
 
@@ -161,15 +178,16 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
 
     private static RosterPlanResponse BuildResponse(RosterPlan plan, LoadedRosterInput loaded, RosterSolverResult result)
     {
-        int TargetHours(Employee employee) => RosterKinds.TargetHours(employee, loaded.Input.RosterKind);
+        double ExpectedHours(Employee employee) => loaded.Input.ExpectedHoursByEmployee?
+            .GetValueOrDefault(employee.Id)?.ExpectedHours ?? 0;
         var recentHistory = (loaded.Input.History ?? [])
             .Where(h => h.WeekStart >= loaded.Input.WeekStart.AddDays(-28) && h.WeekStart < loaded.Input.WeekStart)
             .ToList();
         var history = recentHistory.Where(h => h.TargetHours > 0).ToList();
-        var eligible = loaded.Input.Employees.Where(e => TargetHours(e) > 0).Select(e => e.Id).ToHashSet();
+        var eligible = loaded.Input.Employees.Where(e => ExpectedHours(e) > 0).Select(e => e.Id).ToHashSet();
         var historyTargetTotal = history.Where(h => eligible.Contains(h.EmployeeId)).Sum(h => h.TargetHours);
         var historyHoursTotal = history.Where(h => eligible.Contains(h.EmployeeId)).Sum(h => h.ScheduledHours);
-        var currentTargetTotal = loaded.Input.Employees.Where(e => TargetHours(e) > 0).Sum(TargetHours);
+        var currentTargetTotal = loaded.Input.Employees.Sum(ExpectedHours);
         var currentRatio = currentTargetTotal > 0 ? loaded.Input.Demand.Sum(d => d.RequiredDrivers) / (double)currentTargetTotal : 0;
         var historicalRatio = historyTargetTotal > 0 ? historyHoursTotal / (double)historyTargetTotal : 0;
         var employees = loaded.Input.Employees.OrderBy(e => e.LastName).ThenBy(e => e.FirstName).Select(e =>
@@ -184,17 +202,19 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
             int? pastShiftCount = knownShiftHistory.Count > 0 ? knownShiftHistory.Sum(h => h.ShiftCount!.Value) : null;
             var correction = loaded.Settings.HistoryFairnessWeight > 0 && pastTargets > 0
                 ? Math.Clamp((historicalRatio - pastHours / (double)pastTargets) / past.Count, -0.15, 0.15) : 0;
+            var expectedHours = ExpectedHours(e);
             return new RosterEmployeeResponse
             {
-                EmployeeId = e.Id, EmployeeName = $"{e.FirstName} {e.LastName}".Trim(), TargetHours = TargetHours(e), Roles = RosterKinds.Roles(e),
-                ScheduledHours = hours, TargetPercentage = TargetHours(e) > 0 ? Math.Round(100d * hours / TargetHours(e), 2) : null,
+                EmployeeId = e.Id, EmployeeName = $"{e.FirstName} {e.LastName}".Trim(),
+                TargetHours = (int)Math.Round(expectedHours), ApproximateHours = expectedHours, Roles = RosterKinds.Roles(e),
+                ScheduledHours = hours, TargetPercentage = expectedHours > 0 ? Math.Round(100d * hours / expectedHours, 2) : null,
                 PreviousScheduledHours = pastHours, PreviousTargetHours = pastTargets, HistoryWeeks = past.Count,
                 PreviousShiftCount = pastShiftCount,
                 PreviousAverageHoursPerShift = pastShiftCount > 0
                     ? Math.Round(knownShiftHistory.Sum(h => h.ScheduledHours) / (double)pastShiftCount.Value, 2) : null,
                 PreviousTargetPercentage = pastTargets > 0 ? Math.Round(100d * pastHours / pastTargets, 2) : null,
-                BalancedTargetHours = TargetHours(e) > 0 ? Math.Round(Math.Max(0, TargetHours(e) * (currentRatio + correction)), 2) : null,
-                CumulativeTargetPercentage = TargetHours(e) > 0 ? Math.Round(100d * (pastHours + hours) / (pastTargets + TargetHours(e)), 2) : null,
+                BalancedTargetHours = expectedHours > 0 ? Math.Round(Math.Max(0, expectedHours * (currentRatio + correction)), 2) : null,
+                CumulativeTargetPercentage = expectedHours > 0 ? Math.Round(100d * (pastHours + hours) / (pastTargets + expectedHours), 2) : null,
                 Shifts = shifts.Select(s => new RosterShiftResponse
                 {
                     Date = s.Date, StartTime = $"{s.StartHour % 24:00}:00", FinishTime = $"{s.FinishHour % 24:00}:00",
@@ -218,19 +238,11 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         }
         var warnings = loaded.Warnings.Concat(result.Diagnostics).ToList();
         if (result.Status == "feasible") warnings.Add(result.Message);
-        foreach (var employee in employees.Where(e => e.TargetHours > 0))
-        {
-            var availabilityLimit = loaded.Input.Availability.Where(a => a.EmployeeId == employee.EmployeeId)
-                .Sum(a => Duration(a.StartTime, a.FinishTime) is var duration && duration >= 3 ? Math.Min(10, duration) : 0);
-            var equalShare = currentTargetTotal > 0 ? employee.TargetHours * loaded.Input.Demand.Sum(d => d.RequiredDrivers) / (double)currentTargetTotal : 0;
-            if (availabilityLimit < equalShare)
-                warnings.Add($"{employee.EmployeeName}: availability allows at most {availabilityLimit} hours before rest and demand checks, below the equal-percentage share of {equalShare:F1} hours. More availability is needed to close this fairness gap.");
-        }
         if (spread > 30 && !warnings.Any(warning => warning.StartsWith("Fairness warning:", StringComparison.Ordinal)))
         {
             var least = employees.Where(e => e.TargetPercentage.HasValue).MinBy(e => e.TargetPercentage)!;
             var most = employees.Where(e => e.TargetPercentage.HasValue).MaxBy(e => e.TargetPercentage)!;
-            warnings.Add($"Fairness check: this week's target-percentage gap is {spread:F1} percentage points ({least.EmployeeName}: {least.TargetPercentage:F1}%; {most.EmployeeName}: {most.TargetPercentage:F1}%). Review unavailable drivers, prior-week compensation and shift/rest constraints. Increasing fairness weights or the solve budget may improve the gap; exact coverage remains mandatory.");
+            warnings.Add($"Fairness check: this week's approximate-hours gap is {spread:F1} percentage points ({least.EmployeeName}: {least.TargetPercentage:F1}%; {most.EmployeeName}: {most.TargetPercentage:F1}%). Review availability, scarcity, prior-week compensation and shift/rest constraints. Increasing fairness weights or the solve budget may improve the gap; exact coverage remains mandatory.");
         }
         var coverage = loaded.Input.Demand.OrderBy(d => d.Date).ThenBy(d => d.Hour).Select(d => new RosterCoverageResponse
         {
@@ -303,7 +315,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         if (demandChanged)
             warnings.Add("Demand changed after this roster was saved. The highlighted coverage now uses the current demand template.");
         if (availabilityChanged)
-            warnings.Add("Driver availability, eligibility, type, or target hours changed after this roster was saved.");
+            warnings.Add("Driver availability, eligibility, type, or automatically calculated hours changed after this roster was saved.");
         warnings.AddRange(diagnostics);
 
         response.FreshnessStatus = "stale";

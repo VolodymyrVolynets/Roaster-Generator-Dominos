@@ -26,15 +26,21 @@ public sealed class RosterSolver
         var clock = Stopwatch.StartNew();
         var reporter = new ProgressReporter(onProgress);
         cancellationToken.ThrowIfCancellationRequested();
-        reporter.Publish("validating", 5, $"Checking demand, availability, employee targets, rest settings and the hard {input.Options.LatestShiftStartHour:00}:00 latest shift start. Overnight finishes are allowed.");
+        reporter.Publish("validating", 5, $"Checking demand, availability, automatically calculated fair hours, rest settings and the hard {input.Options.LatestShiftStartHour:00}:00 latest shift start. Overnight finishes are allowed.");
         var inputErrors = RosterSolverInputValidator.ValidateInput(input);
         if (inputErrors.Count > 0)
             return Failure("invalid", "Roster inputs are invalid; no roster was generated.", inputErrors);
 
+        if (input.RosterKind == RosterKinds.Drivers && input.ExpectedHoursByEmployee is null)
+        {
+            var calculated = new FairDriverHoursCalculator().Calculate(
+                input.Employees, input.Availability, input.Demand, input.Options.FairHoursAlpha);
+            input = input with { ExpectedHoursByEmployee = calculated.Drivers };
+        }
+
         var employees = input.Employees.Where(employee => IsEligible(employee, input.RosterKind)).OrderBy(employee => employee.Id).ToArray();
         var totalDemand = input.Demand.Sum(slot => slot.RequiredDrivers);
-        var totalTargets = employees.Where(employee => TargetHours(employee, input.RosterKind) > 0)
-            .Sum(employee => TargetHours(employee, input.RosterKind));
+        var totalTargets = employees.Sum(employee => ExpectedHours(input, employee));
         var utilization = totalTargets == 0 ? 0 : 100.0 * totalDemand / totalTargets;
         if (employees.Length > MaxEmployees)
             return Failure("capacity-exceeded", $"This server supports at most {MaxEmployees} active employees per solve.");
@@ -94,7 +100,7 @@ public sealed class RosterSolver
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        reporter.Publish("building-model", 15, $"Prepared {candidates.Count:N0} legal shifts for {employees.Length} employees. Exact demand: {totalDemand} {EmployeeHoursLabel(input.RosterKind)}; shared target utilization: {utilization:F1}%.");
+        reporter.Publish("building-model", 15, $"Prepared {candidates.Count:N0} legal shifts for {employees.Length} employees. Exact demand: {totalDemand} {EmployeeHoursLabel(input.RosterKind)}; approximate-hours utilization: {utilization:F1}%.");
         var coverage = input.Demand.Where(slot => slot.RequiredDrivers > 0).ToDictionary(
             slot => AbsoluteHour(input.WeekStart, slot.Date, slot.Hour), _ => new List<Candidate>());
         foreach (var candidate in candidates)
@@ -424,7 +430,7 @@ public sealed class RosterSolver
             // Convex costs also balance the remaining employees when somebody cannot work.
             // Absolute deviation alone has flat regions that make 5/15 hours tie with 10/10.
             // A 71-value table avoids nonlinear integer multiplication during native search.
-        var fairnessTables = employees.Where(employee => TargetHours(employee, input.RosterKind) > 0).ToDictionary(employee => employee.Id, employee =>
+            var fairnessTables = employees.Where(employee => ExpectedHours(input, employee) > 0).ToDictionary(employee => employee.Id, employee =>
                 Enumerable.Range(0, 71).Select(hours => fairness.EmployeeCost(employee, hours)).ToArray());
             foreach (var costs in fairnessTables.Values)
             {
@@ -438,7 +444,8 @@ public sealed class RosterSolver
             foreach (var employee in employees)
             {
                 token.ThrowIfCancellationRequested();
-                if (TargetHours(employee, input.RosterKind) <= 0) continue;
+                var expectedHours = ExpectedHours(input, employee);
+                if (expectedHours <= 0) continue;
                 var choices = byEmployee.GetValueOrDefault(employee.Id) ?? [];
                 var hours = model.NewIntVar(0, 70, $"hours{employee.Id}");
                 model.Add(hours == LinearExpr.WeightedSum(choices.Select(candidate => selected[candidate.Index]), choices.Select(candidate => (long)candidate.Length)));
@@ -448,22 +455,23 @@ public sealed class RosterSolver
                 objective.Add(deviationCost);
                 if (input.Options.FairnessSpreadWeight > 0)
                 {
-                    var percentage = model.NewIntVar(0, 700_000, $"utilization{employee.Id}");
-                    model.AddDivisionEquality(percentage, hours * PercentageScale, TargetHours(employee, input.RosterKind));
+                    var expectedScaled = Math.Max(1, (long)Math.Round(expectedHours * 10));
+                    var percentage = model.NewIntVar(0, 7_000_000, $"utilization{employee.Id}");
+                    model.AddDivisionEquality(percentage, hours * PercentageScale * 10L, expectedScaled);
                     percentages.Add(percentage);
                 }
             }
             if (percentages.Count > 1 && input.Options.FairnessSpreadWeight > 0)
             {
-                var maximum = model.NewIntVar(0, 700_000, "maximumUtilization");
-                var minimum = model.NewIntVar(0, 700_000, "minimumUtilization");
+                var maximum = model.NewIntVar(0, 7_000_000, "maximumUtilization");
+                var minimum = model.NewIntVar(0, 7_000_000, "minimumUtilization");
                 model.AddMaxEquality(maximum, percentages);
                 model.AddMinEquality(minimum, percentages);
-                var excess = model.NewIntVar(0, 700_000, "excessUtilizationSpread");
+                var excess = model.NewIntVar(0, 7_000_000, "excessUtilizationSpread");
                 model.AddMaxEquality(excess, new LinearExpr[] { LinearExpr.Constant(0), maximum - minimum - 3000 });
-                var squared = model.NewIntVar(0, 490_000_000_000, "squaredExcessSpread");
+                var squared = model.NewIntVar(0, 49_000_000_000_000, "squaredExcessSpread");
                 model.AddMultiplicationEquality(squared, excess, excess);
-                var scaled = model.NewIntVar(0, 4_900_000_000, "scaledExcessSpread");
+                var scaled = model.NewIntVar(0, 490_000_000_000, "scaledExcessSpread");
                 model.AddDivisionEquality(scaled, squared, 100);
                 objective.Add(scaled * input.Options.FairnessSpreadWeight);
             }
@@ -474,9 +482,9 @@ public sealed class RosterSolver
                     : (candidate.Length - 6) * (long)input.Options.LongShiftBonus + (candidate.Length - 8) * (long)input.Options.ShortShiftPenalty;
                 var cost = (shapePenalty + input.Options.DailyShiftCountPenalty) * 100
                     + fairness.HistoricalShiftCost(candidate.EmployeeId, candidate.Length);
-                // A zero target has no defined utilization percentage. These employees remain
-                // available as reserves, with a cost rather than being silently excluded from coverage.
-                if (TargetHours(employeesById[candidate.EmployeeId], input.RosterKind) == 0)
+                // Employees without useful demand-overlapping availability remain available
+                // for hard coverage, but receive a reserve cost in the soft objective.
+                if (ExpectedHours(input, employeesById[candidate.EmployeeId]) == 0)
                     cost += candidate.Length * (long)input.Options.TargetHoursWeight * PercentageScale;
                 if (cost > 0) objective.Add(selected[candidate.Index] * cost);
             }
@@ -659,8 +667,8 @@ public sealed class RosterSolver
                 var shifts = grouped.GetValueOrDefault(employee.Id) ?? [];
                 var hours = shifts.Sum(shift => shift.Length);
                 score += fairness.EmployeeCost(employee, hours);
-                if (TargetHours(employee, input.RosterKind) > 0)
-                    percentages.Add(hours * 100.0 / TargetHours(employee, input.RosterKind));
+                if (ExpectedHours(input, employee) > 0)
+                    percentages.Add(hours * 100.0 / ExpectedHours(input, employee));
                 if (input.Options.ShortBreakPenalty > 0 && shifts.Length > 0)
                 {
                     var dates = shifts.Select(shift => (Start: input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(shift.AbsoluteStart),
@@ -679,7 +687,7 @@ public sealed class RosterSolver
                     : (shift.Length - 6) * (long)input.Options.LongShiftBonus + (shift.Length - 8) * (long)input.Options.ShortShiftPenalty;
                 score += (shape + input.Options.DailyShiftCountPenalty) * 100
                     + fairness.HistoricalShiftCost(shift.EmployeeId, shift.Length);
-                if (TargetHours(employeeById[shift.EmployeeId], input.RosterKind) == 0)
+                if (ExpectedHours(input, employeeById[shift.EmployeeId]) == 0)
                     score += shift.Length * (long)input.Options.TargetHoursWeight * PercentageScale;
             }
             if (percentages.Count > 1)
@@ -688,7 +696,7 @@ public sealed class RosterSolver
         }
     }
 
-    private sealed record FairnessContext(RosterSolverOptions Options, string RosterKind, double CommonPercentage,
+    private sealed record FairnessContext(RosterSolverInput Input, double CommonPercentage,
         IReadOnlyDictionary<Guid, double> HistoryAdjustedPercentages,
         IReadOnlyDictionary<Guid, long[]> HistoricalShiftCosts)
     {
@@ -697,18 +705,19 @@ public sealed class RosterSolver
 
         public double EmployeeCost(Employee employee, int hours)
         {
-            if (TargetHours(employee, RosterKind) <= 0) return 0;
-            var percentage = hours * 100.0 / TargetHours(employee, RosterKind);
-            var cost = Options.TargetHoursWeight * Math.Pow(percentage - CommonPercentage, 2) * 100;
+            var expectedHours = ExpectedHours(Input, employee);
+            if (expectedHours <= 0) return 0;
+            var percentage = hours * 100.0 / expectedHours;
+            var cost = Input.Options.TargetHoursWeight * Math.Pow(percentage - CommonPercentage, 2) * 100;
             if (HistoryAdjustedPercentages.TryGetValue(employee.Id, out var adjusted))
-                cost += Options.HistoryFairnessWeight * Math.Pow(percentage - adjusted, 2) * 100;
+                cost += Input.Options.HistoryFairnessWeight * Math.Pow(percentage - adjusted, 2) * 100;
             return cost;
         }
 
         public static FairnessContext Create(RosterSolverInput input, Employee[] employees)
         {
-            var positive = employees.Where(employee => TargetHours(employee, input.RosterKind) > 0).ToArray();
-            var totalTargets = positive.Sum(employee => (long)TargetHours(employee, input.RosterKind));
+            var positive = employees.Where(employee => ExpectedHours(input, employee) > 0).ToArray();
+            var totalTargets = positive.Sum(employee => ExpectedHours(input, employee));
             var common = totalTargets == 0 ? 0 : input.Demand.Sum(slot => (long)slot.RequiredDrivers) * 100.0 / totalTargets;
             var employeeIds = positive.Select(employee => employee.Id).ToHashSet();
             var history = (input.History ?? []).Where(item => employeeIds.Contains(item.EmployeeId) && item.TargetHours > 0 &&
@@ -746,22 +755,22 @@ public sealed class RosterSolver
                     }
                 }
             }
-            return new FairnessContext(input.Options, input.RosterKind, common, adjusted, shiftCosts);
+            return new FairnessContext(input, common, adjusted, shiftCosts);
         }
     }
 
     private static IEnumerable<string> FairnessWarnings(RosterSolverInput input, IReadOnlyList<RosterSolverShift> shifts)
     {
         var scheduled = shifts.GroupBy(shift => shift.EmployeeId).ToDictionary(group => group.Key, group => group.Sum(shift => shift.DurationHours));
-        var ratios = input.Employees.Where(employee => IsEligible(employee, input.RosterKind) && TargetHours(employee, input.RosterKind) > 0)
-            .Select(employee => (Employee: employee, Percentage: scheduled.GetValueOrDefault(employee.Id) * 100.0 / TargetHours(employee, input.RosterKind))).ToArray();
+        var ratios = input.Employees.Where(employee => IsEligible(employee, input.RosterKind) && ExpectedHours(input, employee) > 0)
+            .Select(employee => (Employee: employee, Percentage: scheduled.GetValueOrDefault(employee.Id) * 100.0 / ExpectedHours(input, employee))).ToArray();
         if (ratios.Length > 1)
         {
             var minimum = ratios.MinBy(item => item.Percentage);
             var maximum = ratios.MaxBy(item => item.Percentage);
             var spread = maximum.Percentage - minimum.Percentage;
             if (spread > 30.01)
-                yield return $"Fairness warning: target utilization still spans {minimum.Percentage:F1}% ({Name(minimum.Employee)}) to {maximum.Percentage:F1}% ({Name(maximum.Employee)}), a {spread:F1}-percentage-point gap. Coverage remains exact. Availability, target differences, shift/rest rules, selected weights or the search limit can restrict further balancing; review this allocation before using it.";
+                yield return $"Fairness warning: approximate-hours utilization still spans {minimum.Percentage:F1}% ({Name(minimum.Employee)}) to {maximum.Percentage:F1}% ({Name(maximum.Employee)}), a {spread:F1}-percentage-point gap. Coverage remains exact. Availability, scarcity, shift/rest rules, selected weights or the search limit can restrict further balancing; review this allocation before using it.";
         }
     }
 
@@ -779,7 +788,9 @@ public sealed class RosterSolver
     private static int AbsoluteHour(DateOnly weekStart, DateOnly date, int hour) => (date.DayNumber - weekStart.DayNumber) * 24 + hour;
     private static string Name(Employee employee) => $"{employee.FirstName} {employee.LastName}".Trim();
 
-    private static int TargetHours(Employee employee, string rosterKind) => RosterKinds.TargetHours(employee, rosterKind);
+    private static double ExpectedHours(RosterSolverInput input, Employee employee) =>
+        input.ExpectedHoursByEmployee?.GetValueOrDefault(employee.Id)?.ExpectedHours
+        ?? (input.RosterKind == RosterKinds.Inside ? RosterKinds.TargetHours(employee, input.RosterKind) : 0);
 
     private static bool IsEligible(Employee employee, string rosterKind) => employee.IsActive &&
         (rosterKind == RosterKinds.Inside

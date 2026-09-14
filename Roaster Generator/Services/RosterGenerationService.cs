@@ -110,7 +110,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
         var stage = "loading";
         try
         {
-            Publish(job, "running", stage, 2, "Loading the weekly demand template, employee targets, availability and adjacent saved shifts.");
+            Publish(job, "running", stage, 2, "Loading weekly demand and availability, then calculating fair approximate hours before checking adjacent saved shifts.");
             await using var scope = scopes.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var inputs = scope.ServiceProvider.GetRequiredService<RosterInputService>();
@@ -125,7 +125,13 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                 $"Loaded {loaded.Input.Employees.Count} active employees and {loaded.Input.Demand.Sum(d => d.RequiredDrivers)} required {job.RosterKind} staff-hours. Latest shift start {loaded.Settings.LatestShiftStartHour:00}:00 (overnight finishes allowed). Minimum rest {loaded.Settings.MinimumRestHours}h; preferred rest {loaded.Settings.PreferredRestHours}h; solver budget {loaded.Settings.MaxSolveSeconds}s, one CPU worker.");
             var history = loaded.Input.History ?? [];
             Publish(job, "running", "fairness-history", 8,
-                $"Fairness uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Missing weeks are not counted as zero-hour work. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");
+                $"Automatic hours use scarcity-weighted availability with alpha {loaded.Settings.FairHoursAlpha:F2}. Fairness also uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");
+            foreach (var employee in loaded.Input.Employees)
+            {
+                var allocation = loaded.Input.ExpectedHoursByEmployee?.GetValueOrDefault(employee.Id);
+                Publish(job, "running", "fair-hours", 8,
+                    $"{employee.FirstName} {employee.LastName}: approximately {allocation?.ExpectedHours ?? 0:F1}h from {allocation?.CapacityHours ?? 0:F1}h useful capacity; scarcity score {allocation?.RawScore ?? 0:F2}.");
+            }
             var shiftHistory = history.Where(h => h.ShiftCount > 0 && h.ScheduledHours > 0).ToList();
             var historyShiftCount = shiftHistory.Sum(h => h.ShiftCount!.Value);
             var groupAverageShiftHours = historyShiftCount > 0
@@ -137,7 +143,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                 var previous = history.Where(h => h.EmployeeId == employee.Id && h.TargetHours > 0).ToList();
                 if (previous.Count > 0)
                     Publish(job, "running", "fairness-history", 8,
-                        $"{employee.FirstName} {employee.LastName}: previous {previous.Count} saved week(s), {previous.Sum(h => h.ScheduledHours)}/{previous.Sum(h => h.TargetHours)} target hours ({100d * previous.Sum(h => h.ScheduledHours) / previous.Sum(h => h.TargetHours):F1}%). This history is balanced against this week's allocation.");
+                        $"{employee.FirstName} {employee.LastName}: previous {previous.Count} saved week(s), {previous.Sum(h => h.ScheduledHours)}/{previous.Sum(h => h.TargetHours)} approximate hours ({100d * previous.Sum(h => h.ScheduledHours) / previous.Sum(h => h.TargetHours):F1}%). This history is balanced against this week's allocation.");
                 var previousShifts = shiftHistory.Where(h => h.EmployeeId == employee.Id).ToList();
                 if (previousShifts.Count > 0)
                 {
@@ -163,12 +169,12 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             if (validation.Count > 0) throw new RosterInputException("Final roster validation failed; no roster was saved.", validation);
             var current = await inputs.LoadAsync(job.WeekStart, ct, job.RosterKind);
             if (current.Fingerprint != loaded.Fingerprint)
-                throw new RosterInputException("Demand, availability, employee targets, settings or an adjacent roster changed during generation. Run generation again using the updated inputs. The previous saved roster was kept.");
+                throw new RosterInputException("Demand, availability, automatically calculated hours, settings or an adjacent roster changed during generation. Run generation again using the updated inputs. The previous saved roster was kept.");
             stage = "saving";
             Publish(job, "running", stage, 96, "Exact coverage verified. Saving the roster and its settings, demand and employee snapshot to the database.");
             var saved = await plans.SaveAsync(loaded, result, ct);
             Publish(job, "running", "fairness-check", 98,
-                $"Fairness checked: current target-percentage gap {saved.FairnessSpreadPercentagePoints:F1} points; gap including the previous four weeks {saved.HistoricalFairnessSpreadPercentagePoints:F1} points. Every employee's allocation and history will be shown with the saved roster.",
+                $"Fairness checked: current approximate-hours percentage gap {saved.FairnessSpreadPercentagePoints:F1} points; gap including the previous four weeks {saved.HistoricalFairnessSpreadPercentagePoints:F1} points. Every employee's allocation and history will be shown with the saved roster.",
                 saved.FairnessSpreadPercentagePoints > 30 ? "warning" : "info");
             ct.ThrowIfCancellationRequested();
             // Once committing starts, complete it and report the actual durable outcome, even if cancel arrives.
