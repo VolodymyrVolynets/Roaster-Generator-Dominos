@@ -32,11 +32,10 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         RosterKinds.EnsureEnabled(rosterKind);
         int TargetHours(Employee employee) => RosterKinds.TargetHours(employee, rosterKind);
         var weekEnd = weekStart.AddDays(7);
-        // Demand is deliberately a single reusable Monday-to-Sunday template in this app.
         var plan = await db.DemandPlans.AsNoTracking().Include(p => p.Columns)
             .Include(p => p.Rows).ThenInclude(r => r.Values)
-            .OrderByDescending(p => p.UpdatedAtUtc).ThenByDescending(p => p.WeekStart).FirstOrDefaultAsync(ct)
-            ?? throw new RosterInputException("Import a weekly demand template before generating a roster.");
+            .SingleOrDefaultAsync(p => p.WeekStart == weekStart && p.DemandKind == DemandKinds.Outside, ct)
+            ?? throw new RosterInputException($"Enter outside demand for the week starting {weekStart:yyyy-MM-dd} before generating a roster.");
         if (plan.Columns.Count != 7 || !plan.Columns.Select(c => c.Position).Order().SequenceEqual(Enumerable.Range(0, 7)))
             throw new RosterInputException("The demand template must contain exactly Monday through Sunday.");
         var diagnostics = new List<string>();

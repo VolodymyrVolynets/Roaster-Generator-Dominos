@@ -5,6 +5,7 @@ using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Demand;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Services;
 using Roaster_Generator.Validation;
 
@@ -99,6 +100,64 @@ public sealed class DemandStaffingTests
     }
 
     [Fact]
+    public async Task DemandPlansAreIndependentByWeekAndKind()
+    {
+        using var db = NewDb();
+        var service = Service(db);
+        var outside = await service.ImportTextAsync(new DemandImportRequest
+        {
+            Name = "Outside week",
+            WeekStart = Monday,
+            DemandKind = DemandKinds.Outside,
+            Content = "12,20,8,20,8,20,8,20,8,20,8,20,8,20,8"
+        }, CancellationToken.None);
+        var inside = await service.ImportTextAsync(new DemandImportRequest
+        {
+            Name = "Inside week",
+            WeekStart = Monday,
+            DemandKind = DemandKinds.Inside,
+            Content = "12,20,8,20,8,20,8,20,8,20,8,20,8,20,8"
+        }, CancellationToken.None);
+
+        Assert.Equal(DemandKinds.Outside, outside.DemandKind);
+        Assert.Equal(DemandKinds.Inside, inside.DemandKind);
+        Assert.Equal(8m, outside.Rows.Single(row => row.Hour == 12).Values.First().Deliveries);
+        Assert.Equal(3, outside.Rows.Single(row => row.Hour == 12).Values.First().Demand);
+        Assert.Equal(20m, inside.Rows.Single(row => row.Hour == 12).Values.First().Pizzas);
+        Assert.Equal(1, inside.Rows.Single(row => row.Hour == 12).Values.First().InsideDemand);
+
+        await service.ImportTextAsync(new DemandImportRequest
+        {
+            Name = "Updated outside week",
+            WeekStart = Monday,
+            DemandKind = DemandKinds.Outside,
+            Content = "12,20,4,20,4,20,4,20,4,20,4,20,4,20,4"
+        }, CancellationToken.None);
+
+        var plans = await db.DemandPlans.Include(plan => plan.Rows).ThenInclude(row => row.Values)
+            .ToListAsync();
+        Assert.Equal(2, plans.Count);
+        var savedInside = plans.Single(plan => plan.DemandKind == DemandKinds.Inside);
+        Assert.Equal(20m, savedInside.Rows.Single(row => row.Hour == 12).Values.First().Pizzas);
+        Assert.Equal(1, savedInside.Rows.Single(row => row.Hour == 12).Values.First().InsideDemand);
+        Assert.Equal(4m, plans.Single(plan => plan.DemandKind == DemandKinds.Outside)
+            .Rows.Single(row => row.Hour == 12).Values.First().Deliveries);
+    }
+
+    [Fact]
+    public void InsideDemandParsingUsesPizzaColumnWithoutInventingDeliveryDemand()
+    {
+        var parsed = DemandService.ParseText(
+            "12,20,8,30,9,40,10,50,11,60,12,70,13,80,14",
+            DemandKinds.Inside);
+
+        Assert.Equal(20m, parsed.Rows.Single().Values[0].Pizzas);
+        Assert.Equal(1, parsed.Rows.Single().Values[0].InsideDemand);
+        Assert.Null(parsed.Rows.Single().Values[0].Deliveries);
+        Assert.Null(parsed.Rows.Single().Values[0].Demand);
+    }
+
+    [Fact]
     public void PizzaOnlyLaterRowsDoNotPreventDeliverySpillUntilClosingTime()
     {
         using var db = NewDb();
@@ -168,8 +227,8 @@ public sealed class DemandStaffingTests
         var json = JsonSerializer.Serialize(response, WebJson);
         Assert.DoesNotContain("hourlyRate", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("labour", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("pizza", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("inside", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pizzasPerInsideHour", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("insideDemand", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -202,7 +261,7 @@ public sealed class DemandStaffingTests
         var request = JsonSerializer.Deserialize<DemandPlanUpdateRequest>(
             json.Insert(1, "\"pizzasPerInsideHour\":0,"), WebJson)!;
         request.Rows[0].Values[0] = JsonSerializer.Deserialize<DemandValueRequest>(
-            "{\"position\":0,\"deliveries\":8,\"demand\":3,\"pizzas\":\"unknown\",\"insideDemand\":-1}", WebJson)!;
+            "{\"position\":0,\"deliveries\":8,\"demand\":3}", WebJson)!;
 
         Assert.True(new DemandPlanUpdateRequestValidator().Validate(request).IsValid);
     }

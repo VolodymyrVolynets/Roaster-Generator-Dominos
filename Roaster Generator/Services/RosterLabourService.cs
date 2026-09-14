@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Data;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Security;
 
 namespace Roaster_Generator.Services;
@@ -28,11 +29,9 @@ public sealed class RosterLabourService(AppDbContext db)
                 userId => userId, user => user.Id, (userId, user) => user.EmployeeId!.Value)
             .ToListAsync(ct)).ToHashSet();
 
-        // Match generation: demand is the latest reusable weekday template, not a
-        // plan whose original import date happens to equal the saved roster week.
         var demand = await db.DemandPlans.AsNoTracking().Include(plan => plan.Columns)
-            .OrderByDescending(plan => plan.UpdatedAtUtc).ThenByDescending(plan => plan.WeekStart)
-            .FirstOrDefaultAsync(ct);
+            .SingleOrDefaultAsync(plan => plan.WeekStart == weekStart &&
+                plan.DemandKind == DemandKinds.Outside, ct);
         var sales = Enumerable.Range(0, 7).Select(position =>
         {
             var column = demand?.Columns.SingleOrDefault(column => column.Position == position);

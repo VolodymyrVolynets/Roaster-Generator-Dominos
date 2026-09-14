@@ -3,6 +3,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Roaster_Generator.Contracts.Demand;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Security;
 using Roaster_Generator.Services;
 
@@ -65,6 +66,7 @@ public sealed class AdminDemandController(
         [FromForm(Name = "file")] IFormFile? file,
         [FromForm] string? name,
         [FromForm] string? weekStart,
+        [FromForm] string? demandKind,
         CancellationToken cancellationToken)
     {
         try
@@ -88,10 +90,18 @@ public sealed class AdminDemandController(
                 throw new DemandValidationException("The week start date must be a Monday.");
             }
 
+            var selectedDemandKind = string.IsNullOrWhiteSpace(demandKind)
+                ? DemandKinds.Outside : demandKind.Trim().ToLowerInvariant();
+            if (!DemandKinds.IsValid(selectedDemandKind))
+            {
+                throw new DemandValidationException("Demand kind must be outside or inside.");
+            }
+
             await using var stream = file.OpenReadStream();
             return Ok(await demand.ImportExcelAsync(
                 name,
                 parsedWeekStart,
+                selectedDemandKind,
                 stream,
                 cancellationToken));
         }

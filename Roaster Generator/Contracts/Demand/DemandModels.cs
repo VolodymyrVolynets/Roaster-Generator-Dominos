@@ -1,3 +1,5 @@
+using Roaster_Generator.Enums;
+
 namespace Roaster_Generator.Contracts.Demand;
 
 public sealed class DemandImportRequest
@@ -5,6 +7,8 @@ public sealed class DemandImportRequest
     public string Name { get; set; } = string.Empty;
 
     public DateOnly WeekStart { get; set; }
+
+    public string DemandKind { get; set; } = DemandKinds.Outside;
 
     public string Content { get; set; } = string.Empty;
 }
@@ -14,6 +18,8 @@ public sealed class DemandPlanUpdateRequest
     public string Name { get; set; } = string.Empty;
 
     public DateOnly WeekStart { get; set; }
+
+    public string DemandKind { get; set; } = DemandKinds.Outside;
 
     private decimal deliveriesPerDriverHour = 2.7m;
 
@@ -25,6 +31,16 @@ public sealed class DemandPlanUpdateRequest
 
     // Presence is separate from zero/default values so older clients retain saved settings.
     internal bool DeliveriesPerDriverHourSpecified { get; private set; }
+
+    private decimal pizzasPerInsideHour = 20m;
+
+    public decimal PizzasPerInsideHour
+    {
+        get => pizzasPerInsideHour;
+        set { pizzasPerInsideHour = value; PizzasPerInsideHourSpecified = true; }
+    }
+
+    internal bool PizzasPerInsideHourSpecified { get; private set; }
 
     public bool RecalculateDemand { get; set; }
 
@@ -55,6 +71,8 @@ public sealed class DemandValueRequest
 
     private decimal? deliveries;
     private int? demand;
+    private decimal? pizzas;
+    private int? insideDemand;
 
     public decimal? Deliveries
     {
@@ -70,6 +88,21 @@ public sealed class DemandValueRequest
 
     internal bool DeliveriesSpecified { get; private set; }
     internal bool DemandSpecified { get; private set; }
+
+    public decimal? Pizzas
+    {
+        get => pizzas;
+        set { pizzas = value; PizzasSpecified = true; }
+    }
+
+    public int? InsideDemand
+    {
+        get => insideDemand;
+        set { insideDemand = value; InsideDemandSpecified = true; }
+    }
+
+    internal bool PizzasSpecified { get; private set; }
+    internal bool InsideDemandSpecified { get; private set; }
 }
 
 public sealed class DemandPlanSummaryResponse
@@ -79,6 +112,8 @@ public sealed class DemandPlanSummaryResponse
     public string Name { get; init; } = string.Empty;
 
     public DateOnly WeekStart { get; init; }
+
+    public string DemandKind { get; init; } = DemandKinds.Outside;
 
     public DateTimeOffset UpdatedAtUtc { get; init; }
 
@@ -97,9 +132,13 @@ public sealed class DemandPlanResponse
 
     public DateOnly WeekStart { get; init; }
 
+    public string DemandKind { get; init; } = DemandKinds.Outside;
+
     public DateTimeOffset UpdatedAtUtc { get; init; }
 
     public decimal DeliveriesPerDriverHour { get; init; }
+
+    public decimal PizzasPerInsideHour { get; init; }
 
     public int WeeklyDriverHours { get; init; }
 
@@ -151,4 +190,8 @@ public sealed class DemandValueResponse
     public decimal? Deliveries { get; init; }
 
     public int? Demand { get; init; }
+
+    public decimal? Pizzas { get; init; }
+
+    public int? InsideDemand { get; init; }
 }

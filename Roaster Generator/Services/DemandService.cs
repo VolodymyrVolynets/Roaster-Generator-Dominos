@@ -6,6 +6,7 @@ using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Demand;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Services;
 
@@ -32,14 +33,14 @@ public sealed class DemandService(
     {
         return await db.DemandPlans
             .AsNoTracking()
-            .OrderByDescending(plan => plan.UpdatedAtUtc)
-            .ThenByDescending(plan => plan.WeekStart)
-            .Take(1)
+            .OrderByDescending(plan => plan.WeekStart)
+            .ThenBy(plan => plan.DemandKind)
             .Select(plan => new DemandPlanSummaryResponse
             {
                 Id = plan.Id,
                 Name = plan.Name,
                 WeekStart = plan.WeekStart,
+                DemandKind = plan.DemandKind,
                 UpdatedAtUtc = plan.UpdatedAtUtc,
                 RowCount = plan.Rows.Count,
                 ColumnCount = plan.Columns.Count,
@@ -60,16 +61,19 @@ public sealed class DemandService(
         DemandImportRequest request,
         CancellationToken cancellationToken)
     {
-        var parsed = ParseText(request.Content);
-        return await SaveImportedPlanAsync(request.Name, request.WeekStart, parsed, cancellationToken);
+        EnsureDemandKind(request.DemandKind);
+        var parsed = ParseText(request.Content, request.DemandKind);
+        return await SaveImportedPlanAsync(request.Name, request.WeekStart, request.DemandKind, parsed, cancellationToken);
     }
 
     public async Task<DemandPlanResponse> ImportExcelAsync(
         string? name,
         DateOnly weekStart,
+        string demandKind,
         Stream stream,
         CancellationToken cancellationToken)
     {
+        EnsureDemandKind(demandKind);
         using var workbook = new XLWorkbook(stream);
         var worksheet = workbook.Worksheets.FirstOrDefault()
             ?? throw new DemandValidationException("The Excel file does not contain a worksheet.");
@@ -86,9 +90,9 @@ public sealed class DemandService(
                 .ToArray())
             .ToList();
 
-        var parsed = ParseRows(rows);
+        var parsed = ParseRows(rows, demandKind);
         var planName = string.IsNullOrWhiteSpace(name) ? "Imported demand" : name.Trim();
-        return await SaveImportedPlanAsync(planName, weekStart, parsed, cancellationToken);
+        return await SaveImportedPlanAsync(planName, weekStart, demandKind, parsed, cancellationToken);
     }
 
     public async Task<DemandPlanResponse> UpdateAsync(
@@ -98,6 +102,10 @@ public sealed class DemandService(
     {
         var plan = await LoadPlanAsync(planId, cancellationToken)
             ?? throw new DemandValidationException("Demand plan not found.");
+
+        EnsureDemandKind(request.DemandKind);
+        if (!string.Equals(plan.DemandKind, request.DemandKind, StringComparison.Ordinal))
+            throw new DemandValidationException("The selected demand scenario does not match this plan.");
 
         var existingPositions = plan.Columns.Select(column => column.Position).ToHashSet();
         var requestedPositions = request.Columns.Select(column => column.Position).ToHashSet();
@@ -117,9 +125,8 @@ public sealed class DemandService(
 
         var otherPlan = await db.DemandPlans
             .AsNoTracking()
-            .SingleOrDefaultAsync(
-                item => item.WeekStart == request.WeekStart && item.Id != planId,
-                cancellationToken);
+            .SingleOrDefaultAsync(item => item.WeekStart == request.WeekStart &&
+                item.DemandKind == request.DemandKind && item.Id != planId, cancellationToken);
 
         if (otherPlan is not null)
         {
@@ -155,7 +162,7 @@ public sealed class DemandService(
                     }).ToList()))
                 .ToList());
 
-        parsed = NormalizeAndValidateDemand(parsed, request.WeekStart);
+        parsed = NormalizeAndValidateDemand(parsed, request.WeekStart, request.DemandKind);
         foreach (var parsedRow in parsed.Rows)
         {
             var row = plan.Rows.Single(item => item.Hour == parsedRow.Hour);
@@ -165,14 +172,24 @@ public sealed class DemandService(
             foreach (var parsedValue in parsedRow.Values)
             {
                 var value = valuesByPosition[parsedValue.Position];
-                value.Deliveries = parsedValue.Deliveries;
-                value.Demand = parsedValue.Demand;
+                if (request.DemandKind == DemandKinds.Inside)
+                {
+                    value.Pizzas = parsedValue.Pizzas;
+                    value.InsideDemand = parsedValue.InsideDemand;
+                }
+                else
+                {
+                    value.Deliveries = parsedValue.Deliveries;
+                    value.Demand = parsedValue.Demand;
+                }
             }
         }
 
         plan.Name = request.Name.Trim();
         plan.WeekStart = request.WeekStart;
+        plan.DemandKind = request.DemandKind;
         plan.DeliveriesPerDriverHour = settings.DeliveriesPerDriverHour;
+        plan.PizzasPerInsideHour = settings.PizzasPerInsideHour;
         foreach (var columnRequest in request.Columns)
         {
             plan.Columns.Single(column => column.Position == columnRequest.Position).TargetSales =
@@ -195,30 +212,33 @@ public sealed class DemandService(
     private async Task<DemandPlanResponse> SaveImportedPlanAsync(
         string name,
         DateOnly weekStart,
+        string demandKind,
         ParsedDemand parsed,
         CancellationToken cancellationToken)
     {
+        EnsureDemandKind(demandKind);
         var existingPlan = await db.DemandPlans
             .Include(plan => plan.Columns)
             .Include(plan => plan.Rows)
             .ThenInclude(row => row.Values)
-            .OrderByDescending(plan => plan.UpdatedAtUtc)
-            .ThenByDescending(plan => plan.WeekStart)
-            .FirstOrDefaultAsync(cancellationToken);
+            .SingleOrDefaultAsync(plan => plan.WeekStart == weekStart && plan.DemandKind == demandKind,
+                cancellationToken);
 
-        parsed = Recalculate(parsed,
-            existingPlan?.DeliveriesPerDriverHour ?? DemandStaffing.DefaultDeliveriesPerDriverHour);
-        parsed = NormalizeAndValidateDemand(parsed, weekStart);
+        parsed = Recalculate(parsed, demandKind,
+            demandKind == DemandKinds.Inside
+                ? existingPlan?.PizzasPerInsideHour ?? DemandStaffing.DefaultPizzasPerInsideHour
+                : existingPlan?.DeliveriesPerDriverHour ?? DemandStaffing.DefaultDeliveriesPerDriverHour);
+        parsed = NormalizeAndValidateDemand(parsed, weekStart, demandKind);
 
         if (existingPlan is null)
         {
-            var plan = CreatePlan(name, weekStart, parsed);
+            var plan = CreatePlan(name, weekStart, demandKind, parsed);
             db.DemandPlans.Add(plan);
             await db.SaveChangesAsync(cancellationToken);
             return ToResponse(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan);
         }
 
-        await UpdatePlanContentsAsync(existingPlan, name.Trim(), weekStart, parsed, cancellationToken);
+        await UpdatePlanContentsAsync(existingPlan, name.Trim(), weekStart, demandKind, parsed, cancellationToken);
         db.ChangeTracker.Clear();
         return ToResponse(await LoadPlanAsync(existingPlan.Id, cancellationToken) ?? existingPlan);
     }
@@ -227,11 +247,13 @@ public sealed class DemandService(
         DemandPlan plan,
         string name,
         DateOnly weekStart,
+        string demandKind,
         ParsedDemand parsed,
         CancellationToken cancellationToken)
     {
         plan.Name = name;
         plan.WeekStart = weekStart;
+        plan.DemandKind = demandKind;
         plan.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
         var requestedColumnPositions = parsed.Columns
@@ -306,8 +328,16 @@ public sealed class DemandService(
                     row.Values.Add(value);
                 }
 
-                value.Deliveries = parsedValue.Deliveries;
-                value.Demand = parsedValue.Demand;
+                if (demandKind == DemandKinds.Inside)
+                {
+                    value.Pizzas = parsedValue.Pizzas;
+                    value.InsideDemand = parsedValue.InsideDemand;
+                }
+                else
+                {
+                    value.Deliveries = parsedValue.Deliveries;
+                    value.Demand = parsedValue.Demand;
+                }
             }
 
             var staleValues = row.Values
@@ -324,7 +354,7 @@ public sealed class DemandService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private static DemandPlan CreatePlan(string name, DateOnly weekStart, ParsedDemand parsed)
+    private static DemandPlan CreatePlan(string name, DateOnly weekStart, string demandKind, ParsedDemand parsed)
     {
         var now = DateTimeOffset.UtcNow;
         var plan = new DemandPlan
@@ -332,15 +362,16 @@ public sealed class DemandService(
             Id = Guid.NewGuid(),
             Name = name.Trim(),
             WeekStart = weekStart,
+            DemandKind = demandKind,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
 
-        AddParsedContents(plan, parsed);
+        AddParsedContents(plan, parsed, demandKind);
         return plan;
     }
 
-    private static void AddParsedContents(DemandPlan plan, ParsedDemand parsed)
+    private static void AddParsedContents(DemandPlan plan, ParsedDemand parsed, string demandKind)
     {
         var columnsByPosition = new Dictionary<int, DemandColumn>();
 
@@ -382,8 +413,10 @@ public sealed class DemandService(
                     Id = Guid.NewGuid(),
                     DemandRowId = row.Id,
                     DemandColumnId = column.Id,
-                    Deliveries = parsedValue.Deliveries,
-                    Demand = parsedValue.Demand
+                    Deliveries = demandKind == DemandKinds.Outside ? parsedValue.Deliveries : null,
+                    Demand = demandKind == DemandKinds.Outside ? parsedValue.Demand : null,
+                    Pizzas = demandKind == DemandKinds.Inside ? parsedValue.Pizzas : null,
+                    InsideDemand = demandKind == DemandKinds.Inside ? parsedValue.InsideDemand : null
                 };
 
                 row.Values.Add(value);
@@ -429,8 +462,10 @@ public sealed class DemandService(
             Id = plan.Id,
             Name = plan.Name,
             WeekStart = plan.WeekStart,
+            DemandKind = plan.DemandKind,
             UpdatedAtUtc = plan.UpdatedAtUtc,
             DeliveriesPerDriverHour = plan.DeliveriesPerDriverHour,
+            PizzasPerInsideHour = plan.PizzasPerInsideHour,
             WeeklyDriverHours = dailyStaffing.Sum(item => item.RequiredDriverHours),
             WeeklyTargetSales = dailyStaffing.Sum(item => item.TargetSales),
             Columns = columns,
@@ -447,8 +482,10 @@ public sealed class DemandService(
                         {
                             Position = columnsById[value.DemandColumnId].Position,
                             IsOpen = IsShopOpen(plan.WeekStart, columnsById[value.DemandColumnId].Position, row.Hour),
-                            Deliveries = value.Deliveries,
-                            Demand = value.Demand
+                            Deliveries = plan.DemandKind == DemandKinds.Outside ? value.Deliveries : null,
+                            Demand = plan.DemandKind == DemandKinds.Outside ? value.Demand : null,
+                            Pizzas = plan.DemandKind == DemandKinds.Inside ? value.Pizzas : null,
+                            InsideDemand = plan.DemandKind == DemandKinds.Inside ? value.InsideDemand : null
                         })
                         .ToList()
                 })
@@ -456,7 +493,7 @@ public sealed class DemandService(
         };
     }
 
-    internal static ParsedDemand ParseText(string content)
+    internal static ParsedDemand ParseText(string content, string demandKind = DemandKinds.Outside)
     {
         var rows = content
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
@@ -464,7 +501,7 @@ public sealed class DemandService(
             .Where(row => row.Length > 0)
             .ToList();
 
-        return ParseRows(rows);
+        return ParseRows(rows, demandKind);
     }
 
     private static string[] SplitTextRow(string row)
@@ -497,7 +534,7 @@ public sealed class DemandService(
         return trimmed.Split(',').Select(cell => cell.Trim()).ToArray();
     }
 
-    private static ParsedDemand ParseRows(IReadOnlyList<string[]> rows)
+    private static ParsedDemand ParseRows(IReadOnlyList<string[]> rows, string demandKind)
     {
         var dataRows = rows
             .Select(row => new { Cells = row, Hour = ParseHour(row.FirstOrDefault()) })
@@ -555,13 +592,15 @@ public sealed class DemandService(
             for (var position = 0; position < columns.Count; position++)
             {
                 var label = $"{GetColumnLabel(position)} {dataRow.Hour:00}:00";
-                // Source exports retain pizza/delivery pairs; only delivery columns are imported.
-                var deliveries = ParseDecimal(GetCell(dataRow.Cells, activeIndexes, position * 2 + 1), $"{label} deliveries");
+                var workload = ParseDecimal(GetCell(dataRow.Cells, activeIndexes, position * 2 +
+                    (demandKind == DemandKinds.Inside ? 0 : 1)),
+                    $"{label} {(demandKind == DemandKinds.Inside ? "pizzas" : "deliveries")}");
 
-                values.Add(new ParsedDemandValue(
-                    position,
-                    deliveries,
-                    DemandStaffing.Drivers(deliveries, DemandStaffing.DefaultDeliveriesPerDriverHour)));
+                values.Add(demandKind == DemandKinds.Inside
+                    ? new ParsedDemandValue(position, null, null, workload,
+                        DemandStaffing.Inside(workload, DemandStaffing.DefaultPizzasPerInsideHour))
+                    : new ParsedDemandValue(position, workload,
+                        DemandStaffing.Drivers(workload, DemandStaffing.DefaultDeliveriesPerDriverHour), null, null));
             }
 
             parsedRows.Add(new ParsedDemandRow(dataRow.Hour, values));
@@ -624,29 +663,46 @@ public sealed class DemandService(
     {
         var deliveries = request.DeliveriesPerDriverHourSpecified
             ? request.DeliveriesPerDriverHour : plan.DeliveriesPerDriverHour;
-        return new(deliveries,
-            request.RecalculateDemand || deliveries != plan.DeliveriesPerDriverHour);
+        var pizzas = request.PizzasPerInsideHourSpecified
+            ? request.PizzasPerInsideHour : plan.PizzasPerInsideHour;
+        var recalculate = request.RecalculateDemand ||
+            (plan.DemandKind == DemandKinds.Inside
+                ? pizzas != plan.PizzasPerInsideHour
+                : deliveries != plan.DeliveriesPerDriverHour);
+        return new(deliveries, recalculate, pizzas, plan.DemandKind);
     }
 
     internal static ParsedDemandValue ApplyValueEdit(DemandValue previous, DemandValueRequest value,
         DemandEditSettings settings)
     {
         var deliveries = value.DeliveriesSpecified ? value.Deliveries : previous.Deliveries;
-        var driverDemand = settings.Recalculate ||
-            (previous.Deliveries != deliveries && !value.DemandSpecified)
+        var pizzas = value.PizzasSpecified ? value.Pizzas : previous.Pizzas;
+        var driverDemand = settings.DemandKind == DemandKinds.Outside && (settings.Recalculate ||
+            (previous.Deliveries != deliveries && !value.DemandSpecified))
             ? DemandStaffing.Drivers(deliveries, settings.DeliveriesPerDriverHour)
             : value.DemandSpecified ? value.Demand : previous.Demand;
-        return new(value.Position, deliveries, driverDemand);
+        var insideDemand = settings.DemandKind == DemandKinds.Inside && (settings.Recalculate ||
+            (previous.Pizzas != pizzas && !value.InsideDemandSpecified))
+            ? DemandStaffing.Inside(pizzas, settings.PizzasPerInsideHour)
+            : value.InsideDemandSpecified ? value.InsideDemand : previous.InsideDemand;
+        return new(value.Position, deliveries, driverDemand, pizzas, insideDemand);
     }
 
-    internal static ParsedDemand Recalculate(ParsedDemand parsed, decimal deliveriesPerDriverHour) =>
+    internal static ParsedDemand Recalculate(ParsedDemand parsed, string demandKind, decimal productivity) =>
         new(parsed.Columns, parsed.Rows.Select(row => new ParsedDemandRow(row.Hour,
             row.Values.Select(value => value with
             {
-                Demand = DemandStaffing.Drivers(value.Deliveries, deliveriesPerDriverHour)
+                Demand = demandKind == DemandKinds.Outside
+                    ? DemandStaffing.Drivers(value.Deliveries, productivity) : value.Demand,
+                InsideDemand = demandKind == DemandKinds.Inside
+                    ? DemandStaffing.Inside(value.Pizzas, productivity) : value.InsideDemand
             }).ToList())).ToList());
 
-    internal ParsedDemand NormalizeAndValidateDemand(ParsedDemand parsed, DateOnly weekStart)
+    internal static ParsedDemand Recalculate(ParsedDemand parsed, decimal deliveriesPerDriverHour) =>
+        Recalculate(parsed, DemandKinds.Outside, deliveriesPerDriverHour);
+
+    internal ParsedDemand NormalizeAndValidateDemand(ParsedDemand parsed, DateOnly weekStart,
+        string demandKind = DemandKinds.Outside)
     {
         if (parsed.Columns.Count != DayLabels.Length)
         {
@@ -698,7 +754,7 @@ public sealed class DemandService(
                     values = parsed.Columns
                         .ToDictionary(
                             item => item.Position,
-                            item => new ParsedDemandValue(item.Position, null, null));
+                            item => new ParsedDemandValue(item.Position, null, null, null, null));
                     valuesByHour[hour] = values;
                 }
 
@@ -708,7 +764,9 @@ public sealed class DemandService(
                     values[column.Position] = new ParsedDemandValue(
                         column.Position,
                         lastProvided.Value.Deliveries,
-                        lastProvided.Value.Demand);
+                        lastProvided.Value.Demand,
+                        lastProvided.Value.Pizzas,
+                        lastProvided.Value.InsideDemand);
                 }
             }
         }
@@ -721,7 +779,7 @@ public sealed class DemandService(
                     .OrderBy(column => column.Position)
                     .Select(column => item.Value.TryGetValue(column.Position, out var existingValue)
                             ? existingValue
-                            : new ParsedDemandValue(column.Position, null, null))
+                            : new ParsedDemandValue(column.Position, null, null, null, null))
                     .ToList()))
             .ToList();
         var normalized = new ParsedDemand(parsed.Columns, normalizedRows);
@@ -730,7 +788,8 @@ public sealed class DemandService(
     }
 
     private static bool HasInput(ParsedDemandValue value) =>
-        value.Deliveries is not null || value.Demand is not null;
+        value.Deliveries is not null || value.Demand is not null ||
+        value.Pizzas is not null || value.InsideDemand is not null;
 
     private static IEnumerable<int> GetDisplayHours() =>
         Enumerable.Range(6, 18).Concat(Enumerable.Range(0, 6));
@@ -740,7 +799,8 @@ public sealed class DemandService(
         return plan.Rows
             .Where(row => IsShopOpen(plan.WeekStart, column.Position, row.Hour))
             .Select(row => row.Values.FirstOrDefault(value => value.DemandColumnId == column.Id))
-            .Sum(value => value?.Demand ?? 0);
+            .Sum(value => plan.DemandKind == DemandKinds.Inside
+                ? value?.InsideDemand ?? 0 : value?.Demand ?? 0);
     }
 
     private bool IsShopOpen(DateOnly weekStart, int columnPosition, int hour)
@@ -771,6 +831,12 @@ public sealed class DemandService(
 
     private static int ToMinutes(TimeOnly time) => time.Hour * 60 + time.Minute;
 
+    private static void EnsureDemandKind(string? demandKind)
+    {
+        if (!DemandKinds.IsValid(demandKind))
+            throw new DemandValidationException("Demand kind must be outside or inside.");
+    }
+
     private static string GetColumnLabel(int position)
     {
         return position >= 0 && position < DayLabels.Length
@@ -787,7 +853,9 @@ public sealed class DemandService(
         List<ParsedDemandColumn> Columns,
         List<ParsedDemandRow> Rows);
 
-    internal sealed record DemandEditSettings(decimal DeliveriesPerDriverHour, bool Recalculate);
+    internal sealed record DemandEditSettings(decimal DeliveriesPerDriverHour,
+        bool Recalculate, decimal PizzasPerInsideHour = DemandStaffing.DefaultPizzasPerInsideHour,
+        string DemandKind = DemandKinds.Outside);
 
     internal sealed record ParsedDemandColumn(int Position, string Label);
 
@@ -796,5 +864,7 @@ public sealed class DemandService(
     internal sealed record ParsedDemandValue(
         int Position,
         decimal? Deliveries,
-        int? Demand);
+        int? Demand,
+        decimal? Pizzas,
+        int? InsideDemand);
 }

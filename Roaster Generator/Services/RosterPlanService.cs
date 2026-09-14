@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Services;
 
@@ -15,7 +16,8 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         var weekStart = WeeklyScheduleService.GetWeekMonday(weekOffset);
         var ids = await DriverRosterEmployees.Query(db).AsNoTracking().Select(e => e.Id).ToListAsync(ct);
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekStart.AddDays(7)).ToListAsync(ct);
-        var demandExists = await db.DemandPlans.AnyAsync(ct);
+        var demandExists = await db.DemandPlans.AnyAsync(plan =>
+            plan.WeekStart == weekStart && plan.DemandKind == DemandKinds.Outside, ct);
         var required = 0;
         if (demandExists)
         {

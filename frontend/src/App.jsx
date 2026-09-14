@@ -741,6 +741,7 @@ function AdminSickLeavePanel({ setErrorPopup, includeOwnRequest = false }) {
 function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
+  const [demandKind, setDemandKind] = useState('outside')
   const [plan, setPlan] = useState(null)
   const [selectedDemandDayPosition, setSelectedDemandDayPosition] = useState(0)
   const [name, setName] = useState('Weekly demand')
@@ -752,12 +753,24 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
     fetchJson('/api/admin/demand')
       .then((payload) => {
         setPlans(payload)
-        if (payload.length > 0) {
+        const firstOutside = payload.find((item) => item.demandKind === 'outside')
+        if (firstOutside) {
+          setSelectedPlanId(String(firstOutside.id))
+          setDemandKind('outside')
+          setWeekStart(firstOutside.weekStart)
+        } else if (payload.length > 0) {
           setSelectedPlanId(String(payload[0].id))
+          setDemandKind(payload[0].demandKind || 'outside')
+          setWeekStart(payload[0].weekStart)
         }
       })
       .catch((error) => setErrorPopup(error.message))
   }, [setErrorPopup])
+
+  useEffect(() => {
+    const selected = plans.find((item) => item.demandKind === demandKind && item.weekStart === weekStart)
+    setSelectedPlanId(selected ? String(selected.id) : '')
+  }, [demandKind, plans, weekStart])
 
   useEffect(() => {
     if (!selectedPlanId) {
@@ -768,6 +781,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
     fetchJson(`/api/admin/demand/${selectedPlanId}`)
       .then((payload) => {
         setPlan(payload)
+        setDemandKind(payload.demandKind || 'outside')
         setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
         setName(payload.name)
         setWeekStart(payload.weekStart)
@@ -787,7 +801,10 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
 
         const existing = row.values.find((item) => item.position === position)
         let nextValue = { ...existing, position, [field]: numericValue }
-        if (field === 'deliveries') nextValue = recalculateDemandValue(nextValue, current, ['demand'])
+        if (field === 'deliveries' || field === 'pizzas') {
+          nextValue = recalculateDemandValue(nextValue, current,
+            field === 'pizzas' ? ['insideDemand'] : ['demand'])
+        }
 
         return {
           ...row,
@@ -817,7 +834,9 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
     setPlan((current) => {
       const updated = { ...current, [field]: value }
       return field === 'deliveriesPerDriverHour'
-        ? recalculateDemandPlan(updated) : updated
+        ? recalculateDemandPlan(updated, ['demand'])
+        : field === 'pizzasPerInsideHour'
+          ? recalculateDemandPlan(updated, ['insideDemand']) : updated
     })
     setStatus({ status: 'idle', message: '' })
   }
@@ -829,9 +848,10 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
       const payload = await fetchJson('/api/admin/demand/paste', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, weekStart, content: pasteContent }),
+        body: JSON.stringify({ name, weekStart, demandKind, content: pasteContent }),
       })
       setPlan(payload)
+      setDemandKind(payload.demandKind || demandKind)
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
       setWeekStart(payload.weekStart)
@@ -858,6 +878,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
     formData.append('file', file)
     formData.append('name', name)
     formData.append('weekStart', weekStart)
+    formData.append('demandKind', demandKind)
 
     try {
       const payload = await fetchJson('/api/admin/demand/upload', {
@@ -865,6 +886,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
         body: formData,
       })
       setPlan(payload)
+      setDemandKind(payload.demandKind || demandKind)
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
       setWeekStart(payload.weekStart)
@@ -893,7 +915,9 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
         body: JSON.stringify({
           name,
           weekStart,
+          demandKind,
           deliveriesPerDriverHour: Number(plan.deliveriesPerDriverHour ?? 2.7),
+          pizzasPerInsideHour: Number(plan.pizzasPerInsideHour ?? 20),
           recalculateDemand,
           columns: plan.columns.map((column) => ({
             position: column.position,
@@ -906,12 +930,16 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
               position: value.position,
               deliveries: value.deliveries ?? null,
               demand: value.demand,
+              pizzas: value.pizzas ?? null,
+              insideDemand: value.insideDemand,
             })),
           })),
         }),
       })
       setPlan(payload)
-      setStatus({ status: 'success', message: recalculateDemand ? 'Driver demand recalculated and saved.' : 'Demand changes saved.' })
+      setStatus({ status: 'success', message: recalculateDemand
+        ? `${demandKind === 'inside' ? 'Inside' : 'Outside'} demand recalculated and saved.`
+        : 'Demand changes saved.' })
       await refreshPlans()
     } catch (error) {
       setStatus({ status: 'error', message: error.message })
@@ -928,7 +956,8 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
       await fetchJson(`/api/admin/demand/${selectedPlanId}`, { method: 'DELETE' })
       const remainingPlans = plans.filter((item) => String(item.id) !== selectedPlanId)
       setPlans(remainingPlans)
-      setSelectedPlanId(remainingPlans[0] ? String(remainingPlans[0].id) : '')
+      const nextPlan = remainingPlans.find((item) => item.demandKind === demandKind) || remainingPlans[0]
+      setSelectedPlanId(nextPlan ? String(nextPlan.id) : '')
       setPlan(null)
       setStatus({ status: 'success', message: 'Demand plan deleted.' })
     } catch (error) {
@@ -940,6 +969,11 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
     (column) => column.position === selectedDemandDayPosition,
   )
   const demandSummary = calculateDemandLabour(plan, employees)
+  const isInsideDemand = demandKind === 'inside'
+  const workloadLabel = isInsideDemand ? 'Pizzas' : 'Deliveries'
+  const staffLabel = isInsideDemand ? 'Inside employees' : 'Drivers'
+  const productivityField = isInsideDemand ? 'pizzasPerInsideHour' : 'deliveriesPerDriverHour'
+  const productivityLabel = isInsideDemand ? 'Pizzas per inside employee-hour' : 'Deliveries per hour per driver'
   const dailyStaffingRows = demandSummary.days
   const selectedDaySummary = dailyStaffingRows.find((day) => day.position === selectedDemandDayPosition)
   const selectedDayHourlyRows = selectedDaySummary?.hourly || []
@@ -962,7 +996,9 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
     if (row.staffingStatus === 'matched') return { label: 'Whole need met', tone: 'matched' }
     return { label: 'Missing data', tone: 'unknown' }
   }
-  const demandFields = [['deliveries', 'Deliveries'], ['demand', 'Drivers']]
+  const demandFields = isInsideDemand
+    ? [['pizzas', 'Pizzas'], ['insideDemand', 'Inside employees']]
+    : [['deliveries', 'Deliveries'], ['demand', 'Drivers']]
   function demandCell(row, column, field, label) {
     const value = row.values.find((item) => item.position === column.position) || {}
     const missing = value.isOpen && value[field] == null
@@ -984,6 +1020,19 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
           <span className="eyebrow">Administration</span>
           <h2>Demand input</h2>
         </div>
+        <div className="demand-scenario-controls">
+          <label>Scenario
+            <select value={demandKind} onChange={(event) => setDemandKind(event.target.value)}>
+              <option value="outside">Outside / drivers</option>
+              <option value="inside">Inside / store</option>
+            </select>
+          </label>
+          <label>Week starting
+            <input type="date" value={weekStart} onChange={(event) => {
+              if (event.target.value) setWeekStart(formatDateInput(getMonday(parseDateInput(event.target.value))))
+            }} />
+          </label>
+        </div>
       </div>
 
       {!canEdit && (
@@ -993,8 +1042,10 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
       )}
 
       <p className="demand-help">
-        Import the weekly Excel/CSV/table template. Driver demand is deliveries ÷ deliveries per driver-hour,
-        rounded up. Delivery counts and driver demand can be adjusted below.
+        Import the selected weekly Excel/CSV/table template. {isInsideDemand
+          ? 'Inside demand is pizzas ÷ pizzas per inside employee-hour, rounded up.'
+          : 'Outside demand is deliveries ÷ deliveries per driver-hour, rounded up.'}
+        {' '}The workload and staff demand can be adjusted below.
         Hours run from 06–23 followed by next-day 00–05. Imports preserve saved sales targets and productivity settings.
       </p>
 
@@ -1026,6 +1077,10 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
         <p className={`save-message ${status.status}`}>{status.message}</p>
       )}
 
+      {!plan && (
+        <p className="message info-message">No {isInsideDemand ? 'inside' : 'outside'} demand exists for the selected week. Import a table to create it.</p>
+      )}
+
       {plan && (
         <form onSubmit={canEdit ? savePlan : (event) => event.preventDefault()}>
           <div className="demand-labour-settings">
@@ -1036,14 +1091,14 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                 Productivity changes recalculate the demand preview immediately;
                 save to apply it to generation. Raising productivity needs fewer staff, lowering it needs more.
                 Recalculation replaces manual staff counts; save productivity changes before applying staffing overrides.
-                Planned labour uses required driver-hours and the target-hour-weighted average pay rate of active drivers.
-                “Actual demand labour” below means the cost of the currently entered Drivers values. Saved-roster labour
+                Planned labour uses required staff-hours and the current average pay rate of eligible employees.
+                “Actual demand labour” below means the cost of the currently entered {staffLabel} values. Saved-roster labour
                 remains separate and is calculated from the employees actually assigned.
               </p>
             </div>
             <div className="demand-productivity-grid">
               {[
-                ['deliveriesPerDriverHour', 'Deliveries per hour per driver', 2.7, 0.01, 1000],
+                [productivityField, productivityLabel, isInsideDemand ? 20 : 2.7, 0.01, 1000],
               ].map(([field, label, defaultValue, min, max]) => <label key={field}>{label}
                 <input type="number" min={min} max={max} step="0.01" required value={plan[field] ?? defaultValue}
                   onChange={(event) => updatePlanningSetting(field, event.target.value)} readOnly={!canEdit} aria-readonly={!canEdit} />
@@ -1055,23 +1110,23 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
             <section className="demand-overview-group demand-overview-volume">
               <div className="demand-overview-group-heading">
                 <span>1</span>
-                <div><h4>Work to deliver</h4><p>The expected orders and sales for the week.</p></div>
+                <div><h4>{isInsideDemand ? 'Work to produce' : 'Work to deliver'}</h4><p>The expected workload and sales for the week.</p></div>
               </div>
               <dl>
-                <div><dt>Deliveries</dt><dd>{formatMetric(demandSummary.deliveries, 0)}</dd></div>
+                <div><dt>{workloadLabel}</dt><dd>{formatMetric(demandSummary.deliveries, 0)}</dd></div>
                 <div><dt>Target sales</dt><dd>{formatMoney(demandSummary.targetSales)}</dd></div>
-                <div><dt>Deliveries per entered hour</dt><dd>{formatMetric(demandSummary.deliveriesPerEnteredDriverHour)}</dd></div>
+                <div><dt>{workloadLabel} per entered hour</dt><dd>{formatMetric(demandSummary.deliveriesPerEnteredDriverHour)}</dd></div>
               </dl>
             </section>
             <section className="demand-overview-group demand-overview-staffing">
               <div className="demand-overview-group-heading">
                 <span>2</span>
-                <div><h4>Drivers required</h4><p>Compare the saved demand with the productivity calculation.</p></div>
+                <div><h4>{staffLabel} required</h4><p>Compare the saved demand with the productivity calculation.</p></div>
               </div>
               <dl>
                 <div><dt>Entered demand</dt><dd>{formatMetric(demandSummary.driverHours, 0)} hours</dd></div>
                 <div><dt>Ideal workload</dt><dd>{formatMetric(demandSummary.idealDriverHours)} hours</dd></div>
-                <div><dt>Whole-driver need</dt><dd>{formatMetric(demandSummary.wholeDriverHours, 0)} hours</dd></div>
+                <div><dt>Whole-person need</dt><dd>{formatMetric(demandSummary.wholeDriverHours, 0)} hours</dd></div>
                 <div><dt>Entered minus ideal</dt><dd>{formatSignedMetric(demandSummary.driverHourDifference)} hours</dd></div>
                 <div><dt>Capacity used</dt><dd>{formatPercentage(demandSummary.capacityUtilization)}</dd></div>
               </dl>
@@ -1086,17 +1141,15 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                 <div><dt>Ideal labour</dt><dd>{formatMoney(demandSummary.idealLabourCost)}</dd></div>
                 <div><dt>Cost difference</dt><dd className={Number(demandSummary.labourCostDifference) > 0 ? 'metric-warning' : ''}>{formatSignedMoney(demandSummary.labourCostDifference)}</dd></div>
                 <div><dt>Labour / sales</dt><dd>{formatPercentage(demandSummary.labourPercentage)}</dd></div>
-                <div><dt>Cost per delivery</dt><dd>{formatMoney(demandSummary.labourCostPerDelivery)}</dd></div>
+                <div><dt>Cost per {isInsideDemand ? 'pizza' : 'delivery'}</dt><dd>{formatMoney(demandSummary.labourCostPerDelivery)}</dd></div>
               </dl>
             </section>
           </div>
 
           <div className="demand-assumptions" aria-label="Labour calculation assumptions">
-            <span><strong>{formatMetric(demandSummary.productivity)}</strong> deliveries per driver-hour</span>
+                <span><strong>{formatMetric(demandSummary.productivity)}</strong> {productivityLabel.toLowerCase()}</span>
             <span><strong>{formatMoney(demandSummary.averageHourlyRate)}</strong> average hourly pay</span>
-            <span><strong>{demandSummary.eligibleDriverCount}</strong> eligible drivers</span>
-            <span><strong>{formatMetric(demandSummary.totalTargetHours)}</strong> combined target hours</span>
-            <span>Demand uses <strong>{formatPercentage(demandSummary.demandToTargetHoursPercentage)}</strong> of target hours</span>
+                <span><strong>{demandSummary.eligibleDriverCount}</strong> eligible {isInsideDemand ? 'employees' : 'drivers'}</span>
           </div>
 
           <details className="demand-metric-guide">
@@ -1116,8 +1169,8 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                 <tr>
                   <th>Day</th>
                   <th>Target sales</th>
-                  <th>Deliveries</th>
-                  <th>Driver hours</th>
+                  <th>{workloadLabel}</th>
+                  <th>{staffLabel} hours</th>
                   <th>Delivery capacity</th>
                   <th>Demand labour</th>
                   <th>Hourly checks</th>
@@ -1152,12 +1205,12 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                         {formatPercentage(day.capacityUtilization)} used
                       </strong>
                       <small>{formatMetric(day.deliveryCapacity)} capacity · {formatSignedMetric(day.unusedDeliveryCapacity)} spare</small>
-                      <small>{formatMetric(day.deliveriesPerEnteredDriverHour)} deliveries per driver-hour</small>
+                      <small>{formatMetric(day.deliveriesPerEnteredDriverHour)} {workloadLabel.toLowerCase()} per {isInsideDemand ? 'employee' : 'driver'}-hour</small>
                     </td>
                     <td className="demand-stacked-cell">
                       <strong>{formatMoney(day.labourCost)} entered</strong>
                       <small>{formatMoney(day.idealLabourCost)} ideal · <span className={Number(day.labourCostDifference) > 0 ? 'metric-warning' : undefined}>{formatSignedMoney(day.labourCostDifference)}</span> difference</small>
-                      <small>{formatPercentage(day.labourPercentage)} of sales · {formatMoney(day.labourCostPerDelivery)} per delivery</small>
+                      <small>{formatPercentage(day.labourPercentage)} of sales · {formatMoney(day.labourCostPerDelivery)} per {isInsideDemand ? 'pizza' : 'delivery'}</small>
                       {day.sundayPremiumHours > 0 && <small>{day.sundayPremiumHours} Sunday-premium hours</small>}
                     </td>
                     <td className="demand-stacked-cell">
@@ -1178,8 +1231,8 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
             <div className="demand-hourly-heading">
               <div>
                 <span className="eyebrow">Hourly breakdown</span>
-                <h3 id="demand-hourly-heading">Delivery productivity and labour by hour</h3>
-                <p>Use this to find under-entered demand, low capacity use, and the hourly cost of whole-driver rounding.</p>
+                <h3 id="demand-hourly-heading">{workloadLabel} productivity and labour by hour</h3>
+                <p>Use this to find under-entered demand, low capacity use, and the hourly cost of whole-person rounding.</p>
               </div>
               <label>
                 Day
@@ -1196,11 +1249,11 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
 
             {selectedDaySummary && (
               <div className="demand-hourly-summary">
-                <div><span>Deliveries</span><strong>{formatMetric(selectedDaySummary.deliveries, 0)}</strong></div>
+                <div><span>{workloadLabel}</span><strong>{formatMetric(selectedDaySummary.deliveries, 0)}</strong></div>
                 <div><span>Entered / ideal hours</span><strong>{selectedDaySummary.requiredDriverHours} / {formatMetric(selectedDaySummary.idealDriverHours)}</strong></div>
                 <div><span>Capacity used</span><strong>{formatPercentage(selectedDaySummary.capacityUtilization)}</strong></div>
                 <div><span>Actual / ideal labour</span><strong>{formatMoney(selectedDaySummary.labourCost)} / {formatMoney(selectedDaySummary.idealLabourCost)}</strong></div>
-                <div><span>Cost per delivery</span><strong>{formatMoney(selectedDaySummary.labourCostPerDelivery)}</strong></div>
+                <div><span>Cost per {isInsideDemand ? 'pizza' : 'delivery'}</span><strong>{formatMoney(selectedDaySummary.labourCostPerDelivery)}</strong></div>
               </div>
             )}
 
@@ -1209,8 +1262,8 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                 <thead>
                   <tr>
                     <th>Hour</th>
-                    <th>Deliveries</th>
-                    <th>Entered drivers</th>
+                    <th>{workloadLabel}</th>
+                    <th>Entered {isInsideDemand ? 'employees' : 'drivers'}</th>
                     <th>Ideal need</th>
                     <th>Staffing check</th>
                     <th>Capacity</th>
@@ -1226,11 +1279,11 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                         <th>{String(row.hour).padStart(2, '0')}:00</th>
                         <td className="demand-stacked-cell">
                           <strong>{formatMetric(row.deliveries)}</strong>
-                          <small>{formatMetric(row.deliveriesPerEnteredDriver)} per entered driver</small>
+                            <small>{formatMetric(row.deliveriesPerEnteredDriver)} per entered {isInsideDemand ? 'employee' : 'driver'}</small>
                         </td>
                         <td><strong>{formatMetric(row.enteredDrivers, 0)}</strong></td>
                         <td className="demand-stacked-cell">
-                          <strong>{formatMetric(row.idealDrivers)} drivers</strong>
+                          <strong>{formatMetric(row.idealDrivers)} {isInsideDemand ? 'employees' : 'drivers'}</strong>
                           <small>{formatMetric(row.wholeDrivers, 0)} after rounding up</small>
                         </td>
                         <td><span className={`staffing-status staffing-status-${statusDetails.tone}`}>{statusDetails.label}</span></td>
@@ -1238,7 +1291,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                           <strong className={Number(row.capacityUtilization) > 100 ? 'metric-danger' : undefined}>
                             {formatPercentage(row.capacityUtilization)} used
                           </strong>
-                          <small>{formatMetric(row.deliveryCapacity)} deliveries capacity</small>
+                            <small>{formatMetric(row.deliveryCapacity)} {workloadLabel.toLowerCase()} capacity</small>
                           <small className={Number(row.unusedDeliveryCapacity) < 0 ? 'metric-danger' : undefined}>
                             {formatSignedMetric(row.unusedDeliveryCapacity)} spare
                           </small>
@@ -1288,7 +1341,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                     <th key={column.position} colSpan="2">
                       <span className="demand-day-label">{column.label}</span>
                       <small className="demand-day-hours">
-                        {dailyStaffingRows.find((day) => day.position === column.position)?.requiredDriverHours ?? 0} driver-hours
+                        {dailyStaffingRows.find((day) => day.position === column.position)?.requiredDriverHours ?? 0} {isInsideDemand ? 'employee' : 'driver'}-hours
                       </small>
                     </th>
                   ))}
@@ -1316,7 +1369,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                     <th colSpan="3">
                       <span className="demand-day-label">{selectedDemandColumn?.label ?? 'Day'}</span>
                       <small className="demand-day-hours">
-                        {selectedDaySummary?.requiredDriverHours ?? 0} driver-hours
+                        {selectedDaySummary?.requiredDriverHours ?? 0} {isInsideDemand ? 'employee' : 'driver'}-hours
                       </small>
                     </th>
                   </tr>

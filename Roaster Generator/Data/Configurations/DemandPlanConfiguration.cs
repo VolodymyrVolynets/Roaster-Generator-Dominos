@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Data.Configurations;
 
@@ -28,6 +29,12 @@ public sealed class DemandPlanConfiguration : IEntityTypeConfiguration<DemandPla
             .HasColumnType("date")
             .IsRequired();
 
+        builder.Property(plan => plan.DemandKind)
+            .HasColumnName("demand_kind")
+            .HasMaxLength(16)
+            .HasDefaultValue(DemandKinds.Outside)
+            .IsRequired();
+
         builder.Property(plan => plan.DeliveriesPerDriverHour)
             .HasColumnName("deliveries_per_driver_hour")
             .HasPrecision(12, 4)
@@ -50,7 +57,7 @@ public sealed class DemandPlanConfiguration : IEntityTypeConfiguration<DemandPla
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        builder.HasIndex(plan => plan.WeekStart)
+        builder.HasIndex(plan => new { plan.WeekStart, plan.DemandKind })
             .IsUnique();
     }
 }

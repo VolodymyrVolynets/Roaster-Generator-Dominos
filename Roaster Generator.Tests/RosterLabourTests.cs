@@ -114,7 +114,7 @@ public sealed class RosterLabourTests
     }
 
     [Fact]
-    public async Task UsesEditedShiftsCurrentRatesAndCurrentSalesInsteadOfSnapshotOrOtherWeeks()
+    public async Task UsesEditedShiftsCurrentRatesAndSelectedWeekSalesInsteadOfSnapshotOrOtherWeeks()
     {
         using var db = NewDb();
         var current = Plan(db, RosterKinds.Drivers);
@@ -134,8 +134,8 @@ public sealed class RosterLabourTests
 
         var original = await service.GetAsync(Monday, default);
         Assert.Equal(43.5m, original.Drivers.LabourCost);
-        Assert.Equal(currentDemand.Id, original.DemandPlanId);
-        Assert.Equal(7000m, original.TargetSales);
+        Assert.Equal(oldDemand.Id, original.DemandPlanId);
+        Assert.Equal(69993m, original.TargetSales);
 
         employee.HourlyRate = 20m;
         shift.FinishTime = new TimeOnly(18, 0);
@@ -144,8 +144,8 @@ public sealed class RosterLabourTests
         var updated = await service.GetAsync(Monday, default);
         Assert.Equal(120m, updated.Drivers.LabourCost);
         Assert.Equal(6m, updated.Drivers.ScheduledHours);
-        Assert.Equal(8000m, updated.TargetSales);
-        Assert.Equal(6m, updated.Days[0].Drivers.LabourPercentage);
+        Assert.Equal(69993m, updated.TargetSales);
+        Assert.Equal(1.2m, updated.Days[0].Drivers.LabourPercentage);
 
         db.RosterShifts.Remove(shift);
         await db.SaveChangesAsync();

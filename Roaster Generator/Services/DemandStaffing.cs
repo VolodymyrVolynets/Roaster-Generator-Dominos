@@ -3,10 +3,14 @@ namespace Roaster_Generator.Services;
 public static class DemandStaffing
 {
     public const decimal DefaultDeliveriesPerDriverHour = 2.7m;
+    public const decimal DefaultPizzasPerInsideHour = 20m;
     public const decimal MaximumWorkload = 1_000_000m;
 
     public static int? Drivers(decimal? deliveries, decimal deliveriesPerDriverHour) =>
         RequiredStaff(deliveries, deliveriesPerDriverHour);
+
+    public static int? Inside(decimal? pizzas, decimal pizzasPerInsideHour) =>
+        RequiredStaff(pizzas, pizzasPerInsideHour);
 
     private static int? RequiredStaff(decimal? workload, decimal productivity)
     {

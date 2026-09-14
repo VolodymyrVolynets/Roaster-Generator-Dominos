@@ -1,3 +1,5 @@
+using Roaster_Generator.Enums;
+
 namespace Roaster_Generator.Entities;
 
 public sealed class DemandPlan
@@ -7,6 +9,8 @@ public sealed class DemandPlan
     public string Name { get; set; } = string.Empty;
 
     public DateOnly WeekStart { get; set; }
+
+    public string DemandKind { get; set; } = DemandKinds.Outside;
 
     public decimal DeliveriesPerDriverHour { get; set; } = 2.7m;
 

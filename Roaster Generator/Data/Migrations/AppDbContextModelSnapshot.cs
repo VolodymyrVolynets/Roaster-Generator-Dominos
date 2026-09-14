@@ -281,6 +281,13 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(2.7m)
                         .HasColumnName("deliveries_per_driver_hour");
 
+                    b.Property<string>("DemandKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("demand_kind")
+                        .HasDefaultValue("outside");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -304,7 +311,7 @@ namespace Roaster_Generator.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WeekStart")
+                    b.HasIndex("WeekStart", "DemandKind")
                         .IsUnique();
 
                     b.ToTable("demand_plans", (string)null);
