@@ -102,7 +102,7 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
   )
 }
 
-export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onShowSaved, weekOffset, setWeekOffset }) {
+export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onShowSaved, weekOffset, setWeekOffset, realtimeKey = 0 }) {
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
   const [logs, setLogs] = useState([])
@@ -130,7 +130,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
       if (active) { const normalized = withSettingsDefaults(payload); setSettings(normalized); setSavedSettings(normalized) }
     }).catch((error) => { if (active) { setSettingsError(error.message); setErrorPopup(error.message) } })
     return () => { active = false }
-  }, [fetchJson, setErrorPopup, settingsRefreshKey, isVisible, dirtySettings])
+  }, [fetchJson, setErrorPopup, settingsRefreshKey, isVisible, dirtySettings, realtimeKey])
 
   useEffect(() => {
     if (!isVisible || !selectedWeekCanGenerate) {
@@ -143,7 +143,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
       .then((payload) => { if (active) setSummary(payload) })
       .catch((error) => { if (active) setErrorPopup(error.message) })
     return () => { active = false }
-  }, [fetchJson, setErrorPopup, weekOffset, rosterKind, isVisible, selectedWeekCanGenerate])
+  }, [fetchJson, setErrorPopup, weekOffset, rosterKind, isVisible, selectedWeekCanGenerate, realtimeKey])
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
@@ -777,6 +777,7 @@ export function SavedRosterPanel({
   setWeekOffset,
   workArea,
   setWorkArea,
+  realtimeKey = 0,
 }) {
   const rosterKind = workArea === 'inside' ? 'inside' : 'drivers'
   const weekStart = getWeekStartValue(weekOffset)
@@ -790,6 +791,22 @@ export function SavedRosterPanel({
   const [status, setStatus] = useState('loading')
   const [refreshKey, setRefreshKey] = useState(0)
   const [labourRefreshKey, setLabourRefreshKey] = useState(0)
+  const realtimeKeyRef = useRef(realtimeKey)
+
+  useEffect(() => {
+    if (realtimeKeyRef.current === realtimeKey) return
+    if (editing) {
+      setEditStatus({
+        status: 'warning',
+        message: 'Roster inputs changed in another session. Save or cancel your edits, then the latest data will load.',
+      })
+      return
+    }
+
+    realtimeKeyRef.current = realtimeKey
+    setRefreshKey((value) => value + 1)
+    setLabourRefreshKey((value) => value + 1)
+  }, [editing, realtimeKey])
 
   useEffect(() => {
     let active = true
@@ -814,7 +831,7 @@ export function SavedRosterPanel({
       .then((payload) => { if (active) setAvailableEmployees(payload.filter((employee) => employee.isActive && employeeMatchesRosterKind(employee, rosterKind))) })
       .catch((error) => { if (active) setErrorPopup(error.message) })
     return () => { active = false }
-  }, [canEdit, fetchJson, setErrorPopup, rosterKind])
+  }, [canEdit, fetchJson, setErrorPopup, refreshKey, rosterKind])
 
   useEffect(() => {
     let active = true

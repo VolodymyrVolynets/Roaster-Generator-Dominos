@@ -19,7 +19,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class SickLeaveController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
-    IValidator<SickLeaveCreateRequest> validator) : ApiControllerBase
+    IValidator<SickLeaveCreateRequest> validator,
+    ApplicationEventPublisher? events = null) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -97,6 +98,8 @@ public sealed class SickLeaveController(
             return Conflict(new { message = "The sick leave request could not be created because the data changed. Please try again." });
         }
 
+        if (events is not null)
+            await events.SickLeaveChangedAsync(sickLeave.Id, employee.Id, false, cancellationToken);
         return Ok(SickLeaveResponseMapper.ToResponse(sickLeave));
     }
 
@@ -128,6 +131,8 @@ public sealed class SickLeaveController(
 
         db.SickLeaveRequests.Remove(request);
         await db.SaveChangesAsync(cancellationToken);
+        if (events is not null)
+            await events.SickLeaveChangedAsync(request.Id, employee.Id, false, cancellationToken);
         return NoContent();
     }
 

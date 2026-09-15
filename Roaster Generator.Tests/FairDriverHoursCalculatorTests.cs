@@ -125,6 +125,25 @@ public sealed class FairDriverHoursCalculatorTests
     }
 
     [Fact]
+    public void ApproximateHoursAreCappedAtFortyFivePerDriverPerWeek()
+    {
+        var driver = Driver();
+        var availability = Enumerable.Range(0, 7)
+            .Select(day => Available(driver, 10, 20, Monday.AddDays(day)))
+            .ToArray();
+        var demand = Enumerable.Range(0, 7)
+            .SelectMany(day => Enumerable.Range(10, 10)
+                .Select(hour => new RosterSolverDemand(Monday.AddDays(day), hour, 1)))
+            .ToArray();
+
+        var result = Calculate([driver], availability, demand);
+
+        Assert.Equal(45, result.Drivers[driver.Id].CapacityHours, 4);
+        Assert.Equal(45, result.Drivers[driver.Id].ExpectedHours, 4);
+        Assert.Equal(25, result.UnallocatedDemandHours, 4);
+    }
+
+    [Fact]
     public void OvernightAvailabilityUsesBusinessDayHours()
     {
         var driver = Driver();
@@ -169,10 +188,10 @@ public sealed class FairDriverHoursCalculatorTests
         DriverProfile = new DriverProfile { DriverType = DriverType.Car }
     };
 
-    private static Shift Available(Employee employee, int start, int finish) => new()
+    private static Shift Available(Employee employee, int start, int finish, DateOnly? date = null) => new()
     {
         EmployeeId = employee.Id,
-        Date = Monday,
+        Date = date ?? Monday,
         StartTime = new TimeOnly(start, 0),
         FinishTime = new TimeOnly(finish, 0)
     };

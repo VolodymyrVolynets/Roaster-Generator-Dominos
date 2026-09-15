@@ -9,7 +9,7 @@ public interface IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        double maximumWeeklyHours = 70,
+        double maximumWeeklyHours = 45,
         string rosterKind = RosterKinds.Drivers);
 }
 
@@ -35,7 +35,7 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        double maximumWeeklyHours = 70,
+        double maximumWeeklyHours = 45,
         string rosterKind = RosterKinds.Drivers)
     {
         if (!double.IsFinite(alpha) || alpha is < 0 or > 1)

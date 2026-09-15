@@ -15,7 +15,9 @@ namespace Roaster_Generator.Controllers;
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.Manager)]
 [Route("api/admin/holidays")]
-public sealed class AdminHolidaysController(AppDbContext db) : ControllerBase
+public sealed class AdminHolidaysController(
+    AppDbContext db,
+    ApplicationEventPublisher? events = null) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -66,6 +68,8 @@ public sealed class AdminHolidaysController(AppDbContext db) : ControllerBase
 
         MarkUsed(holiday);
         await db.SaveChangesAsync(cancellationToken);
+        if (events is not null)
+            await events.HolidayChangedAsync(holiday.Id, [holiday.EmployeeId], cancellationToken);
         return Ok(HolidayResponseMapper.ToResponse(holiday));
     }
 
@@ -85,6 +89,8 @@ public sealed class AdminHolidaysController(AppDbContext db) : ControllerBase
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        if (events is not null && holidays.Count > 0)
+            await events.HolidayChangedAsync(null, holidays.Select(holiday => holiday.EmployeeId), cancellationToken);
         return Ok(new HolidayApprovalResponse { ApprovedCount = holidays.Count });
     }
 

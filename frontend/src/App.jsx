@@ -5,6 +5,7 @@ import { getAvailabilityEmployeeId } from './availabilityAccess'
 import { availabilityHeatmapDetail, buildAvailabilityHeatmapGrid } from './availabilityHeatmap'
 import { AreaSelector, WeekSelector } from './SelectionControls'
 import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
+import { useApplicationEvents } from './useApplicationEvents'
 import {
   compareEmployees,
   employeeHasRole,
@@ -223,7 +224,7 @@ function formatHolidayDate(value) {
   return value ? holidayDateFormatter.format(new Date(value)) : '—'
 }
 
-function HolidayPanel({ setErrorPopup }) {
+function HolidayPanel({ setErrorPopup, realtimeKey = 0 }) {
   const [holidayState, setHolidayState] = useState({
     status: 'loading',
     requested: null,
@@ -245,7 +246,7 @@ function HolidayPanel({ setErrorPopup }) {
 
   useEffect(() => {
     void loadHolidays()
-  }, [])
+  }, [realtimeKey])
 
   async function saveHoliday(event) {
     event.preventDefault()
@@ -406,7 +407,7 @@ function HolidayTable({ holidays, showEmployee = false, showApprove = false, onA
   )
 }
 
-function AdminHolidayPanel({ setErrorPopup, canExport = true }) {
+function AdminHolidayPanel({ setErrorPopup, canExport = true, realtimeKey = 0 }) {
   const [holidayState, setHolidayState] = useState({ status: 'loading', requested: [], used: [] })
   const [actionState, setActionState] = useState({ status: 'idle', message: '' })
 
@@ -422,7 +423,7 @@ function AdminHolidayPanel({ setErrorPopup, canExport = true }) {
 
   useEffect(() => {
     void loadHolidays()
-  }, [])
+  }, [realtimeKey])
 
   async function approveHoliday(holidayId) {
     setActionState({ status: 'saving', message: '' })
@@ -544,7 +545,7 @@ function SickLeaveTable({ requests, showEmployee = false, management = false, on
   )
 }
 
-function SickLeavePanel({ setErrorPopup }) {
+function SickLeavePanel({ setErrorPopup, realtimeKey = 0 }) {
   const [state, setState] = useState({ status: 'loading', requested: [], reviewed: [] })
   const [form, setForm] = useState({ startDate: '', finishDate: '', file: null })
   const [action, setAction] = useState({ status: 'idle', message: '', busyId: null })
@@ -559,7 +560,7 @@ function SickLeavePanel({ setErrorPopup }) {
       setErrorPopup(error.message)
     }
   }
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void load() }, [realtimeKey])
 
   async function submit(event) {
     event.preventDefault()
@@ -632,14 +633,14 @@ function SickLeavePanel({ setErrorPopup }) {
   )
 }
 
-function AdminSickLeavePanel({ setErrorPopup, includeOwnRequest = false }) {
+function AdminSickLeavePanel({ setErrorPopup, includeOwnRequest = false, realtimeKey = 0 }) {
   const [state, setState] = useState({ status: 'loading', requested: [], reviewed: [] })
   const [action, setAction] = useState({ status: 'idle', message: '', busyId: null })
   async function load() {
     try { const payload = await fetchJson('/api/admin/sick-leave'); setState({ status: 'success', requested: payload.requested || [], reviewed: payload.reviewed || [] }) }
     catch (error) { setState((current) => ({ ...current, status: 'error' })); setErrorPopup(error.message) }
   }
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void load() }, [realtimeKey])
   async function review(requestId, decision) {
     let reason = null
     if (decision === 'reject') { reason = window.prompt('Optional reason for rejection:', ''); if (reason === null) return }
@@ -659,7 +660,7 @@ function AdminSickLeavePanel({ setErrorPopup, includeOwnRequest = false }) {
         <section className="holiday-history"><div className="section-heading"><div><span className="eyebrow">Pending</span><h3>Waiting for review</h3></div></div>{state.status === 'loading' ? <p className="message info-message">Loading sick leave requests…</p> : state.requested.length === 0 ? <p className="message info-message">No sick leave requests are waiting for review.</p> : <SickLeaveTable requests={state.requested} showEmployee management onReview={review} busyId={action.busyId} />}</section>
         <section className="holiday-history"><div className="section-heading"><div><span className="eyebrow">History</span><h3>Reviewed requests</h3></div></div>{state.reviewed.length === 0 ? <p className="message info-message">No reviewed sick leave yet.</p> : <SickLeaveTable requests={state.reviewed} showEmployee />}</section>
       </section>
-      {includeOwnRequest && <SickLeavePanel setErrorPopup={setErrorPopup} />}
+      {includeOwnRequest && <SickLeavePanel setErrorPopup={setErrorPopup} realtimeKey={realtimeKey} />}
     </>
   )
 }
@@ -672,6 +673,7 @@ function DemandManager({
   onWeekChange,
   demandKind,
   onDemandKindChange,
+  realtimeKey = 0,
 }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
@@ -680,6 +682,8 @@ function DemandManager({
   const [name, setName] = useState('Weekly demand')
   const [pasteContent, setPasteContent] = useState('')
   const [status, setStatus] = useState({ status: 'idle', message: '' })
+  const [dirty, setDirty] = useState(false)
+  const loadedPlanIdRef = useRef('')
   const receivedPlan = (payload) => ({ ...payload, labourEstimateCurrent: true })
   const weekStart = getWeekStartValue(weekOffset)
 
@@ -687,7 +691,7 @@ function DemandManager({
     fetchJson('/api/admin/demand')
       .then(setPlans)
       .catch((error) => setErrorPopup(error.message))
-  }, [setErrorPopup])
+  }, [setErrorPopup, realtimeKey])
 
   useEffect(() => {
     const selected = plans.find((item) => item.demandKind === demandKind && item.weekStart === weekStart)
@@ -699,7 +703,16 @@ function DemandManager({
     if (!selectedPlanId) {
       setPlan(null)
       setName('Weekly demand')
+      setDirty(false)
+      loadedPlanIdRef.current = ''
       setStatus({ status: 'idle', message: '' })
+      return undefined
+    }
+    if (dirty && loadedPlanIdRef.current === selectedPlanId) {
+      setStatus({
+        status: 'warning',
+        message: 'Planning inputs changed in another session. Save or reload before continuing.',
+      })
       return undefined
     }
 
@@ -707,13 +720,15 @@ function DemandManager({
       .then((payload) => {
         if (!active) return
         setPlan(receivedPlan(payload))
+        loadedPlanIdRef.current = String(payload.id)
         setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
         setName(payload.name)
+        setDirty(false)
         setStatus({ status: 'idle', message: '' })
       })
       .catch((error) => { if (active) setErrorPopup(error.message) })
     return () => { active = false }
-  }, [selectedPlanId, setErrorPopup])
+  }, [selectedPlanId, setErrorPopup, realtimeKey])
 
   function updateDemandValue(hour, position, field, rawValue) {
     const numericValue = rawValue === '' ? null : Number(rawValue)
@@ -741,6 +756,7 @@ function DemandManager({
         }
       }),
     }))
+    setDirty(true)
     setStatus({ status: 'idle', message: '' })
   }
 
@@ -752,6 +768,7 @@ function DemandManager({
         column.position === position ? { ...column, targetSales } : column
       )),
     }))
+    setDirty(true)
     setStatus({ status: 'idle', message: '' })
   }
 
@@ -764,6 +781,7 @@ function DemandManager({
         : field === 'pizzasPerInsideHour'
           ? recalculateDemandPlan(updated, ['insideDemand']) : updated
     })
+    setDirty(true)
     setStatus({ status: 'idle', message: '' })
   }
 
@@ -779,6 +797,7 @@ function DemandManager({
       setPlan(receivedPlan(payload))
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
+      setDirty(false)
       setSelectedPlanId(String(payload.id))
       setPasteContent('')
       setStatus({ status: 'success', message: 'Demand imported.' })
@@ -812,6 +831,7 @@ function DemandManager({
       setPlan(receivedPlan(payload))
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
+      setDirty(false)
       setSelectedPlanId(String(payload.id))
       setStatus({ status: 'success', message: 'Excel demand imported.' })
       await refreshPlans()
@@ -859,6 +879,7 @@ function DemandManager({
         }),
       })
       setPlan(receivedPlan(payload))
+      setDirty(false)
       setStatus({ status: 'success', message: recalculateDemand
         ? `${demandKind === 'inside' ? 'Inside' : 'Outside'} demand recalculated and saved.`
         : 'Demand changes saved.' })
@@ -880,6 +901,7 @@ function DemandManager({
       setPlans(remainingPlans)
       setSelectedPlanId('')
       setPlan(null)
+      setDirty(false)
       setStatus({ status: 'success', message: 'Demand plan deleted.' })
     } catch (error) {
       setErrorPopup(error.message)
@@ -1385,6 +1407,7 @@ function AdminConsole({
   setErrorPopup,
   logout,
   onTabChange,
+  realtimeVersions = {},
 }) {
   const [activeTab, setActiveTab] = useState('employees')
   const [workArea, setWorkArea] = useState('outside')
@@ -1474,6 +1497,15 @@ function AdminConsole({
   const roleErrors = getEmployeeFieldErrors(employeeSaveState, 'roles')
   const hourlyRateErrors = getEmployeeFieldErrors(employeeSaveState, 'hourlyRate')
   const driverTypeErrors = getEmployeeFieldErrors(employeeSaveState, 'driverType')
+  const selectedDemandRealtimeKey = workArea === 'inside'
+    ? realtimeVersions.demandInside
+    : realtimeVersions.demandDrivers
+  const planningRealtimeKey = (selectedDemandRealtimeKey || 0) +
+    (realtimeVersions.availability || 0) + (realtimeVersions.employees || 0) +
+    (realtimeVersions.sickLeave || 0) + (realtimeVersions.settings || 0)
+  const selectedRosterRealtimeKey = workArea === 'inside'
+    ? (realtimeVersions.rosterInside || 0) + (realtimeVersions.demandInside || 0)
+    : (realtimeVersions.rosterDrivers || 0) + (realtimeVersions.demandDrivers || 0)
 
   return (
     <>
@@ -1811,14 +1843,14 @@ function AdminConsole({
 
           {activeTab === 'holiday' && (
             authState.user.isAdmin
-              ? <AdminHolidayPanel setErrorPopup={setErrorPopup} />
+              ? <AdminHolidayPanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.holiday} />
               : <>
-                <AdminHolidayPanel setErrorPopup={setErrorPopup} canExport={false} />
-                <HolidayPanel setErrorPopup={setErrorPopup} />
+                <AdminHolidayPanel setErrorPopup={setErrorPopup} canExport={false} realtimeKey={realtimeVersions.holiday} />
+                <HolidayPanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.holiday} />
               </>
           )}
 
-          {activeTab === 'sick-leave' && <AdminSickLeavePanel setErrorPopup={setErrorPopup} includeOwnRequest={!authState.user.isAdmin && Boolean(authState.user.employeeId)} />}
+          {activeTab === 'sick-leave' && <AdminSickLeavePanel setErrorPopup={setErrorPopup} includeOwnRequest={!authState.user.isAdmin && Boolean(authState.user.employeeId)} realtimeKey={realtimeVersions.sickLeave} />}
 
           {activeTab === 'roster' && (
             <section className="availability-section admin-tools">
@@ -2087,6 +2119,7 @@ function AdminConsole({
             onWeekChange={setWeekOffset}
             demandKind={workArea}
             onDemandKindChange={setWorkArea}
+            realtimeKey={planningRealtimeKey}
           />}
 
           {authState.user.isAdmin && (
@@ -2094,6 +2127,7 @@ function AdminConsole({
               fetchJson={fetchJson}
               setErrorPopup={setErrorPopup}
               isVisible={activeTab === 'generate-roster'}
+              realtimeKey={planningRealtimeKey}
               weekOffset={weekOffset}
               setWeekOffset={setWeekOffset}
               onShowSaved={(weekStart) => {
@@ -2111,6 +2145,9 @@ function AdminConsole({
             setWeekOffset={setWeekOffset}
             workArea={workArea}
             setWorkArea={setWorkArea}
+            realtimeKey={selectedRosterRealtimeKey + (realtimeVersions.availability || 0) +
+              (realtimeVersions.employees || 0) + (realtimeVersions.sickLeave || 0) +
+              (realtimeVersions.settings || 0)}
           />}
         </section>
       </main>
@@ -2347,7 +2384,7 @@ const personalRosterDateFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'short',
 })
 
-function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup }) {
+function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup, realtimeKey = 0 }) {
   const [rosterState, setRosterState] = useState({ status: 'loading', roster: null, message: '' })
 
   useEffect(() => {
@@ -2363,7 +2400,7 @@ function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup }) {
         setErrorPopup(error.message)
       })
     return () => { cancelled = true }
-  }, [weekOffset, setErrorPopup])
+  }, [weekOffset, setErrorPopup, realtimeKey])
 
   const roster = rosterState.roster
   const days = roster ? Array.from({ length: 7 }, (_, dayOffset) => {
@@ -2460,6 +2497,7 @@ function EmployeeWorkspace({
   resetDay,
   setErrorPopup,
   logout,
+  realtimeVersions = {},
 }) {
   const [activeTab, setActiveTab] = useState('availability')
   const roleLabel = variant === 'driver'
@@ -2518,11 +2556,11 @@ function EmployeeWorkspace({
           </nav>
 
           {activeTab === 'holiday' ? (
-            <HolidayPanel setErrorPopup={setErrorPopup} />
+            <HolidayPanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.holiday} />
           ) : activeTab === 'sick-leave' ? (
-            <SickLeavePanel setErrorPopup={setErrorPopup} />
+            <SickLeavePanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.sickLeave} />
           ) : activeTab === 'roster' && variant === 'driver' ? (
-            <PersonalRosterPanel weekOffset={weekOffset} setWeekOffset={setWeekOffset} setErrorPopup={setErrorPopup} />
+            <PersonalRosterPanel weekOffset={weekOffset} setWeekOffset={setWeekOffset} setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.roster} />
           ) : (
             <>
               {children}
@@ -2582,6 +2620,9 @@ function App() {
   const isSystemAdmin = isAuthenticated && authState.user.isAdmin
   const isManager = isAuthenticated && authState.user.roles?.includes('Manager')
   const isAdmin = isSystemAdmin || isManager
+  const realtimeVersions = useApplicationEvents(isAuthenticated, authState.user?.employeeId)
+  const scheduleRealtimeKey = realtimeVersions.availability + realtimeVersions.demandDrivers +
+    realtimeVersions.sickLeave + realtimeVersions.employees + realtimeVersions.settings
   const availabilityEmployeeId = getAvailabilityEmployeeId(
     isAuthenticated ? authState.user : null,
     selectedEmployeeId,
@@ -2618,7 +2659,7 @@ function App() {
     fetchJson('/api/auth/me')
       .then((user) => setAuthState({ status: 'authenticated', user, message: '' }))
       .catch(() => setAuthState({ status: 'anonymous', user: null, message: '' }))
-  }, [])
+  }, [realtimeVersions.auth])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -2642,7 +2683,7 @@ function App() {
         setEmployeesState({ status: 'error', message: error.message })
         setErrorPopup(error.message)
       })
-  }, [authState, isAuthenticated, isAdmin, dataRefreshKey])
+  }, [authState, isAuthenticated, isAdmin, dataRefreshKey, realtimeVersions.employees])
 
   useEffect(() => {
     if (!availabilityEmployeeId) {
@@ -2669,7 +2710,7 @@ function App() {
         setErrorPopup(error.message)
       })
     return () => { cancelled = true }
-  }, [availabilityEmployeeId, weekOffset, dataRefreshKey])
+  }, [availabilityEmployeeId, weekOffset, dataRefreshKey, scheduleRealtimeKey])
 
   useEffect(() => {
     if (!isAdmin) {
@@ -2680,7 +2721,7 @@ function App() {
     fetchJson(`/api/admin/availability?weekOffset=${weekOffset}`)
       .then(setAvailability)
       .catch((error) => setErrorPopup(error.message))
-  }, [isAdmin, weekOffset, dataRefreshKey])
+  }, [isAdmin, weekOffset, dataRefreshKey, scheduleRealtimeKey])
 
   useEffect(() => {
     const employee = employees.find((item) => String(item.id) === selectedEmployeeId)
@@ -2927,6 +2968,7 @@ function App() {
         setErrorPopup={setErrorPopup}
         logout={logout}
         onTabChange={() => setDataRefreshKey((current) => current + 1)}
+        realtimeVersions={realtimeVersions}
       />
     )
   }
@@ -2948,6 +2990,7 @@ function App() {
     resetDay,
     setErrorPopup,
     logout,
+    realtimeVersions,
   }
 
   if (employeeRoles.includes('Driver')) {

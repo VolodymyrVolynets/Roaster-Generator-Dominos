@@ -18,7 +18,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class HolidaysController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
-    IValidator<HolidayHoursRequest> holidayValidator) : ApiControllerBase
+    IValidator<HolidayHoursRequest> holidayValidator,
+    ApplicationEventPublisher? events = null) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -94,6 +95,8 @@ public sealed class HolidaysController(
         }
 
         holiday.Employee = employee;
+        if (events is not null)
+            await events.HolidayChangedAsync(holiday.Id, [employee.Id], cancellationToken);
         return Ok(HolidayResponseMapper.ToResponse(holiday));
     }
 
@@ -131,6 +134,8 @@ public sealed class HolidaysController(
         holiday.UpdatedAtUtc = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
+        if (events is not null)
+            await events.HolidayChangedAsync(holiday.Id, [employee.Id], cancellationToken);
         return Ok(HolidayResponseMapper.ToResponse(holiday));
     }
 
@@ -157,6 +162,8 @@ public sealed class HolidaysController(
 
         db.HolidayRequests.Remove(holiday);
         await db.SaveChangesAsync(cancellationToken);
+        if (events is not null)
+            await events.HolidayChangedAsync(holiday.Id, [employee.Id], cancellationToken);
         return NoContent();
     }
 

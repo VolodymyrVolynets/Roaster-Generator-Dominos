@@ -16,7 +16,8 @@ namespace Roaster_Generator.Controllers;
 [Route("api/admin/sick-leave")]
 public sealed class AdminSickLeaveController(
     AppDbContext db,
-    UserManager<ApplicationUser> userManager) : ControllerBase
+    UserManager<ApplicationUser> userManager,
+    ApplicationEventPublisher? events = null) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
@@ -109,6 +110,9 @@ public sealed class AdminSickLeaveController(
             return Conflict(new { message = "This sick leave request has already been reviewed." });
         }
 
+        if (events is not null)
+            await events.SickLeaveChangedAsync(
+                sickLeave.Id, sickLeave.EmployeeId, status == SickLeaveStatus.Approved, cancellationToken);
         return Ok(SickLeaveResponseMapper.ToResponse(sickLeave));
     }
 

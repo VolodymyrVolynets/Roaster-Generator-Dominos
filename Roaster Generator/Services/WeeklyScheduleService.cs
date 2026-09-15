@@ -7,7 +7,10 @@ using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Services;
 
-public sealed class WeeklyScheduleService(AppDbContext db, RosterInputService? rosterInputs)
+public sealed class WeeklyScheduleService(
+    AppDbContext db,
+    RosterInputService? rosterInputs,
+    ApplicationEventPublisher? events = null)
 {
     public const int MinWeekOffset = 1;
     public const int MaxWeekOffset = 3;
@@ -139,7 +142,13 @@ public sealed class WeeklyScheduleService(AppDbContext db, RosterInputService? r
             : null;
         var heatmap = isDriver ? await BuildHeatmapAsync(weekStart, cancellationToken) : null;
 
-        return BuildResponse(employee, weekStart, savedShifts, heatmap, approximateHours);
+        var response = BuildResponse(employee, weekStart, savedShifts, heatmap, approximateHours);
+        if (events is not null)
+        {
+            await events.AvailabilityChangedAsync(employeeId, weekStart, isDriver, cancellationToken);
+        }
+
+        return response;
     }
 
     public static DateOnly GetCurrentWeekMonday()

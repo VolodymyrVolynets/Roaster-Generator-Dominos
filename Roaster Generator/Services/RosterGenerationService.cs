@@ -16,7 +16,7 @@ public sealed class RosterTimerAlreadyRunningException : Exception
 
 // One worker and one solver thread protect small servers. Logs survive tab changes and reconnects.
 public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<RosterTimerHub> hub,
-    ILogger<RosterTimerService> logger) : BackgroundService
+    ILogger<RosterTimerService> logger, ApplicationEventPublisher? events = null) : BackgroundService
 {
     private readonly object gate = new();
     private readonly Dictionary<(DateOnly WeekStart, string RosterKind), ActiveJob> latestJobs = new();
@@ -183,6 +183,8 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             ct.ThrowIfCancellationRequested();
             // Once committing starts, complete it and report the actual durable outcome, even if cancel arrives.
             await transaction.CommitAsync(CancellationToken.None);
+            if (events is not null)
+                await events.RosterChangedAsync(saved.Id, saved.WeekStart, saved.RosterKind, CancellationToken.None);
             var partial = saved.CoveragePercent is < 100;
             Publish(job, "completed", "saved", 100,
                 partial

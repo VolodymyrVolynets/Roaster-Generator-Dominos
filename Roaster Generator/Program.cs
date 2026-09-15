@@ -81,6 +81,7 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<ApplicationEventPublisher>();
 builder.Services.AddScoped<IValidator<EmployeeRequest>, EmployeeRequestValidator>();
 builder.Services.AddScoped<IValidator<HolidayHoursRequest>, HolidayRequestValidator>();
 builder.Services.AddScoped<IValidator<SickLeaveCreateRequest>, SickLeaveRequestValidator>();
@@ -121,5 +122,6 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.MapControllers();
 app.MapHub<Roaster_Generator.Hubs.RosterTimerHub>("/hubs/roster-timer");
 app.MapHub<Roaster_Generator.Hubs.RosterTimerHub>("/hubs/roster-generation");
+app.MapHub<Roaster_Generator.Hubs.ApplicationEventsHub>("/hubs/application-events");
 
 app.Run();

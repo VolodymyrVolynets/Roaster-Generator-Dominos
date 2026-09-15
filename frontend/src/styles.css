@@ -37,9 +37,9 @@ select {
 }
 
 .app-card {
-  width: min(100%, 1600px);
+  width: min(100%, 2200px);
   margin: 0 auto;
-  padding: clamp(24px, 5vw, 56px);
+  padding: clamp(24px, 2.5vw, 48px);
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 28px;
   background: rgba(15, 23, 42, 0.86);
@@ -3113,6 +3113,10 @@ input:focus {
 
 .save-message.success {
   color: #6ee7b7;
+}
+
+.save-message.warning {
+  color: #fcd34d;
 }
 
 .save-message.error,

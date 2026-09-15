@@ -19,7 +19,8 @@ public sealed class AdminRosterController(
     RosterTimerService rosterTimer,
     RosterPlanService rosterPlans,
     RosterLabourService rosterLabour,
-    RosterSettingsService settings) : ApiControllerBase
+    RosterSettingsService settings,
+    ApplicationEventPublisher? events = null) : ApiControllerBase
 {
     [HttpGet("labour")]
     public async Task<IActionResult> GetLabour([FromQuery] RosterLabourRequest request, CancellationToken ct)
@@ -87,7 +88,10 @@ public sealed class AdminRosterController(
 
         try
         {
-            return Ok(await rosterPlans.UpdateAsync(request, cancellationToken));
+            var saved = await rosterPlans.UpdateAsync(request, cancellationToken);
+            if (events is not null)
+                await events.RosterChangedAsync(saved.Id, saved.WeekStart, saved.RosterKind, cancellationToken);
+            return Ok(saved);
         }
         catch (RosterInputException exception)
         {
@@ -188,7 +192,12 @@ public sealed class AdminRosterController(
             "The roster settings are invalid.",
             ct);
 
-        return validationResult ?? Ok(await settings.SaveAsync(request, ct));
+        if (validationResult is not null) return validationResult;
+
+        var saved = await settings.SaveAsync(request, ct);
+        if (events is not null)
+            await events.RosterSettingsChangedAsync(ct);
+        return Ok(saved);
     }
 
     [HttpGet("history")]

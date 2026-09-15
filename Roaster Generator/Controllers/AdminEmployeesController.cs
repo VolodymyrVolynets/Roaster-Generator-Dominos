@@ -18,7 +18,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class AdminEmployeesController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
-    IValidator<EmployeeRequest> employeeValidator) : ApiControllerBase
+    IValidator<EmployeeRequest> employeeValidator,
+    ApplicationEventPublisher? events = null) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetEmployees(CancellationToken cancellationToken)
@@ -134,7 +135,10 @@ public sealed class AdminEmployeesController(
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return Ok(await ToEmployeeResponseAsync(employee, cancellationToken));
+        var response = await ToEmployeeResponseAsync(employee, cancellationToken);
+        if (events is not null)
+            await events.EmployeeChangedAsync(employee.Id, cancellationToken);
+        return Ok(response);
     }
 
     [HttpPut("{employeeId:guid}")]
@@ -264,7 +268,10 @@ public sealed class AdminEmployeesController(
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return Ok(await ToEmployeeResponseAsync(employee, cancellationToken));
+        var response = await ToEmployeeResponseAsync(employee, cancellationToken);
+        if (events is not null)
+            await events.EmployeeChangedAsync(employee.Id, cancellationToken);
+        return Ok(response);
     }
 
     [HttpDelete("{employeeId:guid}")]
@@ -299,6 +306,8 @@ public sealed class AdminEmployeesController(
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        if (events is not null)
+            await events.EmployeeChangedAsync(employeeId, cancellationToken);
         return NoContent();
     }
 
@@ -328,7 +337,10 @@ public sealed class AdminEmployeesController(
 
         employee.IsActive = isActive;
         await db.SaveChangesAsync(cancellationToken);
-        return Ok(await ToEmployeeResponseAsync(employee, cancellationToken));
+        var response = await ToEmployeeResponseAsync(employee, cancellationToken);
+        if (events is not null)
+            await events.EmployeeChangedAsync(employee.Id, cancellationToken);
+        return Ok(response);
     }
 
     private async Task<EmployeeResponse> ToEmployeeResponseAsync(

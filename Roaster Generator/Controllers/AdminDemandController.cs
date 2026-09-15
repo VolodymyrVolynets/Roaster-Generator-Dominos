@@ -15,7 +15,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class AdminDemandController(
     DemandService demand,
     IValidator<DemandImportRequest> importValidator,
-    IValidator<DemandPlanUpdateRequest> updateValidator) : ApiControllerBase
+    IValidator<DemandPlanUpdateRequest> updateValidator,
+    ApplicationEventPublisher? events = null) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetPlans(CancellationToken cancellationToken) =>
@@ -51,7 +52,10 @@ public sealed class AdminDemandController(
 
         try
         {
-            return Ok(await demand.ImportTextAsync(request, cancellationToken));
+            var saved = await demand.ImportTextAsync(request, cancellationToken);
+            if (events is not null)
+                await events.DemandChangedAsync(saved.Id, saved.WeekStart, saved.DemandKind, cancellationToken);
+            return Ok(saved);
         }
         catch (DemandValidationException exception)
         {
@@ -98,12 +102,15 @@ public sealed class AdminDemandController(
             }
 
             await using var stream = file.OpenReadStream();
-            return Ok(await demand.ImportExcelAsync(
+            var saved = await demand.ImportExcelAsync(
                 name,
                 parsedWeekStart,
                 selectedDemandKind,
                 stream,
-                cancellationToken));
+                cancellationToken);
+            if (events is not null)
+                await events.DemandChangedAsync(saved.Id, saved.WeekStart, saved.DemandKind, cancellationToken);
+            return Ok(saved);
         }
         catch (DemandValidationException exception)
         {
@@ -131,7 +138,10 @@ public sealed class AdminDemandController(
 
         try
         {
-            return Ok(await demand.UpdateAsync(planId, request, cancellationToken));
+            var saved = await demand.UpdateAsync(planId, request, cancellationToken);
+            if (events is not null)
+                await events.DemandChangedAsync(saved.Id, saved.WeekStart, saved.DemandKind, cancellationToken);
+            return Ok(saved);
         }
         catch (DemandValidationException exception)
         {
@@ -147,7 +157,10 @@ public sealed class AdminDemandController(
     {
         try
         {
+            var deleted = await demand.GetPlanAsync(planId, cancellationToken);
             await demand.DeleteAsync(planId, cancellationToken);
+            if (events is not null && deleted is not null)
+                await events.DemandChangedAsync(deleted.Id, deleted.WeekStart, deleted.DemandKind, cancellationToken);
             return NoContent();
         }
         catch (DemandValidationException exception)
