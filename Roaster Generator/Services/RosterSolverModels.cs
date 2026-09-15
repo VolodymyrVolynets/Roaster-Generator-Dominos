@@ -26,6 +26,10 @@ public sealed record RosterSolverShift(Guid EmployeeId, DateOnly Date, int Start
     public int DurationHours => FinishHour - StartHour;
 }
 
+public sealed record RosterEditValidationResult(
+    IReadOnlyList<string> Errors,
+    IReadOnlyList<string> Warnings);
+
 public sealed record RosterSolverProgress(string Stage, int Progress, string Message);
 
 public sealed class RosterSolverOptions

@@ -428,11 +428,24 @@ function rosterDraftShifts(roster) {
   return roster.employees.flatMap((employee) => employee.shifts.map((shift) => draftShift(employee.employeeId, shift)))
 }
 
+function rosterShopHours(roster, date) {
+  const slots = (roster?.currentCoverage ?? roster?.coverage ?? [])
+    .filter((slot) => slot.date === date)
+    .map((slot) => absoluteShiftHour(slot.startTime, slot.startDayOffset))
+    .sort((left, right) => left - right)
+  return slots.length ? { openingHour: slots[0], closingHour: slots.at(-1) + 1 } : null
+}
+
 function RosterCellEditorDialog({ editor, setEditor, onApply, onRemove, onClose }) {
   const startInputRef = useRef(null)
   const finishDayOffset = Math.max(0, Math.floor(Number(editor.finishHour) / 24))
   const duration = Number(editor.finishHour) - Number(editor.startHour)
-  const durationIsValid = duration >= 3 && duration <= 10
+  const shiftIsStructurallyValid = duration > 0 && duration <= 24
+  const generationLengthWarning = shiftIsStructurallyValid && (duration < 3 || duration > 10)
+  const latestStartWarning = shiftIsStructurallyValid && Number(editor.startHour) > Number(editor.latestShiftStartHour ?? 20)
+  const shopHoursWarning = shiftIsStructurallyValid && editor.shopHours && (
+    Number(editor.startHour) < editor.shopHours.openingHour || Number(editor.finishHour) > editor.shopHours.closingHour
+  )
 
   useEffect(() => {
     startInputRef.current?.focus()
@@ -444,7 +457,9 @@ function RosterCellEditorDialog({ editor, setEditor, onApply, onRemove, onClose 
   }, [setEditor])
 
   function updateClock(field, value, dayOffset) {
-    setEditor((current) => ({ ...current, [field]: Number(dayOffset) * 24 + clockHour(value) }))
+    const hour = clockHour(value)
+    const normalizedOffset = field === 'startHour' ? (hour < 6 ? 1 : 0) : Number(dayOffset)
+    setEditor((current) => ({ ...current, [field]: normalizedOffset * 24 + hour }))
   }
 
   function updateDayOffset(field, value) {
@@ -473,7 +488,7 @@ function RosterCellEditorDialog({ editor, setEditor, onApply, onRemove, onClose 
                 value={hourInputValue(editor.startHour)}
                 onChange={(event) => updateClock('startHour', event.target.value, 0)}
               >
-                {hourOptions.map((time) => <option key={time} value={time}>{time}</option>)}
+                {hourOptions.map((time) => <option key={time} value={time}>{time}{clockHour(time) < 6 ? ' (+1 day)' : ''}</option>)}
               </select>
             </label>
             <label>
@@ -493,14 +508,25 @@ function RosterCellEditorDialog({ editor, setEditor, onApply, onRemove, onClose 
               </select>
             </label>
           </div>
-          <p className={`roster-cell-dialog-duration ${durationIsValid ? 'valid' : 'invalid'}`} role="status">
-            {durationIsValid
-              ? `${duration} hour shift`
-              : 'Shift duration must be between 3 and 10 hours, and finish must be after start.'}
+          <p className={`roster-cell-dialog-duration ${shiftIsStructurallyValid ? generationLengthWarning ? 'warning' : 'valid' : 'invalid'}`} role="status">
+            {shiftIsStructurallyValid
+              ? `${duration} hour shift${generationLengthWarning ? ' — outside the automatic 3–10-hour range' : ''}`
+              : 'Finish must be after start and a manual shift cannot exceed 24 hours.'}
           </p>
+          {(generationLengthWarning || latestStartWarning || shopHoursWarning) && (
+            <div className="roster-cell-dialog-warnings" role="alert">
+              <strong>Manual override warning</strong>
+              <ul>
+                {generationLengthWarning && <li>Automatic roster generation only creates shifts lasting 3–10 hours.</li>}
+                {latestStartWarning && <li>This starts after the generator’s {String(editor.latestShiftStartHour ?? 20).padStart(2, '0')}:00 latest-start rule.</li>}
+                {shopHoursWarning && <li>This shift extends outside the configured shop hours for this day.</li>}
+              </ul>
+              <small>You can still apply and save this administrator override. Automatic generation rules are unchanged.</small>
+            </div>
+          )}
           <p className="roster-footnote">Changes are staged until you press Save roster changes.</p>
           <div className="roster-cell-dialog-actions">
-            <button type="submit" disabled={!durationIsValid}>{editor.hasShift ? 'Apply times' : 'Add shift'}</button>
+            <button type="submit" disabled={!shiftIsStructurallyValid}>{editor.hasShift ? 'Apply times' : 'Add shift'}</button>
             {editor.hasShift && <button type="button" className="danger-button" onClick={onRemove}>Remove shift</button>}
             <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
           </div>
@@ -812,6 +838,8 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       startHour: existingShift?.startHour ?? 12,
       finishHour: existingShift?.finishHour ?? 18,
       hasShift: Boolean(existingShift),
+      shopHours: rosterShopHours(roster, date),
+      latestShiftStartHour: roster?.settings?.latestShiftStartHour ?? 20,
     })
     setEditStatus({ status: 'idle', message: '' })
   }
@@ -959,7 +987,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
             <span className="eyebrow">Administrator editing</span>
             <h3>Edit shifts directly in the roster</h3>
           </div>
-          <p className="demand-help">Click any day cell below to add, change, or remove that employee’s shift. Changes are checked against availability, rest, driver support, and shift-length rules when saved.</p>
+          <p className="demand-help">Click any day cell below to add, change, or remove that employee’s shift. Manual shifts may be shorter than 3 hours, longer than 10 hours, or outside shop hours; warnings are shown and saved. Availability during open hours, minimum rest, employee eligibility, and driver support remain required.</p>
           <div className="roster-generation-actions">
             <button type="submit" disabled={editStatus.status === 'saving'}>{editStatus.status === 'saving' ? 'Validating and saving…' : 'Save roster changes'}</button>
             <button type="button" className="secondary-button" onClick={toggleEditing}>Discard changes</button>
@@ -996,7 +1024,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
           <Metric label="Solver time" value={`${formatNumber(roster.solveSeconds)}s`} />
         </div>
         <p className="message info-message">
-          {roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.solverStatus === 'manual' ? 'Manually updated by an administrator; all hard constraints were revalidated.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
+          {roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.solverStatus === 'manual' ? 'Manually updated by an administrator; safety constraints were revalidated and any generation-rule overrides are listed in the notes.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
           {' '}Status: {formatStage(roster.solverStatus)}.
         </p>
         {!!roster.warnings?.length && <DiagnosticList entries={roster.warnings} title="Roster notes" />}

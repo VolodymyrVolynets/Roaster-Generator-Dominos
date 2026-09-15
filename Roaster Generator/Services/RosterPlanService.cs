@@ -113,12 +113,14 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
                 shift.StartHour,
                 shift.FinishHour))
             .ToArray();
-        var validation = RosterSolver.Validate(loaded.Input, shifts);
-        var demandWarnings = validation
-            .Where(IsDemandMismatch)
+        var validation = RosterSolver.ValidateManualEdit(loaded.Input, shifts);
+        var demandWarnings = validation.Errors
+            .Where(IsDemandMismatch);
+        var editWarnings = validation.Warnings
+            .Concat(demandWarnings)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var blockingValidation = validation
+        var blockingValidation = validation.Errors
             .Where(error => !IsDemandMismatch(error))
             .ToArray();
         if (blockingValidation.Length > 0)
@@ -129,7 +131,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
             Status = "manual",
             Message = "Roster manually updated by an administrator.",
             Shifts = shifts,
-            Diagnostics = ["Roster manually updated by an administrator.", .. demandWarnings],
+            Diagnostics = ["Roster manually updated by an administrator.", .. editWarnings],
             TotalDemandHours = loaded.Input.Demand.Sum(demand => demand.RequiredDrivers),
             TotalScheduledHours = shifts.Sum(shift => shift.DurationHours)
         };
@@ -401,7 +403,11 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         };
     }
 
-    private static int Duration(TimeOnly start, TimeOnly finish) => (finish.Hour - start.Hour + 24) % 24;
+    private static int Duration(TimeOnly start, TimeOnly finish)
+    {
+        var duration = finish.Hour - start.Hour;
+        return duration <= 0 ? duration + 24 : duration;
+    }
 
     private static bool IsDemandMismatch(string diagnostic) =>
         diagnostic.StartsWith("Demand mismatch:", StringComparison.Ordinal);

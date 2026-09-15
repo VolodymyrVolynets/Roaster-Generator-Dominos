@@ -93,8 +93,8 @@ public sealed class RosterShiftUpdateRequestValidator : AbstractValidator<Roster
             .WithMessage("A valid shift date is required.");
 
         RuleFor(shift => shift.StartHour)
-            .InclusiveBetween(0, 47)
-            .WithMessage("Shift start must be between hour 0 and hour 47.");
+            .InclusiveBetween(6, 29)
+            .WithMessage("Shift start must be between 06:00 and 05:00 on the following day.");
 
         RuleFor(shift => shift.FinishHour)
             .InclusiveBetween(1, 48)
@@ -103,7 +103,7 @@ public sealed class RosterShiftUpdateRequestValidator : AbstractValidator<Roster
         RuleFor(shift => shift)
             .Custom((shift, context) =>
             {
-                if (shift.StartHour is < 0 or > 47 || shift.FinishHour is < 1 or > 48)
+                if (shift.StartHour is < 6 or > 29 || shift.FinishHour is < 1 or > 48)
                 {
                     return;
                 }
@@ -118,11 +118,11 @@ public sealed class RosterShiftUpdateRequestValidator : AbstractValidator<Roster
 
                 var duration = shift.FinishHour - shift.StartHour;
 
-                if (duration is < 3 or > 10)
+                if (duration > 24)
                 {
                     context.AddFailure(
                         nameof(shift.FinishHour),
-                        "Shifts must last between 3 and 10 hours.");
+                        "Manual shifts cannot last more than 24 hours.");
                 }
             });
     }

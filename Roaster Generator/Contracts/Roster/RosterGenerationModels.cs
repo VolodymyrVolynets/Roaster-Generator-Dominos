@@ -104,10 +104,10 @@ public sealed class RosterShiftUpdateRequest
 
     public DateOnly Date { get; init; }
 
-    /// <summary>Absolute business-day hour, 0–47. Starts after midnight are rejected by validation.</summary>
+    /// <summary>Absolute business-day hour, 6–29. Hours 24–29 are midnight–05:00 on the following date.</summary>
     public int StartHour { get; init; }
 
-    /// <summary>Absolute business-day hour, 0–48. Values above 24 represent an overnight finish.</summary>
+    /// <summary>Absolute business-day hour, 1–48. Values above 24 represent an overnight finish.</summary>
     public int FinishHour { get; init; }
 }
 

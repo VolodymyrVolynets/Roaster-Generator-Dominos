@@ -256,10 +256,26 @@ public sealed class RosterSolver
     }
 
     /// <summary>Checks actual shifts independently of the optimization model before persistence.</summary>
-    public static IReadOnlyList<string> Validate(RosterSolverInput input, IReadOnlyList<RosterSolverShift> shifts)
+    public static IReadOnlyList<string> Validate(RosterSolverInput input, IReadOnlyList<RosterSolverShift> shifts) =>
+        ValidateCore(input, shifts, manualEdit: false).Errors;
+
+    /// <summary>
+    /// Checks administrator edits while preserving structural, availability, rest and support rules.
+    /// Generator-only limits and hours outside the configured shop day are returned as warnings.
+    /// </summary>
+    public static RosterEditValidationResult ValidateManualEdit(
+        RosterSolverInput input,
+        IReadOnlyList<RosterSolverShift> shifts) =>
+        ValidateCore(input, shifts, manualEdit: true);
+
+    private static RosterEditValidationResult ValidateCore(
+        RosterSolverInput input,
+        IReadOnlyList<RosterSolverShift> shifts,
+        bool manualEdit)
     {
         var errors = RosterSolverInputValidator.ValidateInput(input).ToList();
-        if (errors.Count > 0) return errors;
+        var warnings = new List<string>();
+        if (errors.Count > 0) return new RosterEditValidationResult(errors, warnings);
         var employees = input.Employees.Where(employee => IsEligible(employee, input.RosterKind)).ToDictionary(employee => employee.Id);
         var availability = input.Availability.GroupBy(shift => (shift.EmployeeId, shift.Date))
             .ToDictionary(group => group.Key, group => group.ToArray());
@@ -277,16 +293,54 @@ public sealed class RosterSolver
                 continue;
             }
             if (shift.Date < input.WeekStart || shift.Date >= input.WeekStart.AddDays(7) ||
-                shift.StartHour is < 0 or > 47 || shift.FinishHour > 48 || shift.DurationHours is < 3 or > 10)
+                shift.StartHour is < 6 or > 29 || shift.FinishHour is < 7 or > 48 ||
+                shift.FinishHour <= shift.StartHour || (manualEdit && shift.DurationHours > 24))
             {
-                errors.Add($"{shift.Date:dddd}: {Name(employee)} has an invalid date or shift length; shifts must last 3–10 hours.");
+                errors.Add(manualEdit
+                    ? $"{shift.Date:dddd}: {Name(employee)} has an invalid date or time. Manual shifts must start between 06:00 and 05:00 (+1 day), finish after they start, and last no more than 24 hours."
+                    : $"{shift.Date:dddd}: {Name(employee)} has an invalid date or shift length; generated shifts must use valid business-day hours and last 3–10 hours.");
                 continue;
             }
+            if (shift.DurationHours is < 3 or > 10)
+            {
+                var message = $"Manual shift-length override: {shift.Date:dddd}: {Name(employee)} has a {shift.DurationHours}-hour shift; automatic generation only creates shifts lasting 3–10 hours.";
+                if (manualEdit) warnings.Add(message);
+                else errors.Add(message);
+            }
             if (shift.StartHour > input.Options.LatestShiftStartHour)
-                errors.Add($"{shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}. Every generated shift must start by {input.Options.LatestShiftStartHour:00}:00; after-midnight starts are also forbidden. Overnight finishes are allowed.");
-            if (!availability.TryGetValue((employee.Id, shift.Date), out var windows) ||
-                !windows.Any(window => { var (start, finish) = AvailabilityWindow(window); return start <= shift.StartHour && finish >= shift.FinishHour; }))
-                errors.Add($"{shift.Date:dddd}: {Name(employee)} is scheduled outside their availability.");
+            {
+                if (manualEdit)
+                    warnings.Add($"Manual start-time override: {shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}; automatic generation requires starts by {input.Options.LatestShiftStartHour:00}:00 and never starts after midnight.");
+                else
+                    errors.Add($"{shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}. Every generated shift must start by {input.Options.LatestShiftStartHour:00}:00; after-midnight starts are also forbidden. Overnight finishes are allowed.");
+            }
+
+            availability.TryGetValue((employee.Id, shift.Date), out var windows);
+            windows ??= [];
+            if (!windows.Any(window => { var (start, finish) = AvailabilityWindow(window); return start <= shift.StartHour && finish >= shift.FinishHour; }))
+            {
+                var unavailableHours = Enumerable.Range(shift.StartHour, shift.DurationHours)
+                    .Where(hour => !windows.Any(window =>
+                    {
+                        var (start, finish) = AvailabilityWindow(window);
+                        return start <= hour && finish > hour;
+                    }))
+                    .ToArray();
+                var unavailableOpenHours = unavailableHours
+                    .Where(hour => expected.ContainsKey(AbsoluteHour(input.WeekStart, shift.Date, hour)))
+                    .ToArray();
+                if (manualEdit && unavailableOpenHours.Length == 0)
+                {
+                    if (unavailableHours.Length > 0)
+                        warnings.Add($"Manual shop-hours override: {shift.Date:dddd}: {Name(employee)} is scheduled beyond their entered availability only while the shop is closed.");
+                }
+                else
+                    errors.Add($"{shift.Date:dddd}: {Name(employee)} is scheduled outside their availability during configured shop hours.");
+            }
+
+            if (manualEdit && Enumerable.Range(shift.StartHour, shift.DurationHours)
+                    .Any(hour => !expected.ContainsKey(AbsoluteHour(input.WeekStart, shift.Date, hour))))
+                warnings.Add($"Manual shop-hours override: {shift.Date:dddd}: {Name(employee)} is scheduled outside the configured shop opening or closing time.");
 
             for (var hour = shift.StartHour; hour < shift.FinishHour; hour++)
             {
@@ -327,7 +381,9 @@ public sealed class RosterSolver
                         GapHours(ordered[i].Start, ordered[i].Finish, ordered[j].Start, ordered[j].Finish) < input.Options.MinimumRestHours)
                         errors.Add($"{Name(employees[id])}: shifts ending {ordered[i].Finish:dddd HH:mm} and starting {ordered[j].Start:dddd HH:mm} overlap or have less than {input.Options.MinimumRestHours} hours of rest.");
         }
-        return errors;
+        return new RosterEditValidationResult(
+            errors.Distinct(StringComparer.Ordinal).ToArray(),
+            warnings.Distinct(StringComparer.Ordinal).ToArray());
     }
 
     private static ModelState BuildModel(RosterSolverInput input, Employee[] employees, List<Candidate> candidates,
