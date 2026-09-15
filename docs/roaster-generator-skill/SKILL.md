@@ -20,7 +20,7 @@ First read the repository `AGENTS.md` and `docs/PROJECT_CONTEXT.md`. Treat those
 
 ## Current UX boundary
 
-Drivers see availability, holidays, personal rosters, and their automatically calculated approximate hours. Admin management views may edit driver type, but manual target hours are no longer exposed or used.
+Drivers see availability, a colour-coded weekly outside-demand heatmap, holidays, personal rosters, and their automatically calculated approximate hours. The heatmap compares required drivers with aggregate saved eligible-driver availability and does not expose other employees' details. Admin management views may edit driver type, but manual target hours are no longer exposed or used.
 
 ## Safe operational behavior
 

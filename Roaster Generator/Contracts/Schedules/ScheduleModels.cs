@@ -35,6 +35,8 @@ public sealed class WeeklyScheduleResponse
 
     public bool CanEdit { get; set; } = true;
 
+    public AvailabilityHeatmapResponse? Heatmap { get; init; }
+
     public IReadOnlyList<ScheduleDayResponse> Days { get; init; } = [];
 }
 
@@ -44,7 +46,41 @@ public sealed class WeeklyAvailabilityResponse
 
     public DateOnly WeekEnd { get; init; }
 
+    public AvailabilityHeatmapResponse Heatmap { get; init; } = new();
+
     public IReadOnlyList<WeeklyScheduleResponse> Employees { get; init; } = [];
+}
+
+public sealed class AvailabilityHeatmapResponse
+{
+    public bool DemandPlanExists { get; init; }
+
+    public string Message { get; init; } = string.Empty;
+
+    public IReadOnlyList<AvailabilityHeatmapSlotResponse> Slots { get; init; } = [];
+}
+
+public sealed class AvailabilityHeatmapSlotResponse
+{
+    public DateOnly Date { get; init; }
+
+    public string DayOfWeek { get; init; } = string.Empty;
+
+    public int Hour { get; init; }
+
+    public string StartTime { get; init; } = string.Empty;
+
+    public int StartDayOffset { get; init; }
+
+    public int RequiredDrivers { get; init; }
+
+    public int AvailableDrivers { get; init; }
+
+    public int ShortageDrivers { get; init; }
+
+    public double ScarcityScore { get; init; }
+
+    public string Level { get; init; } = string.Empty;
 }
 
 public sealed class ScheduleDayResponse
