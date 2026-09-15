@@ -925,7 +925,7 @@ function DemandManager({
     const missing = value.isOpen && value[field] == null
     return <td key={`${row.hour}-${column.position}-${field}`} className={missing ? 'demand-missing-value' : undefined}>
       <input type="number" min="0" max={field === 'demand' ? 100000000 : 1000000}
-        step={field === 'demand' ? '1' : '0.01'} value={value[field] ?? ''}
+        step={isInsideDemand || field === 'demand' ? '1' : '0.01'} value={value[field] ?? ''}
         onChange={(event) => updateDemandValue(row.hour, column.position, field, event.target.value)}
         readOnly={!canEdit || value.isOpen === false} aria-readonly={!canEdit || value.isOpen === false}
         placeholder={value.isOpen === false ? 'Closed' : '—'}
