@@ -745,6 +745,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
   const [weekStart, setWeekStart] = useState(getNextMondayValue())
   const [pasteContent, setPasteContent] = useState('')
   const [status, setStatus] = useState({ status: 'idle', message: '' })
+  const receivedPlan = (payload) => ({ ...payload, labourEstimateCurrent: true })
 
   useEffect(() => {
     fetchJson('/api/admin/demand')
@@ -777,7 +778,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
 
     fetchJson(`/api/admin/demand/${selectedPlanId}`)
       .then((payload) => {
-        setPlan(payload)
+        setPlan(receivedPlan(payload))
         setDemandKind(payload.demandKind || 'outside')
         setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
         setName(payload.name)
@@ -791,6 +792,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
     const numericValue = rawValue === '' ? null : Number(rawValue)
     setPlan((current) => ({
       ...current,
+      labourEstimateCurrent: false,
       rows: current.rows.map((row) => {
         if (row.hour !== hour) {
           return row
@@ -829,7 +831,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
   function updatePlanningSetting(field, rawValue) {
     const value = rawValue === '' ? '' : Number(rawValue)
     setPlan((current) => {
-      const updated = { ...current, [field]: value }
+      const updated = { ...current, [field]: value, labourEstimateCurrent: false }
       return field === 'deliveriesPerDriverHour'
         ? recalculateDemandPlan(updated, ['demand'])
         : field === 'pizzasPerInsideHour'
@@ -847,7 +849,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, weekStart, demandKind, content: pasteContent }),
       })
-      setPlan(payload)
+      setPlan(receivedPlan(payload))
       setDemandKind(payload.demandKind || demandKind)
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
@@ -882,7 +884,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
         method: 'POST',
         body: formData,
       })
-      setPlan(payload)
+      setPlan(receivedPlan(payload))
       setDemandKind(payload.demandKind || demandKind)
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
@@ -933,7 +935,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
           })),
         }),
       })
-      setPlan(payload)
+      setPlan(receivedPlan(payload))
       setStatus({ status: 'success', message: recalculateDemand
         ? `${demandKind === 'inside' ? 'Inside' : 'Outside'} demand recalculated and saved.`
         : 'Demand changes saved.' })
@@ -1088,7 +1090,9 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                 Productivity changes recalculate the demand preview immediately;
                 save to apply it to generation. Raising productivity needs fewer staff, lowering it needs more.
                 Recalculation replaces manual staff counts; save productivity changes before applying staffing overrides.
-                Planned labour uses required staff-hours and the current average pay rate of eligible employees.
+                Planned labour {isInsideDemand
+                  ? 'uses required staff-hours and the current average pay rate of eligible inside employees.'
+                  : 'weights each driver’s pay rate by their automatically calculated approximate hours for this week.'}
                 “Actual demand labour” below means the cost of the currently entered {staffLabel} values. Saved-roster labour
                 remains separate and is calculated from the employees actually assigned.
               </p>
@@ -1102,6 +1106,15 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
               </label>)}
             </div>
           </div>
+
+          {!isInsideDemand && demandSummary.usesApproximateHours && !demandSummary.approximateHoursCurrent && (
+            <p className="message info-message" role="status">
+              Demand has unsaved changes. The displayed pay mix still uses the last saved automatic-hours calculation; save demand to refresh it.
+            </p>
+          )}
+          {!isInsideDemand && demandSummary.labourEstimateMessage && !demandSummary.isComplete && (
+            <p className="message info-message" role="status">{demandSummary.labourEstimateMessage}</p>
+          )}
 
           <div className="demand-overview-groups">
             <section className="demand-overview-group demand-overview-volume">
@@ -1144,10 +1157,33 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
           </div>
 
           <div className="demand-assumptions" aria-label="Labour calculation assumptions">
-                <span><strong>{formatMetric(demandSummary.productivity)}</strong> {productivityLabel.toLowerCase()}</span>
-            <span><strong>{formatMoney(demandSummary.averageHourlyRate)}</strong> average hourly pay</span>
-                <span><strong>{demandSummary.eligibleDriverCount}</strong> eligible {isInsideDemand ? 'employees' : 'drivers'}</span>
+            <span><strong>{formatMetric(demandSummary.productivity)}</strong> {productivityLabel.toLowerCase()}</span>
+            <span><strong>{formatMoney(demandSummary.averageHourlyRate)}</strong> {demandSummary.usesApproximateHours ? 'approximate-hours weighted pay' : 'average hourly pay'}</span>
+            <span><strong>{demandSummary.eligibleDriverCount}</strong> eligible {isInsideDemand ? 'employees' : 'drivers'}</span>
+            {demandSummary.usesApproximateHours && <span><strong>{formatMetric(demandSummary.approximateHours)}</strong> automatically allocated hours</span>}
           </div>
+
+          {!isInsideDemand && demandSummary.approximateDrivers.length > 0 && (
+            <details className="demand-metric-guide">
+              <summary>Approximate-hours pay mix</summary>
+              <div>
+                <p>The estimate weights each current hourly rate by the automatic hours calculated from saved demand, useful availability and scarcity. These are planning estimates, not assigned shifts.</p>
+                {demandSummary.unallocatedDemandHours > 0.001 && <p><strong>{formatMetric(demandSummary.unallocatedDemandHours)} demand-hours could not be allocated</strong> from current useful availability. Labour still prices all entered demand using the available weighted pay mix.</p>}
+                <div className="demand-labour-table-wrapper">
+                  <table className="demand-labour-table">
+                    <thead><tr><th>Driver</th><th>Approximate hours</th><th>Useful capacity</th><th>Pay rate</th><th>Approximate base cost</th></tr></thead>
+                    <tbody>{demandSummary.approximateDrivers.map((driver) => <tr key={driver.employeeId}>
+                      <th>{driver.employeeName}</th>
+                      <td>{formatMetric(driver.approximateHours)}h</td>
+                      <td>{formatMetric(driver.capacityHours)}h</td>
+                      <td>{formatMoney(driver.hourlyRate)}</td>
+                      <td>{formatMoney(driver.approximateBaseCost)}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+          )}
 
           <details className="demand-metric-guide">
             <summary>How these numbers are calculated</summary>
@@ -1155,7 +1191,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
               <p><strong>Ideal drivers</strong> = deliveries ÷ configured deliveries per driver-hour. This can be a decimal.</p>
               <p><strong>Whole-driver need</strong> rounds ideal drivers up because a fraction of a person cannot be rostered.</p>
               <p><strong>Entered demand</strong> is the Drivers value saved in the demand table. It may include minimum shop cover or manual changes.</p>
-              <p><strong>Entered-demand labour</strong> uses entered demand and average driver pay. It is not the named-employee cost from a saved roster.</p>
+              <p><strong>Entered-demand labour</strong> uses entered demand and {demandSummary.usesApproximateHours ? 'the approximate-hours weighted driver pay rate' : 'average employee pay'}. It is not the named-employee cost from a saved roster.</p>
               <p>Sunday premium is applied to calendar-Sunday hours. A dash means required data is unavailable.</p>
             </div>
           </details>
@@ -1299,7 +1335,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
                           <small className={Number(row.labourCostDifference) > 0 ? 'metric-warning' : undefined}>
                             {formatSignedMoney(row.labourCostDifference)} difference
                           </small>
-                          <small>{formatMoney(demandSummary.averageHourlyRate)} pay{row.isSundayPremium ? ' × 1.25 Sunday' : ''}</small>
+                          <small>{formatMoney(demandSummary.averageHourlyRate)} {demandSummary.usesApproximateHours ? 'weighted ' : ''}pay{row.isSundayPremium ? ' × 1.25 Sunday' : ''}</small>
                         </td>
                         <td>{formatMoney(row.labourCostPerDelivery)}</td>
                       </tr>

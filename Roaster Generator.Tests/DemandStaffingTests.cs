@@ -397,10 +397,19 @@ public sealed class DemandStaffingTests
         });
     }
 
-    private static AppDbContext NewDb() => new(new DbContextOptionsBuilder<AppDbContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    private static AppDbContext NewDb()
+    {
+        var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        db.Database.EnsureCreated();
+        return db;
+    }
 
-    private static DemandService Service(AppDbContext db) => new(db, Options.Create(new ShopHoursOptions()));
+    private static DemandService Service(AppDbContext db)
+    {
+        var options = Options.Create(new ShopHoursOptions());
+        return new DemandService(db, options, new RosterInputService(db, new RosterSettingsService(db), options));
+    }
 
     private static DemandValue PreviousValue() => new() { Deliveries = 8m, Pizzas = 40m, Demand = 4, InsideDemand = 3 };
 

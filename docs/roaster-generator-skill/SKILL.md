@@ -22,6 +22,8 @@ First read the repository `AGENTS.md` and `docs/PROJECT_CONTEXT.md`. Treat those
 
 Drivers see availability, a colour-coded weekly outside-demand heatmap, holidays, personal rosters, and their automatically calculated approximate hours. The heatmap compares required drivers with aggregate saved eligible-driver availability and does not expose other employees' details. Admin management views may edit driver type, but manual target hours are no longer exposed or used.
 
+Outside-demand labour uses the approximate-hours-weighted pay mix returned by the API. Preserve full weighted-rate precision until final monetary totals are rounded, keep Sunday premium tied to calendar Sunday, and do not reuse driver allocations for the independent inside-demand scenario.
+
 ## Safe operational behavior
 
 - Preserve PostgreSQL named volumes and data-protection keys.

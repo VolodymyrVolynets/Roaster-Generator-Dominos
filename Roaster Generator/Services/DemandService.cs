@@ -14,7 +14,8 @@ public sealed class DemandValidationException(string message) : Exception(messag
 
 public sealed class DemandService(
     AppDbContext db,
-    IOptions<ShopHoursOptions> shopHoursOptions)
+    IOptions<ShopHoursOptions> shopHoursOptions,
+    RosterInputService rosterInputs)
 {
     private readonly ShopHoursOptions shopHours = shopHoursOptions.Value;
     private static readonly string[] DayLabels =
@@ -54,7 +55,7 @@ public sealed class DemandService(
         CancellationToken cancellationToken)
     {
         var plan = await LoadPlanAsync(planId, cancellationToken);
-        return plan is null ? null : ToResponse(plan);
+        return plan is null ? null : await ToResponseAsync(plan, cancellationToken);
     }
 
     public async Task<DemandPlanResponse> ImportTextAsync(
@@ -197,7 +198,7 @@ public sealed class DemandService(
         }
         plan.UpdatedAtUtc = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        return ToResponse(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan);
+        return await ToResponseAsync(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan, cancellationToken);
     }
 
     public async Task DeleteAsync(Guid planId, CancellationToken cancellationToken)
@@ -235,12 +236,13 @@ public sealed class DemandService(
             var plan = CreatePlan(name, weekStart, demandKind, parsed);
             db.DemandPlans.Add(plan);
             await db.SaveChangesAsync(cancellationToken);
-            return ToResponse(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan);
+            return await ToResponseAsync(await LoadPlanAsync(plan.Id, cancellationToken) ?? plan, cancellationToken);
         }
 
         await UpdatePlanContentsAsync(existingPlan, name.Trim(), weekStart, demandKind, parsed, cancellationToken);
         db.ChangeTracker.Clear();
-        return ToResponse(await LoadPlanAsync(existingPlan.Id, cancellationToken) ?? existingPlan);
+        return await ToResponseAsync(await LoadPlanAsync(existingPlan.Id, cancellationToken) ?? existingPlan,
+            cancellationToken);
     }
 
     private async Task UpdatePlanContentsAsync(
@@ -492,6 +494,67 @@ public sealed class DemandService(
                 .ToList()
         };
     }
+
+    private async Task<DemandPlanResponse> ToResponseAsync(DemandPlan plan, CancellationToken cancellationToken)
+    {
+        var response = ToResponse(plan);
+        if (plan.DemandKind != DemandKinds.Outside)
+        {
+            return response;
+        }
+
+        try
+        {
+            var loaded = await rosterInputs.LoadAsync(plan.WeekStart, cancellationToken);
+            var drivers = loaded.Input.Employees.Select(employee =>
+            {
+                var allocation = loaded.Input.ExpectedHoursByEmployee?.GetValueOrDefault(employee.Id);
+                var approximateHours = allocation?.ExpectedHours ?? 0;
+                return new DemandLabourDriverResponse
+                {
+                    EmployeeId = employee.Id,
+                    EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
+                    ApproximateHours = approximateHours,
+                    CapacityHours = allocation?.CapacityHours ?? 0,
+                    HourlyRate = employee.HourlyRate,
+                    ApproximateBaseCost = Money((decimal)approximateHours * employee.HourlyRate)
+                };
+            }).OrderBy(item => item.EmployeeName).ThenBy(item => item.EmployeeId).ToList();
+            var totalApproximateHours = drivers.Sum(item => item.ApproximateHours);
+            var weightedCost = drivers.Sum(item => (decimal)item.ApproximateHours * item.HourlyRate);
+            var totalDemandHours = loaded.Input.Demand.Sum(item => (double)item.RequiredDrivers);
+            response.LabourEstimate = new DemandLabourEstimateResponse
+            {
+                IsAvailable = totalDemandHours == 0 || totalApproximateHours > 0,
+                Message = totalDemandHours == 0
+                    ? "Demand is zero, so estimated driver labour is €0."
+                    : totalApproximateHours > 0
+                        ? "Pay is weighted by each driver's automatically calculated approximate hours for this week."
+                        : "No useful driver availability overlaps this week's demand, so weighted labour cannot be estimated.",
+                TotalDemandHours = totalDemandHours,
+                TotalApproximateHours = totalApproximateHours,
+                UnallocatedDemandHours = Math.Max(0, totalDemandHours - totalApproximateHours),
+                WeightedAverageHourlyRate = totalApproximateHours > 0
+                    ? weightedCost / (decimal)totalApproximateHours
+                    : totalDemandHours == 0 ? 0 : null,
+                ApproximateBaseLabourCost = totalApproximateHours > 0
+                    ? Money(weightedCost)
+                    : totalDemandHours == 0 ? 0 : null,
+                Drivers = drivers
+            };
+        }
+        catch (RosterInputException exception)
+        {
+            response.LabourEstimate = new DemandLabourEstimateResponse
+            {
+                Message = exception.Message
+            };
+        }
+
+        return response;
+    }
+
+    private static decimal Money(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
     internal static ParsedDemand ParseText(string content, string demandKind = DemandKinds.Outside)
     {

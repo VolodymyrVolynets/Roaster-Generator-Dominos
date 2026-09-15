@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Contracts.Demand;
@@ -144,11 +145,48 @@ public sealed class DemandPlanResponse
 
     public decimal WeeklyTargetSales { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DemandLabourEstimateResponse? LabourEstimate { get; set; }
+
     public List<DemandColumnResponse> Columns { get; init; } = [];
 
     public List<DemandRowResponse> Rows { get; init; } = [];
 
     public List<DemandStaffingDayResponse> DailyStaffing { get; init; } = [];
+}
+
+public sealed class DemandLabourEstimateResponse
+{
+    public bool IsAvailable { get; init; }
+
+    public string Message { get; init; } = string.Empty;
+
+    public double TotalDemandHours { get; init; }
+
+    public double TotalApproximateHours { get; init; }
+
+    public double UnallocatedDemandHours { get; init; }
+
+    public decimal? WeightedAverageHourlyRate { get; init; }
+
+    public decimal? ApproximateBaseLabourCost { get; init; }
+
+    public IReadOnlyList<DemandLabourDriverResponse> Drivers { get; init; } = [];
+}
+
+public sealed class DemandLabourDriverResponse
+{
+    public Guid EmployeeId { get; init; }
+
+    public string EmployeeName { get; init; } = string.Empty;
+
+    public double ApproximateHours { get; init; }
+
+    public double CapacityHours { get; init; }
+
+    public decimal HourlyRate { get; init; }
+
+    public decimal ApproximateBaseCost { get; init; }
 }
 
 public sealed class DemandColumnResponse

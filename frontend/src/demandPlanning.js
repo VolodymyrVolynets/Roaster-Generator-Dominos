@@ -66,10 +66,14 @@ export function calculateDemandLabour(plan, employees = []) {
     return employee.isActive && eligibleRole &&
       Number.isFinite(Number(employee.hourlyRate)) && Number(employee.hourlyRate) >= 0
   })
-  const totalWeight = eligibleDrivers.length
-  const averageHourlyRate = totalWeight > 0
-    ? eligibleDrivers.reduce((sum, employee) => sum + Number(employee.hourlyRate), 0) / totalWeight
-    : null
+  const automaticEstimate = inside ? null : plan?.labourEstimate
+  const usesApproximateHours = automaticEstimate != null
+  const averageHourlyRate = usesApproximateHours
+    ? automaticEstimate.isAvailable && Number.isFinite(Number(automaticEstimate.weightedAverageHourlyRate))
+      ? Number(automaticEstimate.weightedAverageHourlyRate) : null
+    : eligibleDrivers.length > 0
+      ? eligibleDrivers.reduce((sum, employee) => sum + Number(employee.hourlyRate), 0) / eligibleDrivers.length
+      : null
   const workloadField = inside ? 'pizzas' : 'deliveries'
   const demandField = inside ? 'insideDemand' : 'demand'
 
@@ -192,8 +196,15 @@ export function calculateDemandLabour(plan, employees = []) {
   return {
     ...summary,
     days,
-    eligibleDriverCount: eligibleDrivers.length,
+    eligibleDriverCount: usesApproximateHours
+      ? (automaticEstimate.drivers || []).length : eligibleDrivers.length,
     averageHourlyRate: averageHourlyRate == null ? null : money(averageHourlyRate),
+    usesApproximateHours,
+    approximateHoursCurrent: plan?.labourEstimateCurrent !== false,
+    approximateHours: usesApproximateHours ? number(automaticEstimate.totalApproximateHours) : null,
+    unallocatedDemandHours: usesApproximateHours ? number(automaticEstimate.unallocatedDemandHours) : null,
+    labourEstimateMessage: usesApproximateHours ? automaticEstimate.message : null,
+    approximateDrivers: usesApproximateHours ? (automaticEstimate.drivers || []) : [],
     productivity: hasProductivity ? productivity : null,
     idealDriverHours,
     wholeDriverHours: days.every((day) => day.wholeDriverHours != null)

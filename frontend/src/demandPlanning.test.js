@@ -65,8 +65,19 @@ test('missing demand plans and closed hours show no driver hours', () => {
   assert.equal(summary.deliveries, 0)
 })
 
-test('planned labour uses demand and average active driver pay', () => {
+test('planned labour weights driver pay by automatic approximate hours', () => {
   const plan = {
+    labourEstimate: {
+      isAvailable: true,
+      weightedAverageHourlyRate: 17.5,
+      totalApproximateHours: 40,
+      unallocatedDemandHours: 0,
+      message: 'Automatic mix',
+      drivers: [
+        { employeeId: 'one', employeeName: 'One', approximateHours: 10, hourlyRate: 10 },
+        { employeeId: 'two', employeeName: 'Two', approximateHours: 30, hourlyRate: 20 },
+      ],
+    },
     columns: [
       { position: 0, label: 'Monday', targetSales: 100 },
       { position: 5, label: 'Saturday', targetSales: 100 },
@@ -86,24 +97,49 @@ test('planned labour uses demand and average active driver pay', () => {
     ],
   }
   const employees = [
-    { isActive: true, roles: ['Driver'], targetHours: 10, hourlyRate: 10 },
-    { isActive: true, roles: ['Driver'], targetHours: 30, hourlyRate: 20 },
-    { isActive: false, roles: ['Driver'], targetHours: 100, hourlyRate: 100 },
-    { isActive: true, roles: ['Driver', 'Manager'], targetHours: 100, hourlyRate: 100 },
+    { isActive: true, roles: ['Driver'], hourlyRate: 10 },
+    { isActive: true, roles: ['Driver'], hourlyRate: 20 },
+    { isActive: false, roles: ['Driver'], hourlyRate: 100 },
+    { isActive: true, roles: ['Driver', 'Manager'], hourlyRate: 100 },
   ]
 
   const labour = calculateDemandLabour(plan, employees)
 
   assert.equal(labour.eligibleDriverCount, 2)
-  assert.equal(labour.averageHourlyRate, 15)
+  assert.equal(labour.averageHourlyRate, 17.5)
+  assert.equal(labour.usesApproximateHours, true)
+  assert.equal(labour.approximateHours, 40)
+  assert.equal(labour.approximateHoursCurrent, true)
   assert.equal(labour.driverHours, 6)
-  assert.equal(labour.days[0].labourCost, 30)
+  assert.equal(labour.days[0].labourCost, 35)
   assert.equal(labour.days[1].sundayPremiumHours, 2)
-  assert.equal(labour.days[1].labourCost, 37.5)
+  assert.equal(labour.days[1].labourCost, 43.75)
   assert.equal(labour.days[2].sundayPremiumHours, 1)
-  assert.equal(labour.days[2].labourCost, 33.75)
-  assert.equal(labour.labourCost, 101.25)
-  assert.equal(labour.labourPercentage, 33.75)
+  assert.equal(labour.days[2].labourCost, 39.38)
+  assert.equal(labour.labourCost, 118.13)
+  assert.equal(labour.labourPercentage, 39.38)
+
+  const stale = calculateDemandLabour({ ...plan, labourEstimateCurrent: false }, employees)
+  assert.equal(stale.approximateHoursCurrent, false)
+})
+
+test('inside labour remains independent from a driver labour estimate', () => {
+  const labour = calculateDemandLabour({
+    demandKind: 'inside',
+    labourEstimate: {
+      isAvailable: true, weightedAverageHourlyRate: 99, totalApproximateHours: 50,
+      drivers: [{ employeeId: 'driver', approximateHours: 50, hourlyRate: 99 }],
+    },
+    columns: [{ position: 0, label: 'Monday', targetSales: 100 }],
+    rows: [{ hour: 12, values: [{ position: 0, isOpen: true, pizzas: 20, insideDemand: 1 }] }],
+  }, [
+    { isActive: true, roles: ['InStore'], hourlyRate: 12 },
+    { isActive: true, roles: ['Manager'], hourlyRate: 18 },
+  ])
+
+  assert.equal(labour.usesApproximateHours, false)
+  assert.equal(labour.averageHourlyRate, 15)
+  assert.equal(labour.labourCost, 15)
 })
 
 test('hourly labour analysis compares entered whole-driver demand with the fractional productivity ideal', () => {
@@ -186,4 +222,15 @@ test('planned labour is unavailable without eligible driver rates or complete de
   assert.equal(incomplete.labourCost, null)
   assert.equal(incomplete.idealComplete, false)
   assert.equal(incomplete.idealLabourCost, null)
+
+  const unavailableAutomatic = calculateDemandLabour({
+    ...plan,
+    labourEstimate: {
+      isAvailable: false, weightedAverageHourlyRate: null, drivers: [],
+      totalApproximateHours: 0, unallocatedDemandHours: 1, message: 'No useful availability',
+    },
+  }, [{ isActive: true, roles: ['Driver'], hourlyRate: 14.5 }])
+  assert.equal(unavailableAutomatic.usesApproximateHours, true)
+  assert.equal(unavailableAutomatic.averageHourlyRate, null)
+  assert.equal(unavailableAutomatic.labourCost, null)
 })
