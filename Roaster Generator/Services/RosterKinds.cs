@@ -7,16 +7,21 @@ public static class RosterKinds
 {
     public const string Drivers = "drivers";
     public const string Inside = "inside";
-    public const string DisabledMessage = "Only driver rosters are available. In-store and manager rosters are disabled.";
+    public const string InvalidMessage = "Roster type must be drivers or inside.";
+    public const string GenerationDisabledMessage = "Only driver rosters can be generated automatically. Inside rosters are created manually.";
 
-    // Legacy inside snapshots remain readable internally; application entry points
-    // accept only the currently enabled driver roster.
     public static bool IsValid(string? kind) => kind is Drivers or Inside;
-    public static bool IsEnabled(string? kind) => kind == Drivers;
+    public static bool IsEnabled(string? kind) => IsValid(kind);
+    public static bool IsGenerationEnabled(string? kind) => kind == Drivers;
 
     public static void EnsureEnabled(string? kind)
     {
-        if (!IsEnabled(kind)) throw new RosterInputException(DisabledMessage);
+        if (!IsEnabled(kind)) throw new RosterInputException(InvalidMessage);
+    }
+
+    public static void EnsureGenerationEnabled(string? kind)
+    {
+        if (!IsGenerationEnabled(kind)) throw new RosterInputException(GenerationDisabledMessage);
     }
 
     public static int TargetHours(Employee employee, string kind) => kind == Inside

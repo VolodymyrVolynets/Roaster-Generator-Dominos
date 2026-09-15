@@ -8,6 +8,7 @@ using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
 using Roaster_Generator.Enums;
+using Roaster_Generator.Security;
 
 namespace Roaster_Generator.Services;
 
@@ -34,11 +35,13 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
     public async Task<LoadedRosterInput> LoadAsync(DateOnly weekStart, CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
         RosterKinds.EnsureEnabled(rosterKind);
+        var demandKind = rosterKind == RosterKinds.Inside ? DemandKinds.Inside : DemandKinds.Outside;
+        var employeeLabel = rosterKind == RosterKinds.Inside ? "inside employee" : "driver";
         var weekEnd = weekStart.AddDays(7);
         var plan = await db.DemandPlans.AsNoTracking().Include(p => p.Columns)
             .Include(p => p.Rows).ThenInclude(r => r.Values)
-            .SingleOrDefaultAsync(p => p.WeekStart == weekStart && p.DemandKind == DemandKinds.Outside, ct)
-            ?? throw new RosterInputException($"Enter outside demand for the week starting {weekStart:yyyy-MM-dd} before generating a roster.");
+            .SingleOrDefaultAsync(p => p.WeekStart == weekStart && p.DemandKind == demandKind, ct)
+            ?? throw new RosterInputException($"Enter {demandKind} demand for the week starting {weekStart:yyyy-MM-dd} before {(rosterKind == RosterKinds.Inside ? "creating" : "generating")} a roster.");
         if (plan.Columns.Count != 7 || !plan.Columns.Select(c => c.Position).Order().SequenceEqual(Enumerable.Range(0, 7)))
             throw new RosterInputException("The demand template must contain exactly Monday through Sunday.");
         var diagnostics = new List<string>();
@@ -58,23 +61,45 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             for (var hour = opening; hour < closing; hour++)
             {
                 values.TryGetValue(hour % 24, out var value);
-                var required = value?.Demand;
+                var required = rosterKind == RosterKinds.Inside ? value?.InsideDemand : value?.Demand;
                 if (required is null || required < 0)
-                    diagnostics.Add($"{date.DayOfWeek} {hour % 24:00}:00{(hour >= 24 ? " (+1 day)" : "")}: enter a non-negative {rosterKind} demand; this hour is missing or invalid.");
+                    diagnostics.Add($"{date.DayOfWeek} {hour % 24:00}:00{(hour >= 24 ? " (+1 day)" : "")}: enter a non-negative {employeeLabel} demand; this hour is missing or invalid.");
                 else demand.Add(new RosterSolverDemand(date, hour, required.Value));
             }
-            if (values.Any(v => v.Value?.Demand > 0 && !Enumerable.Range(opening, closing - opening).Any(h => h % 24 == v.Key)))
+            if (values.Any(v => (rosterKind == RosterKinds.Inside ? v.Value?.InsideDemand : v.Value?.Demand) > 0 &&
+                                !Enumerable.Range(opening, closing - opening).Any(h => h % 24 == v.Key)))
                 warnings.Add($"{date.DayOfWeek}: demand entries outside configured shop hours are excluded.");
         }
         if (diagnostics.Count > 0)
             throw new RosterInputException("The demand template is incomplete. Enter demand for every open hour (use 0 when no drivers are needed).", diagnostics);
 
-        var employees = await DriverRosterEmployees.Query(db)
+        var employeeQuery = rosterKind == RosterKinds.Inside
+            ? InsideRosterEmployees.Query(db)
+            : DriverRosterEmployees.Query(db);
+        var employees = await employeeQuery
             .AsNoTracking()
             .Include(employee => employee.DriverProfile)
+            .Include(employee => employee.InStoreProfile)
+            .Include(employee => employee.ManagerProfile)
             .OrderBy(employee => employee.Id)
             .ToListAsync(ct);
         var ids = employees.Select(e => e.Id).ToArray();
+        var roleMemberships = await db.UserRoles
+            .Join(db.Roles, membership => membership.RoleId, role => role.Id,
+                (membership, role) => new { membership.UserId, role.Name })
+            .Join(db.Users.Where(user => user.EmployeeId.HasValue && ids.Contains(user.EmployeeId.Value)),
+                membership => membership.UserId, user => user.Id,
+                (membership, user) => new { EmployeeId = user.EmployeeId!.Value, Role = membership.Name })
+            .ToListAsync(ct);
+        var rolesByEmployee = roleMemberships.GroupBy(item => item.EmployeeId)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Role).ToHashSet());
+        foreach (var employee in employees)
+        {
+            var roles = rolesByEmployee.GetValueOrDefault(employee.Id) ?? [];
+            if (!roles.Contains(RoleNames.Driver)) employee.DriverProfile = null;
+            if (!roles.Contains(RoleNames.InStore)) employee.InStoreProfile = null;
+            if (!roles.Contains(RoleNames.Manager)) employee.ManagerProfile = null;
+        }
         var approvedSickLeave = await db.SickLeaveRequests.AsNoTracking()
             .Where(request => ids.Contains(request.EmployeeId) &&
                               request.Status == SickLeaveStatus.Approved &&
@@ -90,7 +115,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         availability = availability.Where(shift => !unavailableDates.Contains((shift.EmployeeId, shift.Date))).ToList();
         var boundaryEntities = await db.RosterShifts.AsNoTracking()
             .Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart.AddDays(-3) && s.Date < weekEnd.AddDays(3)
-                && s.RosterPlan.RosterKind == RosterKinds.Drivers && (s.Date < weekStart || s.Date >= weekEnd))
+                && s.RosterPlan.RosterKind == rosterKind && (s.Date < weekStart || s.Date >= weekEnd))
             .OrderBy(s => s.EmployeeId).ThenBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync(ct);
         var boundaries = boundaryEntities.Select(s =>
         {
@@ -106,7 +131,8 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             employees,
             availability,
             demand,
-            settings.FairHoursAlpha);
+            settings.FairHoursAlpha,
+            rosterKind: rosterKind);
         foreach (var employee in employees)
         {
             var sickDates = unavailableDates.Count(item => item.EmployeeId == employee.Id && item.Date >= weekStart && item.Date < weekEnd);
@@ -118,7 +144,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 warnings.Add($"{employee.FirstName} {employee.LastName}: availability does not overlap any positive demand; approximate hours are 0.");
         }
         if (fairHours.UnallocatedDemandHours > 0.001)
-            warnings.Add($"Useful availability can receive {fairHours.TotalAllocatedHours:F1} of {fairHours.TotalDemandHours:F1} demanded driver-hours; {fairHours.UnallocatedDemandHours:F1} hours could not be allocated approximately.");
+            warnings.Add($"Useful availability can receive {fairHours.TotalAllocatedHours:F1} of {fairHours.TotalDemandHours:F1} demanded {employeeLabel}-hours; {fairHours.UnallocatedDemandHours:F1} hours could not be allocated approximately.");
         var historyPlans = await db.RosterPlans.AsNoTracking()
             .Where(p => p.WeekStart >= weekStart.AddDays(-28) && p.WeekStart < weekStart && p.RosterKind == rosterKind)
             .OrderBy(p => p.WeekStart).Select(p => new { p.WeekStart, p.SnapshotJson }).ToListAsync(ct);

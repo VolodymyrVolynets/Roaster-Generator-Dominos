@@ -8,6 +8,9 @@ public sealed class RosterLabourRequestValidator : AbstractValidator<RosterLabou
 {
     public RosterLabourRequestValidator()
     {
+        RuleFor(request => request.RosterKind)
+            .Must(RosterKinds.IsEnabled)
+            .WithMessage(RosterKinds.InvalidMessage);
         RuleFor(request => request.WeekStart)
             .Must(date => date is null || date != DateOnly.MinValue && date.Value.DayOfWeek == DayOfWeek.Monday &&
                 date <= DateOnly.MaxValue.AddDays(-7))

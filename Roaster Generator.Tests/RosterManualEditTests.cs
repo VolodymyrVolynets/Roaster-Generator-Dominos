@@ -58,6 +58,29 @@ public sealed partial class RosterSolverTests
         Assert.Empty(validation.Errors);
         Assert.Contains(validation.Warnings, warning => warning.Contains("start-time override", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void ManualInsideDraftMayRemainUnderstaffedUntilTheAdministratorCompletesIt()
+    {
+        var manager = InsideEmployee(manager: true);
+        var input = InsideInput([manager], [Available(manager, Monday, 12, 18)], Demand(Monday, 12, 6));
+
+        var validation = RosterSolver.ValidateManualEdit(input, []);
+
+        Assert.Equal(6, validation.Errors.Count);
+        Assert.All(validation.Errors, error => Assert.StartsWith("Demand mismatch:", error));
+    }
+
+    [Fact]
+    public void ManualInsideRosterRejectsAStaffedHourWithoutAManager()
+    {
+        var inStore = InsideEmployee();
+        var input = InsideInput([inStore], [Available(inStore, Monday, 12, 18)], Demand(Monday, 12, 6));
+
+        var validation = RosterSolver.ValidateManualEdit(input, [new(inStore.Id, Monday, 12, 18)]);
+
+        Assert.Contains(validation.Errors, error => error.Contains("whenever inside employees are scheduled", StringComparison.Ordinal));
+    }
 }
 
 public sealed class RosterManualEditRequestValidatorTests

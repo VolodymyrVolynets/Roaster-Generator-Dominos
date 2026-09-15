@@ -9,7 +9,8 @@ public interface IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        double maximumWeeklyHours = 70);
+        double maximumWeeklyHours = 70,
+        string rosterKind = RosterKinds.Drivers);
 }
 
 public sealed record FairDriverHoursAllocation(
@@ -34,14 +35,19 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        double maximumWeeklyHours = 70)
+        double maximumWeeklyHours = 70,
+        string rosterKind = RosterKinds.Drivers)
     {
         if (!double.IsFinite(alpha) || alpha is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(alpha), "Fairness alpha must be between 0 and 1.");
         if (!double.IsFinite(maximumWeeklyHours) || maximumWeeklyHours < 0)
             throw new ArgumentOutOfRangeException(nameof(maximumWeeklyHours), "Maximum weekly hours cannot be negative.");
 
-        var eligible = drivers.Where(driver => driver.IsActive && driver.DriverProfile is not null)
+        RosterKinds.EnsureEnabled(rosterKind);
+        var eligible = drivers.Where(employee => employee.IsActive &&
+                (rosterKind == RosterKinds.Inside
+                    ? employee.ManagerProfile is not null || employee.InStoreProfile is not null
+                    : employee.DriverProfile is not null))
             .DistinctBy(driver => driver.Id)
             .OrderBy(driver => driver.Id)
             .ToArray();

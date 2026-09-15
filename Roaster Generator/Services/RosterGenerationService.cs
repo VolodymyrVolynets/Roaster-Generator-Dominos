@@ -27,14 +27,14 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
 
     public IReadOnlyList<RosterTimerProgressResponse> GetLogs(DateOnly weekStart, string rosterKind = RosterKinds.Drivers)
     {
-        RosterKinds.EnsureEnabled(rosterKind);
+        RosterKinds.EnsureGenerationEnabled(rosterKind);
         lock (gate) return latestJobs.TryGetValue((weekStart, rosterKind), out var job) ? job.Logs.ToArray() : [];
     }
 
     public async Task SendActiveLogsAsync(string connectionId)
     {
         RosterTimerProgressResponse[] logs;
-        lock (gate) logs = latestJobs.Values.Where(j => RosterKinds.IsEnabled(j.RosterKind))
+        lock (gate) logs = latestJobs.Values.Where(j => RosterKinds.IsGenerationEnabled(j.RosterKind))
             .SelectMany(j => j.Logs).OrderBy(l => l.TimestampUtc).ToArray();
         foreach (var log in logs)
             await hub.Clients.Client(connectionId).SendAsync("rosterGenerationProgress", log);
@@ -42,7 +42,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
 
     public RosterTimerStartResponse Start(int weekOffset, string rosterKind = RosterKinds.Drivers)
     {
-        RosterKinds.EnsureEnabled(rosterKind);
+        RosterKinds.EnsureGenerationEnabled(rosterKind);
         ActiveJob job;
         lock (gate)
         {
@@ -61,7 +61,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
 
     public bool Cancel(int weekOffset, Guid? jobId = null, string rosterKind = RosterKinds.Drivers)
     {
-        RosterKinds.EnsureEnabled(rosterKind);
+        RosterKinds.EnsureGenerationEnabled(rosterKind);
         lock (gate)
         {
             if (active is null || active.WeekStart != WeeklyScheduleService.GetWeekMonday(weekOffset) || active.RosterKind != rosterKind

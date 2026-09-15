@@ -9,7 +9,7 @@ import {
   employeeRoleGroups,
   getEmployeeRoleGroup,
   getRosterRoleGroup,
-  rosterRoleGroups,
+  driverRosterRoleGroups,
 } from './employeeGroups'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -1681,7 +1681,7 @@ function AdminConsole({
     }))
     .filter((group) => group.employees.length > 0)
   const employeesById = new Map(employees.map((employee) => [String(employee.id), employee]))
-  const groupedAvailability = rosterRoleGroups
+  const groupedAvailability = driverRosterRoleGroups
     .map((group) => ({
       ...group,
       employees: (availability?.employees || [])

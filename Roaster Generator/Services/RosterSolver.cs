@@ -303,14 +303,20 @@ public sealed class RosterSolver
             }
             if (shift.DurationHours is < 3 or > 10)
             {
-                var message = $"Manual shift-length override: {shift.Date:dddd}: {Name(employee)} has a {shift.DurationHours}-hour shift; automatic generation only creates shifts lasting 3–10 hours.";
+                var message = $"Manual shift-length override: {shift.Date:dddd}: {Name(employee)} has a {shift.DurationHours}-hour shift; " +
+                    (input.RosterKind == RosterKinds.Inside
+                        ? "the standard shift range is 3–10 hours."
+                        : "automatic generation only creates shifts lasting 3–10 hours.");
                 if (manualEdit) warnings.Add(message);
                 else errors.Add(message);
             }
             if (shift.StartHour > input.Options.LatestShiftStartHour)
             {
                 if (manualEdit)
-                    warnings.Add($"Manual start-time override: {shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}; automatic generation requires starts by {input.Options.LatestShiftStartHour:00}:00 and never starts after midnight.");
+                    warnings.Add($"Manual start-time override: {shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}; " +
+                        (input.RosterKind == RosterKinds.Inside
+                            ? $"the standard latest-start setting is {input.Options.LatestShiftStartHour:00}:00."
+                            : $"automatic generation requires starts by {input.Options.LatestShiftStartHour:00}:00 and never starts after midnight."));
                 else
                     errors.Add($"{shift.Date:dddd}: {Name(employee)} starts at {shift.StartHour % 24:00}:00{(shift.StartHour >= 24 ? " (+1 day)" : string.Empty)}. Every generated shift must start by {input.Options.LatestShiftStartHour:00}:00; after-midnight starts are also forbidden. Overnight finishes are allowed.");
             }
@@ -360,9 +366,12 @@ public sealed class RosterSolver
             var label = slot is not null ? FormatSlot(slot) : input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour).ToString("dddd HH:mm", CultureInfo.InvariantCulture);
             if (assigned.Count != required)
                 errors.Add($"Demand mismatch: {label}: demand {required}, scheduled {assigned.Count}; {(assigned.Count < required ? $"need {required - assigned.Count} more {EmployeeLabel(input.RosterKind)}" : $"{assigned.Count - required} excess {EmployeeLabel(input.RosterKind)}")}.");
-            if (input.RosterKind == RosterKinds.Inside && (required > 0 || assigned.Count > 0) &&
+            if (input.RosterKind == RosterKinds.Inside &&
+                (assigned.Count > 0 || !manualEdit && required > 0) &&
                 !assigned.Any(employee => CanWorkIndependently(employee, input.RosterKind)))
-                errors.Add($"{label}: need at least one manager covering this hour. Inside staffing always requires a manager, including hours with no assigned shifts.");
+                errors.Add(manualEdit
+                    ? $"{label}: need at least one manager covering this hour whenever inside employees are scheduled."
+                    : $"{label}: need at least one manager covering this hour. Inside staffing always requires a manager, including hours with no assigned shifts.");
             if (input.RosterKind == RosterKinds.Drivers &&
                 assigned.Any(employee => employee.DriverProfile?.DriverType == DriverType.EBike) &&
                 !assigned.Any(employee => CanWorkIndependently(employee, input.RosterKind)))

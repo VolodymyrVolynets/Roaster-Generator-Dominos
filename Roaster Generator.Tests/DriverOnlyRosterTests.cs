@@ -19,67 +19,24 @@ namespace Roaster_Generator.Tests;
 public sealed class DriverOnlyRosterTests
 {
     [Theory]
-    [InlineData("read")]
-    [InlineData("summary")]
     [InlineData("generate")]
     [InlineData("cancel")]
-    [InlineData("history")]
     [InlineData("jobs")]
-    [InlineData("edit")]
-    public async Task InsideRosterHttpEndpointsRejectRequestsBeforeAccessingServices(string endpoint)
+    public async Task InsideRosterGenerationHttpEndpointsRejectRequestsBeforeAccessingServices(string endpoint)
     {
         var controller = new AdminRosterController(new WeekSelectionRequestValidator(),
             new RosterPlanUpdateRequestValidator(), null!, null!, null!, null!, null!, null!);
 
         var result = endpoint switch
         {
-            "read" => await controller.Get(1, null, default, RosterKinds.Inside),
-            "summary" => await controller.GetSummary(1, default, RosterKinds.Inside),
             "generate" => await controller.StartTimer(new WeekSelectionRequest { WeekOffset = 1 }, default, RosterKinds.Inside),
             "cancel" => await controller.Cancel(new RosterTimerCancelRequest { WeekOffset = 1 }, default, RosterKinds.Inside),
-            "history" => await controller.History(default, RosterKinds.Inside),
             "jobs" => await controller.Jobs(1, default, RosterKinds.Inside),
-            "edit" => await controller.Update(new RosterPlanUpdateRequest
-            {
-                WeekStart = WeeklyScheduleService.GetWeekMonday(1), RosterKind = RosterKinds.Inside
-            }, default),
             _ => throw new ArgumentOutOfRangeException(nameof(endpoint))
         };
 
         var error = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains(RosterKinds.DisabledMessage, JsonSerializer.Serialize(error.Value));
-    }
-
-    [Theory]
-    [InlineData("load")]
-    [InlineData("read")]
-    [InlineData("read-offset")]
-    [InlineData("summary")]
-    [InlineData("history")]
-    [InlineData("edit")]
-    [InlineData("save")]
-    public async Task InsideRosterServiceEntryPointsRejectRequestsWithoutReadingOrWritingTheDatabase(string operation)
-    {
-        var inputs = new RosterInputService(null!, null!, null!);
-        var plans = new RosterPlanService(null!, inputs);
-        var monday = WeeklyScheduleService.GetWeekMonday(1);
-        var input = new RosterSolverInput(monday, [], [], [], [], new(), RosterKind: RosterKinds.Inside);
-
-        var exception = await Assert.ThrowsAsync<RosterInputException>(async () =>
-        {
-            switch (operation)
-            {
-                case "load": await inputs.LoadAsync(monday, default, RosterKinds.Inside); break;
-                case "read": await plans.GetAsync(monday, default, RosterKinds.Inside); break;
-                case "read-offset": await plans.GetAsync(1, default, RosterKinds.Inside); break;
-                case "summary": await plans.GetSummaryAsync(1, default, RosterKinds.Inside); break;
-                case "history": await plans.GetHistoryAsync(default, RosterKinds.Inside); break;
-                case "edit": await plans.UpdateAsync(new RosterPlanUpdateRequest { WeekStart = monday, RosterKind = RosterKinds.Inside }, default); break;
-                case "save": await plans.SaveAsync(new LoadedRosterInput(input, new(), "test", []), new RosterSolverResult { Status = "optimal" }, default); break;
-            }
-        });
-
-        Assert.Equal(RosterKinds.DisabledMessage, exception.Message);
+        Assert.Contains(RosterKinds.GenerationDisabledMessage, JsonSerializer.Serialize(error.Value));
     }
 
     [Fact]

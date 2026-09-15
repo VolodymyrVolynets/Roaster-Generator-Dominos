@@ -2,17 +2,21 @@ namespace Roaster_Generator.Contracts.Roster;
 
 public sealed class RosterLabourRequest
 {
+    public string RosterKind { get; set; } = "drivers";
     public DateOnly? WeekStart { get; set; }
     public int? WeekOffset { get; set; }
 }
 
 public sealed class RosterLabourResponse
 {
+    public string RosterKind { get; init; } = "drivers";
     public DateOnly WeekStart { get; init; }
     public Guid? DemandPlanId { get; init; }
     public bool HasDriverRoster { get; init; }
+    public bool HasInsideRoster { get; init; }
     public decimal? TargetSales { get; init; }
     public RosterLabourTotalsResponse Drivers { get; init; } = new();
+    public RosterLabourTotalsResponse Inside { get; init; } = new();
     public IReadOnlyList<RosterLabourDayResponse> Days { get; init; } = [];
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
@@ -23,6 +27,7 @@ public sealed class RosterLabourDayResponse
     public string Label { get; init; } = string.Empty;
     public decimal? TargetSales { get; init; }
     public RosterLabourTotalsResponse Drivers { get; init; } = new();
+    public RosterLabourTotalsResponse Inside { get; init; } = new();
 }
 
 public sealed class RosterLabourTotalsResponse

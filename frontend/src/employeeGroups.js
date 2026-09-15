@@ -25,7 +25,7 @@ export const employeeRoleGroups = [
   },
 ]
 
-export const rosterRoleGroups = [
+export const driverRosterRoleGroups = [
   {
     id: 'drivers',
     label: 'Drivers',
@@ -33,6 +33,23 @@ export const rosterRoleGroups = [
     description: 'Delivery drivers and their shifts.',
   },
 ]
+
+export const insideRosterRoleGroups = [
+  {
+    id: 'managers',
+    label: 'Managers',
+    roles: ['Manager'],
+    description: 'Managers who can supervise inside employees.',
+  },
+  {
+    id: 'instore',
+    label: 'In-store',
+    roles: ['InStore'],
+    description: 'Employees assigned to inside shop work.',
+  },
+]
+
+export const rosterRoleGroups = [...insideRosterRoleGroups, ...driverRosterRoleGroups]
 
 export function employeeHasRole(employee, role) {
   return (employee?.roles || []).some((item) => String(item).toLowerCase() === role.toLowerCase())
@@ -45,15 +62,23 @@ export function getEmployeeRoleGroup(employee) {
 }
 
 export function getRosterRoleGroup(employee) {
-  if (employeeHasRole(employee, 'InStore') || employeeHasRole(employee, 'Manager')) return null
+  if (employeeHasRole(employee, 'Manager')) return insideRosterRoleGroups[0]
+  if (employeeHasRole(employee, 'InStore')) return insideRosterRoleGroups[1]
   // Older driver rosters have no role snapshot.
-  return !employee?.roles?.length || employeeHasRole(employee, 'Driver') ? rosterRoleGroups[0] : null
+  return !employee?.roles?.length || employeeHasRole(employee, 'Driver') ? driverRosterRoleGroups[0] : null
 }
 
-export function driverRosterOnly(roster) {
-  if (!roster || (roster.rosterKind && roster.rosterKind !== 'drivers')) return null
-  return { ...roster, employees: (roster.employees || []).filter((employee) => getRosterRoleGroup(employee)?.id === 'drivers') }
+export function employeeMatchesRosterKind(employee, rosterKind) {
+  const group = getRosterRoleGroup(employee)
+  return rosterKind === 'inside' ? group?.id === 'managers' || group?.id === 'instore' : group?.id === 'drivers'
 }
+
+export function rosterForKind(roster, rosterKind) {
+  if (!roster || (roster.rosterKind && roster.rosterKind !== rosterKind)) return null
+  return { ...roster, employees: (roster.employees || []).filter((employee) => employeeMatchesRosterKind(employee, rosterKind)) }
+}
+
+export const driverRosterOnly = (roster) => rosterForKind(roster, 'drivers')
 
 export function compareEmployees(first, second) {
   if (first.isActive !== second.isActive) {

@@ -29,7 +29,7 @@ public sealed class AdminRosterController(
         if (validationResult is not null) return validationResult;
         var weekStart = request.WeekStart ?? WeeklyScheduleService.GetWeekMonday(
             request.WeekOffset ?? WeeklyScheduleService.MinWeekOffset);
-        return Ok(await rosterLabour.GetAsync(weekStart, ct));
+        return Ok(await rosterLabour.GetAsync(weekStart, ct, request.RosterKind));
     }
 
     [HttpGet]
@@ -39,13 +39,16 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
+        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.InvalidMessage });
         if (weekStart.HasValue)
         {
             if (weekStart.Value.DayOfWeek != DayOfWeek.Monday)
                 return BadRequest(new { message = "Select the Monday of a saved roster week." });
             var saved = await rosterPlans.GetAsync(weekStart.Value, cancellationToken, rosterKind);
-            return saved is null ? NotFound(new { message = "A roster has not been generated for this week." }) : Ok(saved);
+            if (saved is not null) return Ok(saved);
+            return rosterKind == RosterKinds.Inside
+                ? await GetInsideDraft(weekStart.Value, cancellationToken)
+                : NotFound(new { message = "A driver roster has not been generated for this week." });
         }
         var selection = new WeekSelectionRequest
         {
@@ -59,9 +62,10 @@ public sealed class AdminRosterController(
         }
 
         var plan = await rosterPlans.GetAsync(selection.WeekOffset, cancellationToken, rosterKind);
-        return plan is null
-            ? NotFound(new { message = "A roster has not been generated for this week." })
-            : Ok(plan);
+        if (plan is not null) return Ok(plan);
+        return rosterKind == RosterKinds.Inside
+            ? await GetInsideDraft(WeeklyScheduleService.GetWeekMonday(selection.WeekOffset), cancellationToken)
+            : NotFound(new { message = "A driver roster has not been generated for this week." });
     }
 
     [HttpPut]
@@ -104,7 +108,7 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
+        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.InvalidMessage });
         var selection = new WeekSelectionRequest
         {
             WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
@@ -127,7 +131,7 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
+        if (!RosterKinds.IsGenerationEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.GenerationDisabledMessage });
         var validationResult = await weekValidator.ValidateAsync(request, cancellationToken);
 
         if (!validationResult.IsValid)
@@ -153,7 +157,7 @@ public sealed class AdminRosterController(
         CancellationToken cancellationToken,
         [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
+        if (!RosterKinds.IsGenerationEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.GenerationDisabledMessage });
         var selection = new WeekSelectionRequest
         {
             WeekOffset = request.WeekOffset
@@ -189,16 +193,36 @@ public sealed class AdminRosterController(
 
     [HttpGet("history")]
     public async Task<IActionResult> History(CancellationToken ct, [FromQuery] string rosterKind = RosterKinds.Drivers) =>
-        !RosterKinds.IsEnabled(rosterKind) ? BadRequest(new { message = RosterKinds.DisabledMessage }) :
+        !RosterKinds.IsEnabled(rosterKind) ? BadRequest(new { message = RosterKinds.InvalidMessage }) :
         Ok(await rosterPlans.GetHistoryAsync(ct, rosterKind));
 
     [HttpGet("jobs")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     public async Task<IActionResult> Jobs([FromQuery] int weekOffset, CancellationToken ct, [FromQuery] string rosterKind = RosterKinds.Drivers)
     {
-        if (!RosterKinds.IsEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.DisabledMessage });
+        if (!RosterKinds.IsGenerationEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.GenerationDisabledMessage });
         var validation = await weekValidator.ValidateAsync(new WeekSelectionRequest { WeekOffset = weekOffset }, ct);
         if (!validation.IsValid) return BadRequest(new { message = "Select a week from next week through three weeks ahead." });
         return Ok(rosterTimer.GetLogs(WeeklyScheduleService.GetWeekMonday(weekOffset), rosterKind));
+    }
+
+    private async Task<IActionResult> GetInsideDraft(DateOnly weekStart, CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await rosterPlans.GetInsideDraftAsync(weekStart, ct));
+        }
+        catch (RosterInputException exception)
+        {
+            return ValidationError(
+                new Dictionary<string, string[]>
+                {
+                    ["roster"] = new[] { exception.Message }
+                        .Concat(exception.Diagnostics)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray()
+                },
+                "The inside roster draft is unavailable.");
+        }
     }
 }

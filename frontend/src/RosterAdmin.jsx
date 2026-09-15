@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/signalr'
 import { createRosterEventState, mergeRosterEvents } from './rosterEvents'
-import { compareRosterEmployees, driverRosterOnly, employeeHasRole, getRosterRoleGroup, rosterRoleGroups } from './employeeGroups'
+import { compareRosterEmployees, employeeMatchesRosterKind, getRosterRoleGroup, rosterForKind, rosterRoleGroups } from './employeeGroups'
 import SavedRosterLabour from './SavedRosterLabour'
 
 const weightFields = [
@@ -517,11 +517,11 @@ function RosterCellEditorDialog({ editor, setEditor, onApply, onRemove, onClose 
             <div className="roster-cell-dialog-warnings" role="alert">
               <strong>Manual override warning</strong>
               <ul>
-                {generationLengthWarning && <li>Automatic roster generation only creates shifts lasting 3–10 hours.</li>}
-                {latestStartWarning && <li>This starts after the generator’s {String(editor.latestShiftStartHour ?? 20).padStart(2, '0')}:00 latest-start rule.</li>}
+                {generationLengthWarning && <li>{editor.rosterKind === 'inside' ? 'The standard shift range is 3–10 hours.' : 'Automatic roster generation only creates shifts lasting 3–10 hours.'}</li>}
+                {latestStartWarning && <li>This starts after the {editor.rosterKind === 'inside' ? 'standard' : 'generator’s'} {String(editor.latestShiftStartHour ?? 20).padStart(2, '0')}:00 latest-start rule.</li>}
                 {shopHoursWarning && <li>This shift extends outside the configured shop hours for this day.</li>}
               </ul>
-              <small>You can still apply and save this administrator override. Automatic generation rules are unchanged.</small>
+              <small>You can still apply and save this administrator override. Automatic driver-roster generation rules are unchanged.</small>
             </div>
           )}
           <p className="roster-footnote">Changes are staged until you press Save roster changes.</p>
@@ -564,7 +564,7 @@ function exportRosterCsv(roster, dates) {
   const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = `roster-drivers-${roster.weekStart}.csv`
+  link.download = `roster-${roster.rosterKind || 'drivers'}-${roster.weekStart}.csv`
   link.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
@@ -592,7 +592,7 @@ function FairnessComparison({ roster, employeeGroups }) {
         the employee’s difference from the group’s previous percentage, divided across the saved weeks and capped at a
         15-percentage-point correction this week. This reference goal is balanced with your weights and the shift rules.
         Previous average shift length uses recorded shift durations from those four weeks; older weeks without duration
-        details are excluded. The short-shift compensation preference uses this average to favour longer shifts for drivers
+        details are excluded. The short-shift compensation preference uses this average to favour longer shifts for employees
         who previously had shorter shifts, while preserving availability and demand coverage.
       </p>
       <div className="roster-week-summary roster-fairness-metrics">
@@ -646,6 +646,7 @@ function FairnessComparison({ roster, employeeGroups }) {
 
 function SavedRosterEmployeeTables({
   roster,
+  rosterKind,
   groupedRosterEmployees,
   dates,
   demandMismatchByDate,
@@ -653,12 +654,13 @@ function SavedRosterEmployeeTables({
   draftShifts = [],
   onEditCell,
 }) {
+  const employeeLabel = rosterKind === 'inside' ? 'inside employee' : 'driver'
   const mismatchDetails = (date) => demandMismatchByDate.get(date)?.join(' · ')
   const mismatchEntries = [...demandMismatchByDate.entries()].flatMap(([date, details]) => details.map((detail) => ({ date, detail })))
 
   return <>
     <h3 className="roster-section-title">Employee shifts and approximate hours</h3>
-    <p className="demand-help">The percentage compares scheduled hours with each driver’s automatically calculated approximate hours. Red dates indicate an hourly mismatch against the current demand; the roster remains saved so the administrator can review and correct it.</p>
+    <p className="demand-help">The percentage compares scheduled hours with each {employeeLabel}’s automatically calculated approximate hours. Red dates indicate an hourly mismatch against the current {rosterKind === 'inside' ? 'inside' : 'outside'} demand; the roster remains saved so the administrator can review and correct it.</p>
     {demandMismatchByDate.size > 0 && (
       <div className="roster-demand-warning" role="alert">
         <strong>Roster does not match current demand</strong>
@@ -758,11 +760,12 @@ function SavedRosterEmployeeTables({
         </section>
       ))}
     </div>
-    <p className="roster-footnote">* Per-employee rest shown here is between shifts in this roster. The generator also checks adjacent saved weeks.</p>
+    <p className="roster-footnote">* Per-employee rest shown here is between shifts in this roster. Server validation also checks adjacent saved weeks.</p>
   </>
 }
 
 export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, canEdit = true }) {
+  const [rosterKind, setRosterKind] = useState('drivers')
   const [history, setHistory] = useState([])
   const [selection, setSelection] = useState(initialWeekStart ? `date:${initialWeekStart}` : 'offset:1')
   const [roster, setRoster] = useState(null)
@@ -793,7 +796,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
     let active = true
     setAvailableEmployees([])
     fetchJson('/api/admin/employees', { cache: 'no-store' })
-      .then((payload) => { if (active) setAvailableEmployees(payload.filter((employee) => employee.isActive && employeeHasRole(employee, 'Driver') && getRosterRoleGroup(employee)?.id === rosterKind)) })
+      .then((payload) => { if (active) setAvailableEmployees(payload.filter((employee) => employee.isActive && employeeMatchesRosterKind(employee, rosterKind))) })
       .catch((error) => { if (active) setErrorPopup(error.message) })
     return () => { active = false }
   }, [canEdit, fetchJson, setErrorPopup, rosterKind])
@@ -807,9 +810,9 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
     const query = kind === 'date' ? `weekStart=${encodeURIComponent(value)}` : `weekOffset=${value}`
     fetchJson(`/api/admin/roster?${query}&rosterKind=${rosterKind}`, { cache: 'no-store' }).then((payload) => {
       if (active) {
-        const driverRoster = driverRosterOnly(payload)
-        setRoster(driverRoster)
-        setStatus(driverRoster ? 'success' : 'empty')
+        const selectedRoster = rosterForKind(payload, rosterKind)
+        setRoster(selectedRoster)
+        setStatus(selectedRoster ? 'success' : 'empty')
       }
     }).catch((error) => {
       if (!active) return
@@ -840,6 +843,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       hasShift: Boolean(existingShift),
       shopHours: rosterShopHours(roster, date),
       latestShiftStartHour: roster?.settings?.latestShiftStartHour ?? 20,
+      rosterKind,
     })
     setEditStatus({ status: 'idle', message: '' })
   }
@@ -901,7 +905,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
           })),
         }),
       })
-      setRoster(driverRosterOnly(payload))
+      setRoster(rosterForKind(payload, rosterKind))
       setLabourRefreshKey((value) => value + 1)
       setEditStatus({ status: 'success', message: 'Roster changes saved and revalidated.' })
       setEditing(false)
@@ -924,7 +928,10 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
     demandMismatchByDate.set(slot.date, details)
   }
   const availableEmployeeById = new Map(availableEmployees.map((employee) => [String(employee.id), employee]))
-  const groupedRosterEmployees = rosterRoleGroups.map((group) => ({
+  const selectedRoleGroups = rosterRoleGroups.filter((group) => rosterKind === 'inside'
+    ? group.id === 'managers' || group.id === 'instore'
+    : group.id === 'drivers')
+  const groupedRosterEmployees = selectedRoleGroups.map((group) => ({
     ...group,
     employees: (roster?.employees || [])
       .filter((employee) => {
@@ -937,38 +944,48 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
   const savedDates = [...new Set([...(initialWeekStart ? [initialWeekStart] : []), ...history.map((item) => item.weekStart)])]
     .sort((left, right) => right.localeCompare(left))
   const [selectionKind, selectionValue] = selection.split(':')
-  const labourQuery = selectionKind === 'date' ? `weekStart=${encodeURIComponent(selectionValue)}` : `weekOffset=${selectionValue}`
+  const labourQuery = `${selectionKind === 'date' ? `weekStart=${encodeURIComponent(selectionValue)}` : `weekOffset=${selectionValue}`}&rosterKind=${rosterKind}`
+  const isDraft = roster?.solverStatus === 'draft' || roster?.id === '00000000-0000-0000-0000-000000000000'
 
   return (
     <section className="admin-tools saved-roster-tools">
       <div className="section-heading">
-        <div><span className="eyebrow">Administration</span><h2>Saved rosters</h2></div>
-        <label className="week-selector">
-          Week
-          <select value={selection} onChange={(event) => setSelection(event.target.value)}>
-            <optgroup label="Upcoming weeks">
-              <option value="offset:1">Next week</option><option value="offset:2">Week after next</option><option value="offset:3">Three weeks ahead</option>
-            </optgroup>
-            {savedDates.length > 0 && <optgroup label="Saved weeks">{savedDates.map((date) => <option key={date} value={`date:${date}`}>Week of {formatDate(date)}</option>)}</optgroup>}
-          </select>
-        </label>
+        <div><span className="eyebrow">Administration</span><h2>{rosterKind === 'inside' ? 'Inside roster' : 'Driver roster'}</h2></div>
+        <div className="roster-view-selectors">
+          <label className="week-selector">
+            Roster
+            <select value={rosterKind} onChange={(event) => setRosterKind(event.target.value)}>
+              <option value="drivers">Outside · drivers</option>
+              <option value="inside">Inside · managers and in-store</option>
+            </select>
+          </label>
+          <label className="week-selector">
+            Week
+            <select value={selection} onChange={(event) => setSelection(event.target.value)}>
+              <optgroup label="Upcoming weeks">
+                <option value="offset:1">Next week</option><option value="offset:2">Week after next</option><option value="offset:3">Three weeks ahead</option>
+              </optgroup>
+              {savedDates.length > 0 && <optgroup label="Saved weeks">{savedDates.map((date) => <option key={date} value={`date:${date}`}>Week of {formatDate(date)}</option>)}</optgroup>}
+            </select>
+          </label>
+        </div>
       </div>
       <div className="roster-generation-actions">
         <button type="button" className="secondary-button" disabled={status === 'loading'} onClick={() => setRefreshKey((value) => value + 1)}>Refresh saved roster</button>
         {roster && <button type="button" className="secondary-button" onClick={() => exportRosterCsv(roster, dates)}>Download CSV</button>}
-        {canEdit && roster && <button type="button" className="secondary-button" onClick={toggleEditing}>{editing ? 'Cancel editing' : 'Edit roster'}</button>}
+        {canEdit && roster && <button type="button" className="secondary-button" onClick={toggleEditing}>{editing ? 'Cancel editing' : isDraft ? 'Create inside roster' : 'Edit roster'}</button>}
       </div>
       {editStatus.message && !editing && <p className={`save-message ${editStatus.status}`} role="status">{editStatus.message}</p>}
       {status === 'loading' && <p className="message info-message" role="status">Loading saved roster…</p>}
-      {status === 'empty' && <p className="message info-message">No roster has been saved for this week. {canEdit ? 'Use Generate roster to create one.' : 'An administrator must generate one.'}</p>}
+      {status === 'empty' && <p className="message info-message">No driver roster has been saved for this week. {canEdit ? 'Use Generate roster to create one.' : 'An administrator must generate one.'}</p>}
       {status === 'error' && <p className="message error-message" role="alert">The saved roster could not be loaded. Try refreshing.</p>}
       {roster && <>
         {!canEdit && <p className="message info-message" role="status">Read-only view for managers. Only administrators can edit saved roster shifts.</p>}
-        <p className="roster-footnote">Week starting {formatDate(roster.weekStart)} · Saved {new Date(roster.updatedAtUtc).toLocaleString()}</p>
+        <p className="roster-footnote">Week starting {formatDate(roster.weekStart)} · {isDraft ? 'Unsaved inside roster draft' : `Saved ${new Date(roster.updatedAtUtc).toLocaleString()}`}</p>
         {roster.freshnessStatus === 'stale' && (
           <div className="roster-demand-warning roster-input-stale-warning" role="alert">
             <strong>Roster no longer matches current inputs</strong>
-            <p>Demand or driver scheduling inputs changed after this roster was saved. Review the details below, then regenerate or edit the roster.</p>
+            <p>Demand or employee scheduling inputs changed after this roster was saved. Review the details below, then {rosterKind === 'inside' ? 'edit' : 'regenerate or edit'} the roster.</p>
             {!!roster.freshnessWarnings?.length && (
               <ul>
                 {roster.freshnessWarnings.slice(0, 16).map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
@@ -985,9 +1002,9 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
         {canEdit && editing && <form className="roster-edit-panel" onSubmit={saveEditedRoster}>
           <div>
             <span className="eyebrow">Administrator editing</span>
-            <h3>Edit shifts directly in the roster</h3>
+            <h3>{isDraft ? 'Create the inside roster manually' : 'Edit shifts directly in the roster'}</h3>
           </div>
-          <p className="demand-help">Click any day cell below to add, change, or remove that employee’s shift. Manual shifts may be shorter than 3 hours, longer than 10 hours, or outside shop hours; warnings are shown and saved. Availability during open hours, minimum rest, employee eligibility, and driver support remain required.</p>
+          <p className="demand-help">Click any day cell below to add, change, or remove that employee’s shift. Manual shifts may be shorter than 3 hours, longer than 10 hours, or outside shop hours; warnings are shown and saved. Availability during open hours, minimum rest, employee eligibility, and {rosterKind === 'inside' ? 'manager supervision' : 'driver support'} remain required.</p>
           <div className="roster-generation-actions">
             <button type="submit" disabled={editStatus.status === 'saving'}>{editStatus.status === 'saving' ? 'Validating and saving…' : 'Save roster changes'}</button>
             <button type="button" className="secondary-button" onClick={toggleEditing}>Discard changes</button>
@@ -996,6 +1013,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
         </form>}
         <SavedRosterEmployeeTables
           roster={roster}
+          rosterKind={rosterKind}
           groupedRosterEmployees={groupedRosterEmployees}
           dates={dates}
           demandMismatchByDate={demandMismatchByDate}
@@ -1011,7 +1029,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
           onClose={() => setCellEditor(null)}
         />}
       </>}
-      <SavedRosterLabour fetchJson={fetchJson} query={labourQuery}
+      <SavedRosterLabour fetchJson={fetchJson} query={labourQuery} rosterKind={rosterKind}
         refreshKey={`${rosterKind}:${refreshKey}:${labourRefreshKey}`} editing={editing && !!roster} />
       {roster && <>
         <div className="roster-week-summary roster-result-metrics">
@@ -1024,7 +1042,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
           <Metric label="Solver time" value={`${formatNumber(roster.solveSeconds)}s`} />
         </div>
         <p className="message info-message">
-          {roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.solverStatus === 'manual' ? 'Manually updated by an administrator; safety constraints were revalidated and any generation-rule overrides are listed in the notes.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
+          {isDraft ? 'This inside roster has not been saved. Administrators create it manually.' : roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.solverStatus === 'manual' ? 'Manually updated by an administrator; safety constraints were revalidated and any generation-rule overrides are listed in the notes.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
           {' '}Status: {formatStage(roster.solverStatus)}.
         </p>
         {!!roster.warnings?.length && <DiagnosticList entries={roster.warnings} title="Roster notes" />}

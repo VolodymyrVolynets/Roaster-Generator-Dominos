@@ -6,6 +6,7 @@ using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Controllers;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Security;
 using Roaster_Generator.Services;
 using Roaster_Generator.Validation;
@@ -192,7 +193,7 @@ public sealed class RosterLabourTests
     }
 
     [Fact]
-    public async Task ArchivedInsideRosterNeverAppearsInLabourOrMakesDriverRosterComplete()
+    public async Task DriverLabourIgnoresInsideRosterAndDoesNotBecomeComplete()
     {
         using var db = NewDb();
         Shift(Plan(db, RosterKinds.Inside), Employee(db, 100m, manager: true), Monday, 12, 20);
@@ -205,11 +206,49 @@ public sealed class RosterLabourTests
         Assert.Equal(0m, result.Drivers.LabourCost);
         Assert.Null(result.Drivers.LabourPercentage);
         Assert.All(result.Days, day => Assert.Equal(0m, day.Drivers.ScheduledHours));
-        var json = System.Text.Json.JsonSerializer.Serialize(result,
-            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
-        Assert.DoesNotContain("inside", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("combined", json, StringComparison.OrdinalIgnoreCase);
         Assert.Single(await db.RosterPlans.ToListAsync());
+    }
+
+    [Fact]
+    public async Task InsideLabourUsesOnlyInsideRosterAndInsideDemandSales()
+    {
+        using var db = NewDb();
+        var inside = Plan(db, RosterKinds.Inside);
+        Shift(inside, Employee(db, 20m, manager: true), Monday, 12, 18);
+        Shift(inside, Employee(db, 15m), Monday, 12, 18);
+        Shift(Plan(db, RosterKinds.Drivers), Employee(db, 100m), Monday, 12, 18);
+        Demand(db, 1000m);
+        Demand(db, 2000m).DemandKind = DemandKinds.Inside;
+        await db.SaveChangesAsync();
+
+        var result = await new RosterLabourService(db).GetAsync(Monday, default, RosterKinds.Inside);
+
+        Assert.Equal(RosterKinds.Inside, result.RosterKind);
+        Assert.True(result.HasInsideRoster);
+        Assert.False(result.HasDriverRoster);
+        Assert.Equal(210m, result.Inside.LabourCost);
+        Assert.Equal(12m, result.Inside.ScheduledHours);
+        Assert.Equal(14000m, result.TargetSales);
+        Assert.Equal(1.5m, result.Inside.LabourPercentage);
+        Assert.Equal(0m, result.Drivers.LabourCost);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public async Task InsideSundayPremiumAppliesToInStoreEmployeesButNotManagers()
+    {
+        using var db = NewDb();
+        var inside = Plan(db, RosterKinds.Inside);
+        var sunday = Monday.AddDays(6);
+        Shift(inside, Employee(db, 20m, manager: true), sunday, 12, 16);
+        Shift(inside, Employee(db, 20m), sunday, 12, 16);
+        Demand(db, 1000m).DemandKind = DemandKinds.Inside;
+        await db.SaveChangesAsync();
+
+        var result = await new RosterLabourService(db).GetAsync(Monday, default, RosterKinds.Inside);
+
+        Assert.Equal(180m, result.Inside.LabourCost);
+        Assert.Equal(180m, result.Days[6].Inside.LabourCost);
     }
 
     [Theory]
@@ -269,10 +308,13 @@ public sealed class RosterLabourTests
         Assert.IsType<BadRequestObjectResult>(await controller.GetLabour(new() { WeekStart = DateOnly.MinValue }, default));
         Assert.IsType<BadRequestObjectResult>(await controller.GetLabour(new() { WeekOffset = 4 }, default));
         Assert.IsType<BadRequestObjectResult>(await controller.GetLabour(new() { WeekStart = Monday, WeekOffset = 1 }, default));
+        Assert.IsType<BadRequestObjectResult>(await controller.GetLabour(new() { WeekStart = Monday, RosterKind = "other" }, default));
         var selected = Assert.IsType<OkObjectResult>(await controller.GetLabour(new() { WeekOffset = 2 }, default));
         Assert.Equal(WeeklyScheduleService.GetWeekMonday(2), Assert.IsType<RosterLabourResponse>(selected.Value).WeekStart);
         var past = Assert.IsType<OkObjectResult>(await controller.GetLabour(new() { WeekStart = Monday.AddDays(-28) }, default));
         Assert.Equal(Monday.AddDays(-28), Assert.IsType<RosterLabourResponse>(past.Value).WeekStart);
+        var inside = Assert.IsType<OkObjectResult>(await controller.GetLabour(new() { WeekStart = Monday, RosterKind = RosterKinds.Inside }, default));
+        Assert.Equal(RosterKinds.Inside, Assert.IsType<RosterLabourResponse>(inside.Value).RosterKind);
     }
 
     [Fact]

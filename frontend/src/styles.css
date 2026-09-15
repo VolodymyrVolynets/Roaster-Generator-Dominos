@@ -1306,6 +1306,13 @@ input:focus {
   background: rgba(14, 116, 144, 0.12);
 }
 
+.roster-view-selectors {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .roster-edit-panel h3 {
   margin: 4px 0 0;
   color: #f8fafc;

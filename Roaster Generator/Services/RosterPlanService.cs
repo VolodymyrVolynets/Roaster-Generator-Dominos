@@ -14,10 +14,14 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
     {
         RosterKinds.EnsureEnabled(rosterKind);
         var weekStart = WeeklyScheduleService.GetWeekMonday(weekOffset);
-        var ids = await DriverRosterEmployees.Query(db).AsNoTracking().Select(e => e.Id).ToListAsync(ct);
+        var employeeQuery = rosterKind == RosterKinds.Inside
+            ? InsideRosterEmployees.Query(db)
+            : DriverRosterEmployees.Query(db);
+        var ids = await employeeQuery.AsNoTracking().Select(e => e.Id).ToListAsync(ct);
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekStart.AddDays(7)).ToListAsync(ct);
+        var demandKind = rosterKind == RosterKinds.Inside ? DemandKinds.Inside : DemandKinds.Outside;
         var demandExists = await db.DemandPlans.AnyAsync(plan =>
-            plan.WeekStart == weekStart && plan.DemandKind == DemandKinds.Outside, ct);
+            plan.WeekStart == weekStart && plan.DemandKind == demandKind, ct);
         var required = 0;
         IReadOnlyList<RosterExpectedHoursResponse> approximateHours = [];
         if (demandExists)
@@ -63,6 +67,24 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         return await AddFreshnessAsync(plan, ToResponse(plan), ct);
     }
 
+    public async Task<RosterPlanResponse> GetInsideDraftAsync(DateOnly weekStart, CancellationToken ct)
+    {
+        var loaded = await inputs.LoadAsync(weekStart, ct, RosterKinds.Inside);
+        var draft = new RosterPlan
+        {
+            Id = Guid.Empty,
+            WeekStart = weekStart,
+            RosterKind = RosterKinds.Inside,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
+        return BuildResponse(draft, loaded, new RosterSolverResult
+        {
+            Status = "draft",
+            Message = "Inside roster draft. Add shifts and save to publish it.",
+            Shifts = []
+        });
+    }
+
     public async Task<object> GetHistoryAsync(CancellationToken ct, string rosterKind = RosterKinds.Drivers)
     {
         RosterKinds.EnsureEnabled(rosterKind);
@@ -80,7 +102,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
     // Caller owns the transaction; replacing shifts and the audit snapshot is one atomic save.
     public async Task<RosterPlanResponse> SaveAsync(LoadedRosterInput loaded, RosterSolverResult result, CancellationToken ct)
     {
-        RosterKinds.EnsureEnabled(loaded.Input.RosterKind);
+        RosterKinds.EnsureGenerationEnabled(loaded.Input.RosterKind);
         var validation = RosterSolver.Validate(loaded.Input, result.Shifts);
         if (!result.Success || validation.Count > 0)
             throw new RosterInputException("The generated roster failed final validation and was not saved.", validation);
@@ -102,7 +124,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         var exists = await db.RosterPlans
             .AsNoTracking()
             .AnyAsync(plan => plan.WeekStart == request.WeekStart && plan.RosterKind == request.RosterKind, ct);
-        if (!exists)
+        if (!exists && request.RosterKind != RosterKinds.Inside)
             throw new RosterInputException("A roster has not been generated for this week.");
 
         var loaded = await inputs.LoadAsync(request.WeekStart, ct, request.RosterKind);
@@ -129,9 +151,13 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         var result = new RosterSolverResult
         {
             Status = "manual",
-            Message = "Roster manually updated by an administrator.",
+            Message = exists
+                ? "Roster manually updated by an administrator."
+                : "Inside roster manually created by an administrator.",
             Shifts = shifts,
-            Diagnostics = ["Roster manually updated by an administrator.", .. editWarnings],
+            Diagnostics = [exists
+                ? "Roster manually updated by an administrator."
+                : "Inside roster manually created by an administrator.", .. editWarnings],
             TotalDemandHours = loaded.Input.Demand.Sum(demand => demand.RequiredDrivers),
             TotalScheduledHours = shifts.Sum(shift => shift.DurationHours)
         };
@@ -284,7 +310,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
             response.FreshnessStatus = "stale";
             response.FreshnessWarnings = new[]
                 {
-                    "The current demand or driver availability cannot be validated against this saved roster.",
+                    $"The current demand or {(plan.RosterKind == RosterKinds.Inside ? "inside employee" : "driver")} availability cannot be validated against this saved roster.",
                     exception.Message
                 }
                 .Concat(exception.Diagnostics)
@@ -317,7 +343,7 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
         if (demandChanged)
             warnings.Add("Demand changed after this roster was saved. The highlighted coverage now uses the current demand template.");
         if (availabilityChanged)
-            warnings.Add("Driver availability, eligibility, type, or automatically calculated hours changed after this roster was saved.");
+            warnings.Add($"{(plan.RosterKind == RosterKinds.Inside ? "Inside employee" : "Driver")} availability, eligibility, role/type, or automatically calculated hours changed after this roster was saved.");
         warnings.AddRange(diagnostics);
 
         response.FreshnessStatus = "stale";
