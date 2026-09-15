@@ -1455,6 +1455,14 @@ function AdminConsole({
     }))
   const employeesWithoutAvailability = (availability?.employees || [])
     .filter((employeeSchedule) => !employeeSchedule.days.some((day) => day.startTime && day.finishTime))
+  const employeesWithApproximateHours = (availability?.employees || [])
+    .filter((employeeSchedule) => employeeSchedule.approximateHours != null)
+  const totalApproximateHours = employeesWithApproximateHours.length > 0
+    ? employeesWithApproximateHours.reduce((total, employeeSchedule) => total + Number(employeeSchedule.approximateHours), 0)
+    : null
+  const totalApproximateCapacityHours = employeesWithApproximateHours.length > 0
+    ? employeesWithApproximateHours.reduce((total, employeeSchedule) => total + Number(employeeSchedule.approximateCapacityHours ?? 0), 0)
+    : null
   const editableRoles = authState.user.isAdmin
     ? ['Driver', 'InStore', 'Manager', 'Admin']
     : ['Driver', 'InStore', 'Manager']
@@ -1832,6 +1840,14 @@ function AdminConsole({
                     {dateFormatter.format(parseDate(availability.weekStart))} –{' '}
                     {dateFormatter.format(parseDate(availability.weekEnd))}
                   </div>
+                  <ApproximateHoursPreview
+                    approximateHours={totalApproximateHours}
+                    capacityHours={totalApproximateCapacityHours}
+                    label="Estimated driver hours"
+                    detail={employeesWithApproximateHours.length > 0
+                      ? `Automatic allocation across ${employeesWithApproximateHours.length} active ${employeesWithApproximateHours.length === 1 ? 'driver' : 'drivers'}. The generator uses these individual targets when balancing the roster.`
+                      : 'Complete outside demand and driver availability to calculate the hours the roster will try to allocate.'}
+                  />
                   <AvailabilityHeatmap heatmap={availability.heatmap} weekStart={availability.weekStart} />
                   {employeesWithoutAvailability.length > 0 && (
                     <div className="availability-missing-summary" role="status">
@@ -1876,6 +1892,11 @@ function AdminConsole({
                                     {!hasAvailability && (
                                       <span className="availability-missing-badge">No availability entered</span>
                                     )}
+                                    <span className={`availability-approximate-badge ${employeeSchedule.approximateHours == null ? 'pending' : ''}`}>
+                                      {employeeSchedule.approximateHours == null
+                                        ? 'Approx. hours pending'
+                                        : `Approx. ${Number(employeeSchedule.approximateHours).toFixed(1)}h`}
+                                    </span>
                                   </strong>
                                   {employeeSchedule.days.map((day) => (
                                     <span key={day.date}>
@@ -1987,6 +2008,13 @@ function AdminConsole({
                     </p>
                   )}
 
+                  {schedule.heatmap && (
+                    <ApproximateHoursPreview
+                      approximateHours={schedule.approximateHours}
+                      capacityHours={schedule.approximateCapacityHours}
+                      label={`${schedule.employeeName}'s estimated roster hours`}
+                    />
+                  )}
                   <AvailabilityHeatmap heatmap={schedule.heatmap} weekStart={schedule.weekStart} />
 
                   <div className="schedule-table" role="table" aria-label="Employee schedule">
@@ -2114,6 +2142,23 @@ function TimeSelector({ id, label, value, onChange, disabled = false }) {
   )
 }
 
+function ApproximateHoursPreview({ approximateHours, capacityHours, label = 'Your estimated roster hours', detail }) {
+  const available = approximateHours != null
+  return (
+    <section className={`approximate-hours-preview ${available ? '' : 'pending'}`} aria-label={label}>
+      <div className="approximate-hours-value">
+        <span>{label}</span>
+        <strong>{available ? `${Number(approximateHours).toFixed(1)}h` : 'Pending'}</strong>
+      </div>
+      <p>
+        {detail || (available
+          ? `Calculated from demand, useful availability and how scarce each hour is.${capacityHours != null ? ` Useful availability capacity: ${Number(capacityHours).toFixed(1)}h.` : ''} The roster generator uses this as a fairness target, while exact coverage and shift rules still come first.`
+          : 'Complete outside demand and save availability to calculate this estimate. It updates before the roster is generated.')}
+      </p>
+    </section>
+  )
+}
+
 function AvailabilityHeatmap({ heatmap, weekStart }) {
   if (!heatmap) return null
   if (!heatmap.demandPlanExists) {
@@ -2207,6 +2252,12 @@ function ScheduleEditor({
         </p>
       )}
 
+      {schedule.heatmap && (
+        <ApproximateHoursPreview
+          approximateHours={schedule.approximateHours}
+          capacityHours={schedule.approximateCapacityHours}
+        />
+      )}
       <AvailabilityHeatmap heatmap={schedule.heatmap} weekStart={schedule.weekStart} />
 
       <div className="schedule-table" role="table" aria-label="Weekly availability">

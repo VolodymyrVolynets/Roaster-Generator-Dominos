@@ -35,6 +35,10 @@ public sealed class WeeklyScheduleResponse
 
     public bool CanEdit { get; set; } = true;
 
+    public double? ApproximateHours { get; init; }
+
+    public double? ApproximateCapacityHours { get; init; }
+
     public AvailabilityHeatmapResponse? Heatmap { get; init; }
 
     public IReadOnlyList<ScheduleDayResponse> Days { get; init; } = [];

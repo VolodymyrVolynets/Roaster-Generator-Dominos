@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Roaster_Generator.Configuration;
 using Roaster_Generator.Data;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Entities;
@@ -11,6 +13,41 @@ namespace Roaster_Generator.Tests;
 
 public sealed class AvailabilityHeatmapTests
 {
+    [Fact]
+    public async Task DriverAndAdminAvailabilityExposeTheSameHoursUsedByRosterInputs()
+    {
+        using var db = NewDb();
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var broad = AddDriver(db, "Broad");
+        var limited = AddDriver(db, "Limited");
+        AddAvailability(db, broad, monday, 12, 18);
+        AddAvailability(db, limited, monday, 12, 14);
+        AddCompleteDemand(db, monday);
+        await db.SaveChangesAsync();
+        var inputs = new RosterInputService(
+            db,
+            new RosterSettingsService(db),
+            Options.Create(new ShopHoursOptions()));
+        var service = new WeeklyScheduleService(db, inputs);
+
+        var overview = await service.GetWeekForAllAsync(1, default);
+        var loaded = await inputs.LoadAsync(monday, default);
+        var broadAllocation = loaded.Input.ExpectedHoursByEmployee![broad.Id];
+        var limitedAllocation = loaded.Input.ExpectedHoursByEmployee[limited.Id];
+
+        Assert.Equal(broadAllocation.ExpectedHours,
+            overview.Employees.Single(employee => employee.EmployeeId == broad.Id).ApproximateHours);
+        Assert.Equal(limitedAllocation.ExpectedHours,
+            overview.Employees.Single(employee => employee.EmployeeId == limited.Id).ApproximateHours);
+        Assert.Equal(6d, overview.Employees.Sum(employee => employee.ApproximateHours ?? 0), 4);
+        Assert.True(broadAllocation.ExpectedHours > limitedAllocation.ExpectedHours);
+
+        var personal = await service.GetWeekAsync(limited.Id, 1, default);
+        Assert.Equal(limitedAllocation.ExpectedHours, personal!.ApproximateHours);
+        Assert.Equal(limitedAllocation.CapacityHours, personal.ApproximateCapacityHours);
+        Assert.NotNull(personal.Heatmap);
+    }
+
     [Fact]
     public async Task WeeklyOverviewClassifiesDemandByCurrentDriverAvailability()
     {
@@ -26,7 +63,7 @@ public sealed class AvailabilityHeatmapTests
         AddDemand(db, monday, DemandKinds.Inside, (16, 9));
         await db.SaveChangesAsync();
 
-        var response = await new WeeklyScheduleService(db).GetWeekForAllAsync(1, default);
+        var response = await new WeeklyScheduleService(db, null).GetWeekForAllAsync(1, default);
 
         Assert.True(response.Heatmap.DemandPlanExists);
         Assert.Equal(4, response.Heatmap.Slots.Count);
@@ -54,7 +91,7 @@ public sealed class AvailabilityHeatmapTests
         AddDemand(db, monday, DemandKinds.Outside, (0, 2));
         await db.SaveChangesAsync();
 
-        var response = await new WeeklyScheduleService(db).GetWeekForAllAsync(1, default);
+        var response = await new WeeklyScheduleService(db, null).GetWeekForAllAsync(1, default);
         var slot = Assert.Single(response.Heatmap.Slots);
 
         Assert.Equal(24, slot.Hour);
@@ -74,7 +111,7 @@ public sealed class AvailabilityHeatmapTests
         db.Employees.Add(inStore);
         AddDemand(db, monday, DemandKinds.Outside, (12, 1));
         await db.SaveChangesAsync();
-        var service = new WeeklyScheduleService(db);
+        var service = new WeeklyScheduleService(db, null);
 
         var driverSchedule = await service.GetWeekAsync(driver.Id, 1, default);
         var inStoreSchedule = await service.GetWeekAsync(inStore.Id, 1, default);
@@ -88,7 +125,7 @@ public sealed class AvailabilityHeatmapTests
     {
         using var db = NewDb();
 
-        var response = await new WeeklyScheduleService(db).GetWeekForAllAsync(1, default);
+        var response = await new WeeklyScheduleService(db, null).GetWeekForAllAsync(1, default);
 
         Assert.False(response.Heatmap.DemandPlanExists);
         Assert.Empty(response.Heatmap.Slots);
@@ -103,7 +140,7 @@ public sealed class AvailabilityHeatmapTests
         var driver = AddDriver(db, "Saving");
         AddDemand(db, monday, DemandKinds.Outside, (12, 1));
         await db.SaveChangesAsync();
-        var service = new WeeklyScheduleService(db);
+        var service = new WeeklyScheduleService(db, null);
         var before = await service.GetWeekAsync(driver.Id, 1, default);
 
         var saved = await service.ReplaceWeekAsync(driver.Id, new WeeklyScheduleRequest
@@ -190,6 +227,34 @@ public sealed class AvailabilityHeatmapTests
             {
                 Id = Guid.NewGuid(), DemandRowId = row.Id, DemandColumnId = columns[0].Id, Demand = required
             });
+            plan.Rows.Add(row);
+        }
+        foreach (var column in columns) plan.Columns.Add(column);
+        db.DemandPlans.Add(plan);
+    }
+
+    private static void AddCompleteDemand(AppDbContext db, DateOnly weekStart)
+    {
+        var plan = new DemandPlan
+        {
+            Id = Guid.NewGuid(), WeekStart = weekStart, DemandKind = DemandKinds.Outside
+        };
+        var columns = Enumerable.Range(0, 7).Select(position => new DemandColumn
+        {
+            Id = Guid.NewGuid(), DemandPlanId = plan.Id, Position = position, Label = $"Day {position}"
+        }).ToArray();
+        foreach (var sourceHour in Enumerable.Range(12, 13))
+        {
+            var row = new DemandRow
+            {
+                Id = Guid.NewGuid(), DemandPlanId = plan.Id, Hour = sourceHour % 24
+            };
+            foreach (var column in columns)
+                row.Values.Add(new DemandValue
+                {
+                    Id = Guid.NewGuid(), DemandRowId = row.Id, DemandColumnId = column.Id,
+                    Demand = column.Position == 0 && sourceHour < 18 ? 1 : 0
+                });
             plan.Rows.Add(row);
         }
         foreach (var column in columns) plan.Columns.Add(column);

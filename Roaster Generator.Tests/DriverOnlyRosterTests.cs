@@ -78,9 +78,16 @@ public sealed class DriverOnlyRosterTests
         Assert.Equal(driver.Id, Assert.Single(loaded.Input.Availability).EmployeeId);
         Assert.All(loaded.Input.Demand, slot => Assert.Equal(0, slot.RequiredDrivers));
 
-        var overview = await new WeeklyScheduleService(db).GetWeekForAllAsync(1, default);
-        Assert.Equal(driver.Id, Assert.Single(overview.Employees).EmployeeId);
+        var overview = await new WeeklyScheduleService(db, inputs).GetWeekForAllAsync(1, default);
+        var overviewDriver = Assert.Single(overview.Employees);
+        Assert.Equal(driver.Id, overviewDriver.EmployeeId);
         var summary = await new RosterPlanService(db, inputs).GetSummaryAsync(1, default);
+        var summaryDriver = Assert.Single(summary.ApproximateHours);
+        Assert.Equal(summaryDriver.ApproximateHours, overviewDriver.ApproximateHours);
+        Assert.Equal(summaryDriver.CapacityHours, overviewDriver.ApproximateCapacityHours);
+        var personalSchedule = await new WeeklyScheduleService(db, inputs).GetWeekAsync(driver.Id, 1, default);
+        Assert.Equal(summaryDriver.ApproximateHours, personalSchedule!.ApproximateHours);
+        Assert.Equal(summaryDriver.CapacityHours, personalSchedule.ApproximateCapacityHours);
         Assert.Equal(6, summary.EnteredAvailabilityHours);
         Assert.Equal(0, summary.EmployeesWithoutAvailability);
     }

@@ -239,7 +239,7 @@ public sealed class EmployeeAvailabilityAccessTests
             claims.Add(new Claim(ClaimTypes.NameIdentifier, User.Id.ToString()));
             Controller = new EmployeesController(Db, userManager, new WeekSelectionRequestValidator(),
                 new AdminWeekSelectionRequestValidator(),
-                new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions())), new WeeklyScheduleService(Db),
+                new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions())), new WeeklyScheduleService(Db, null),
                 new AvailabilityEditPolicy(new FixedTimeProvider(now ?? new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero))))
             {
                 ControllerContext = new ControllerContext

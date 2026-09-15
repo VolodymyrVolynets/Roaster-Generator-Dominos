@@ -7,7 +7,7 @@ using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Services;
 
-public sealed class WeeklyScheduleService(AppDbContext db)
+public sealed class WeeklyScheduleService(AppDbContext db, RosterInputService? rosterInputs)
 {
     public const int MinWeekOffset = 1;
     public const int MaxWeekOffset = 3;
@@ -34,12 +34,14 @@ public sealed class WeeklyScheduleService(AppDbContext db)
             .OrderBy(shift => shift.Date)
             .ToListAsync(cancellationToken);
 
-        var heatmap = await DriverRosterEmployees.Query(db)
-            .AnyAsync(item => item.Id == employeeId, cancellationToken)
-            ? await BuildHeatmapAsync(weekStart, cancellationToken)
+        var isDriver = await DriverRosterEmployees.Query(db)
+            .AnyAsync(item => item.Id == employeeId, cancellationToken);
+        var approximateHours = isDriver
+            ? (await GetApproximateHoursAsync(weekStart, cancellationToken)).GetValueOrDefault(employeeId)
             : null;
+        var heatmap = isDriver ? await BuildHeatmapAsync(weekStart, cancellationToken) : null;
 
-        return BuildResponse(employee, weekStart, shifts, heatmap);
+        return BuildResponse(employee, weekStart, shifts, heatmap, approximateHours);
     }
 
     public async Task<WeeklyAvailabilityResponse> GetWeekForAllAsync(
@@ -67,10 +69,13 @@ public sealed class WeeklyScheduleService(AppDbContext db)
             .GroupBy(shift => shift.EmployeeId)
             .ToDictionary(group => group.Key, group => (IReadOnlyCollection<Shift>)group.ToList());
 
+        var approximateHours = await GetApproximateHoursAsync(weekStart, cancellationToken);
         var schedules = employees
             .Select(employee => shiftsByEmployee.TryGetValue(employee.Id, out var employeeShifts)
-                ? BuildResponse(employee, weekStart, employeeShifts)
-                : BuildResponse(employee, weekStart, []))
+                ? BuildResponse(employee, weekStart, employeeShifts,
+                    approximateHours: approximateHours.GetValueOrDefault(employee.Id))
+                : BuildResponse(employee, weekStart, [],
+                    approximateHours: approximateHours.GetValueOrDefault(employee.Id)))
             .ToList();
 
         var heatmap = await BuildHeatmapAsync(weekStart, cancellationToken);
@@ -127,12 +132,14 @@ public sealed class WeeklyScheduleService(AppDbContext db)
             .OrderBy(shift => shift.Date)
             .ToListAsync(cancellationToken);
 
-        var heatmap = await DriverRosterEmployees.Query(db)
-            .AnyAsync(item => item.Id == employeeId, cancellationToken)
-            ? await BuildHeatmapAsync(weekStart, cancellationToken)
+        var isDriver = await DriverRosterEmployees.Query(db)
+            .AnyAsync(item => item.Id == employeeId, cancellationToken);
+        var approximateHours = isDriver
+            ? (await GetApproximateHoursAsync(weekStart, cancellationToken)).GetValueOrDefault(employeeId)
             : null;
+        var heatmap = isDriver ? await BuildHeatmapAsync(weekStart, cancellationToken) : null;
 
-        return BuildResponse(employee, weekStart, savedShifts, heatmap);
+        return BuildResponse(employee, weekStart, savedShifts, heatmap, approximateHours);
     }
 
     public static DateOnly GetCurrentWeekMonday()
@@ -167,7 +174,8 @@ public sealed class WeeklyScheduleService(AppDbContext db)
         Employee employee,
         DateOnly weekStart,
         IReadOnlyCollection<Shift> shifts,
-        AvailabilityHeatmapResponse? heatmap = null)
+        AvailabilityHeatmapResponse? heatmap = null,
+        FairDriverHoursAllocation? approximateHours = null)
     {
         var shiftsByDate = shifts.ToDictionary(shift => shift.Date);
 
@@ -193,9 +201,30 @@ public sealed class WeeklyScheduleService(AppDbContext db)
             EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
             WeekStart = weekStart,
             WeekEnd = weekStart.AddDays(6),
+            ApproximateHours = approximateHours?.ExpectedHours,
+            ApproximateCapacityHours = approximateHours?.CapacityHours,
             Heatmap = heatmap,
             Days = days
         };
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, FairDriverHoursAllocation>> GetApproximateHoursAsync(
+        DateOnly weekStart,
+        CancellationToken cancellationToken)
+    {
+        if (rosterInputs is null) return new Dictionary<Guid, FairDriverHoursAllocation>();
+
+        try
+        {
+            var loaded = await rosterInputs.LoadAsync(weekStart, cancellationToken, RosterKinds.Drivers);
+            return loaded.Input.ExpectedHoursByEmployee
+                ?? new Dictionary<Guid, FairDriverHoursAllocation>();
+        }
+        catch (RosterInputException)
+        {
+            // The heatmap can still guide availability while demand is missing or incomplete.
+            return new Dictionary<Guid, FairDriverHoursAllocation>();
+        }
     }
 
     private async Task<AvailabilityHeatmapResponse> BuildHeatmapAsync(

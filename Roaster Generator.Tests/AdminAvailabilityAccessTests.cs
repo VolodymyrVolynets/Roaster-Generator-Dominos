@@ -45,7 +45,7 @@ public sealed class AdminAvailabilityAccessTests
         return new AdminAvailabilityController(
             new WeekSelectionRequestValidator(),
             new AdminWeekSelectionRequestValidator(),
-            new WeeklyScheduleService(db))
+            new WeeklyScheduleService(db, null))
         {
             ControllerContext = new ControllerContext
             {
