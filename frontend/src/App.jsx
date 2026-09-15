@@ -3,6 +3,8 @@ import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 import { calculateDemandLabour, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
 import { getAvailabilityEmployeeId } from './availabilityAccess'
 import { availabilityHeatmapDetail, buildAvailabilityHeatmapGrid } from './availabilityHeatmap'
+import { AreaSelector, WeekSelector } from './SelectionControls'
+import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
 import {
   compareEmployees,
   employeeHasRole,
@@ -20,7 +22,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))
 const minWeekOffset = 1
 const maxWeekOffset = 3
-const weekLabels = ['Current week', 'Next week', 'Week after next', 'Three weeks ahead']
 const emptyEmployeeForm = {
   employeeNumber: '',
   firstName: '',
@@ -47,78 +48,6 @@ const employeeFieldLabels = {
 function parseDate(dateValue) {
   const [year, month, day] = dateValue.split('-').map(Number)
   return new Date(year, month - 1, day)
-}
-
-function getNextMondayValue() {
-  const date = new Date()
-  const day = date.getDay()
-  const daysUntilNextMonday = day === 0 ? 1 : 8 - day
-  date.setDate(date.getDate() + daysUntilNextMonday)
-  return date.toISOString().slice(0, 10)
-}
-
-function getMonday(date) {
-  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
-  const daysSinceMonday = (monday.getUTCDay() + 6) % 7
-  monday.setUTCDate(monday.getUTCDate() - daysSinceMonday)
-  return monday
-}
-
-function formatDateInput(date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
-}
-
-function parseDateInput(value) {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, day))
-}
-
-function getWeekStartValue(weekOffset) {
-  const monday = getMonday(new Date())
-  monday.setUTCDate(monday.getUTCDate() + Number(weekOffset) * 7)
-  return formatDateInput(monday)
-}
-
-function getWeekOffsetFromDate(value) {
-  const selectedMonday = getMonday(parseDateInput(value))
-  const currentMonday = getMonday(new Date())
-  return Math.round((selectedMonday.getTime() - currentMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
-}
-
-const weekPickerDateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-const weekPickerMonthFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-const weekPickerDayFormatter = new Intl.DateTimeFormat(undefined, {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-const weekPickerWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-function getCalendarMonthStart(weekOffset) {
-  const selectedWeek = parseDateInput(getWeekStartValue(weekOffset))
-  return new Date(Date.UTC(selectedWeek.getUTCFullYear(), selectedWeek.getUTCMonth(), 1))
-}
-
-function getCalendarDays(monthStart) {
-  const firstDay = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), 1))
-  const gridStart = getMonday(firstDay)
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const day = new Date(gridStart)
-    day.setUTCDate(day.getUTCDate() + index)
-    return day
-  })
 }
 
 function getShiftDuration(startTime, finishTime) {
@@ -735,33 +664,28 @@ function AdminSickLeavePanel({ setErrorPopup, includeOwnRequest = false }) {
   )
 }
 
-function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
+function DemandManager({
+  setErrorPopup,
+  employees = [],
+  canEdit = true,
+  weekOffset,
+  onWeekChange,
+  demandKind,
+  onDemandKindChange,
+}) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
-  const [demandKind, setDemandKind] = useState('outside')
   const [plan, setPlan] = useState(null)
   const [selectedDemandDayPosition, setSelectedDemandDayPosition] = useState(0)
   const [name, setName] = useState('Weekly demand')
-  const [weekStart, setWeekStart] = useState(getNextMondayValue())
   const [pasteContent, setPasteContent] = useState('')
   const [status, setStatus] = useState({ status: 'idle', message: '' })
   const receivedPlan = (payload) => ({ ...payload, labourEstimateCurrent: true })
+  const weekStart = getWeekStartValue(weekOffset)
 
   useEffect(() => {
     fetchJson('/api/admin/demand')
-      .then((payload) => {
-        setPlans(payload)
-        const firstOutside = payload.find((item) => item.demandKind === 'outside')
-        if (firstOutside) {
-          setSelectedPlanId(String(firstOutside.id))
-          setDemandKind('outside')
-          setWeekStart(firstOutside.weekStart)
-        } else if (payload.length > 0) {
-          setSelectedPlanId(String(payload[0].id))
-          setDemandKind(payload[0].demandKind || 'outside')
-          setWeekStart(payload[0].weekStart)
-        }
-      })
+      .then(setPlans)
       .catch((error) => setErrorPopup(error.message))
   }, [setErrorPopup])
 
@@ -771,21 +695,24 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
   }, [demandKind, plans, weekStart])
 
   useEffect(() => {
+    let active = true
     if (!selectedPlanId) {
       setPlan(null)
-      return
+      setName('Weekly demand')
+      setStatus({ status: 'idle', message: '' })
+      return undefined
     }
 
     fetchJson(`/api/admin/demand/${selectedPlanId}`)
       .then((payload) => {
+        if (!active) return
         setPlan(receivedPlan(payload))
-        setDemandKind(payload.demandKind || 'outside')
         setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
         setName(payload.name)
-        setWeekStart(payload.weekStart)
         setStatus({ status: 'idle', message: '' })
       })
-      .catch((error) => setErrorPopup(error.message))
+      .catch((error) => { if (active) setErrorPopup(error.message) })
+    return () => { active = false }
   }, [selectedPlanId, setErrorPopup])
 
   function updateDemandValue(hour, position, field, rawValue) {
@@ -850,10 +777,8 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
         body: JSON.stringify({ name, weekStart, demandKind, content: pasteContent }),
       })
       setPlan(receivedPlan(payload))
-      setDemandKind(payload.demandKind || demandKind)
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
-      setWeekStart(payload.weekStart)
       setSelectedPlanId(String(payload.id))
       setPasteContent('')
       setStatus({ status: 'success', message: 'Demand imported.' })
@@ -885,10 +810,8 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
         body: formData,
       })
       setPlan(receivedPlan(payload))
-      setDemandKind(payload.demandKind || demandKind)
       setSelectedDemandDayPosition(payload.columns[0]?.position ?? 0)
       setName(payload.name)
-      setWeekStart(payload.weekStart)
       setSelectedPlanId(String(payload.id))
       setStatus({ status: 'success', message: 'Excel demand imported.' })
       await refreshPlans()
@@ -955,8 +878,7 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
       await fetchJson(`/api/admin/demand/${selectedPlanId}`, { method: 'DELETE' })
       const remainingPlans = plans.filter((item) => String(item.id) !== selectedPlanId)
       setPlans(remainingPlans)
-      const nextPlan = remainingPlans.find((item) => item.demandKind === demandKind) || remainingPlans[0]
-      setSelectedPlanId(nextPlan ? String(nextPlan.id) : '')
+      setSelectedPlanId('')
       setPlan(null)
       setStatus({ status: 'success', message: 'Demand plan deleted.' })
     } catch (error) {
@@ -1019,18 +941,16 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
           <span className="eyebrow">Administration</span>
           <h2>Demand input</h2>
         </div>
-        <div className="demand-scenario-controls">
-          <label>Scenario
-            <select value={demandKind} onChange={(event) => setDemandKind(event.target.value)}>
-              <option value="outside">Outside / drivers</option>
-              <option value="inside">Inside / store</option>
-            </select>
-          </label>
-          <label>Week starting
-            <input type="date" value={weekStart} onChange={(event) => {
-              if (event.target.value) setWeekStart(formatDateInput(getMonday(parseDateInput(event.target.value))))
-            }} />
-          </label>
+        <div className="selection-toolbar demand-scenario-controls">
+          <AreaSelector value={demandKind} onChange={onDemandKindChange} disabled={status.status === 'saving'} />
+          <WeekSelector
+            weekOffset={weekOffset}
+            onChange={onWeekChange}
+            allowAllWeeks
+            disabled={status.status === 'saving'}
+            highlightedWeekStarts={plans.filter((item) => item.demandKind === demandKind).map((item) => item.weekStart)}
+            highlightLabel={`${isInsideDemand ? 'Inside' : 'Outside'} demand saved`}
+          />
         </div>
       </div>
 
@@ -1436,163 +1356,6 @@ function DemandManager({ setErrorPopup, employees = [], canEdit = true }) {
   )
 }
 
-function WeekSelector({ weekOffset, onChange, disabled = false, allowAllWeeks = false }) {
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [visibleMonth, setVisibleMonth] = useState(() => getCalendarMonthStart(weekOffset))
-  const pickerDialogRef = useRef(null)
-
-  useEffect(() => {
-    if (pickerOpen) pickerDialogRef.current?.focus()
-  }, [pickerOpen])
-
-  const selectedWeekStart = parseDateInput(getWeekStartValue(weekOffset))
-  const calendarDays = getCalendarDays(visibleMonth)
-
-  function openPicker() {
-    setVisibleMonth(getCalendarMonthStart(weekOffset))
-    setPickerOpen(true)
-  }
-
-  function chooseDay(day) {
-    onChange(getWeekOffsetFromDate(formatDateInput(day)))
-    setPickerOpen(false)
-  }
-
-  function changeMonth(months) {
-    setVisibleMonth((current) => new Date(Date.UTC(
-      current.getUTCFullYear(),
-      current.getUTCMonth() + months,
-      1,
-    )))
-  }
-
-  if (allowAllWeeks) {
-    return (
-      <>
-        <div className="week-selector">
-          <span>Week starting</span>
-          <button
-            type="button"
-            className="week-picker-trigger"
-            onClick={openPicker}
-            disabled={disabled}
-            aria-haspopup="dialog"
-            aria-expanded={pickerOpen}
-          >
-            <span>{weekPickerDateFormatter.format(selectedWeekStart)}</span>
-            <span aria-hidden="true">▾</span>
-          </button>
-        </div>
-
-        {pickerOpen && (
-          <div
-            className="week-picker-backdrop"
-            role="presentation"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setPickerOpen(false)
-            }}
-          >
-            <section
-              ref={pickerDialogRef}
-              className="week-picker-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="week-picker-dialog-title"
-              tabIndex="-1"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setPickerOpen(false)
-              }}
-            >
-              <div className="week-picker-dialog-heading">
-                <div>
-                  <span className="eyebrow">Choose availability week</span>
-                  <h3 id="week-picker-dialog-title">{weekPickerMonthFormatter.format(visibleMonth)}</h3>
-                </div>
-                <button
-                  type="button"
-                  className="secondary-button week-picker-close"
-                  onClick={() => setPickerOpen(false)}
-                  aria-label="Close week picker"
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className="week-picker-month-nav">
-                <button
-                  type="button"
-                  className="secondary-button week-picker-nav-button"
-                  onClick={() => changeMonth(-1)}
-                  aria-label="Previous month"
-                >
-                  ←
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button week-picker-current"
-                  onClick={() => chooseDay(getMonday(new Date()))}
-                >
-                  Current week
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button week-picker-nav-button"
-                  onClick={() => changeMonth(1)}
-                  aria-label="Next month"
-                >
-                  →
-                </button>
-              </div>
-
-              <p className="week-picker-help">
-                Choose any day. The complete Monday–Sunday week will be shown.
-              </p>
-
-              <div className="week-picker-grid week-picker-weekdays" aria-hidden="true">
-                {weekPickerWeekdays.map((day) => <span key={day}>{day}</span>)}
-              </div>
-              <div className="week-picker-grid" aria-label="Select an availability week">
-                {calendarDays.map((day) => {
-                  const inVisibleMonth = day.getUTCMonth() === visibleMonth.getUTCMonth()
-                  const inSelectedWeek = getMonday(day).getTime() === selectedWeekStart.getTime()
-
-                  return (
-                    <button
-                      type="button"
-                      className={`week-picker-day ${inVisibleMonth ? '' : 'outside-month'} ${inSelectedWeek ? 'selected-week' : ''}`}
-                      key={formatDateInput(day)}
-                      onClick={() => chooseDay(day)}
-                      aria-label={weekPickerDayFormatter.format(day)}
-                      aria-pressed={inSelectedWeek}
-                    >
-                      {day.getUTCDate()}
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
-          </div>
-        )}
-      </>
-    )
-  }
-
-  return (
-    <label className="week-selector">
-      Week
-      <select
-        value={weekOffset}
-        onChange={(event) => onChange(Number(event.target.value))}
-        disabled={disabled}
-      >
-        <option value={1}>Next week</option>
-        <option value={2}>Week after next</option>
-        <option value={3}>Three weeks ahead</option>
-      </select>
-    </label>
-  )
-}
-
 function AdminConsole({
   authState,
   errorPopup,
@@ -1624,7 +1387,7 @@ function AdminConsole({
   onTabChange,
 }) {
   const [activeTab, setActiveTab] = useState('employees')
-  const [savedWeekStart, setSavedWeekStart] = useState(null)
+  const [workArea, setWorkArea] = useState('outside')
   const employeeEditorRef = useRef(null)
 
   useEffect(() => {
@@ -1665,7 +1428,6 @@ function AdminConsole({
 
   function selectScheduleEmployee(event) {
     setSelectedEmployeeId(event.target.value)
-    setWeekOffset(minWeekOffset)
   }
 
   const selectedEmployee = employees.find(
@@ -2060,7 +1822,7 @@ function AdminConsole({
                 <WeekSelector
                   weekOffset={weekOffset}
                   onChange={setWeekOffset}
-                  allowAllWeeks={authState.user.isAdmin}
+                  allowAllWeeks
                 />
               </div>
 
@@ -2178,7 +1940,7 @@ function AdminConsole({
                 <WeekSelector
                   weekOffset={weekOffset}
                   onChange={setWeekOffset}
-                  allowAllWeeks={authState.user.isAdmin}
+                  allowAllWeeks
                 />
               </div>
 
@@ -2293,6 +2055,10 @@ function AdminConsole({
             setErrorPopup={setErrorPopup}
             employees={employees}
             canEdit={authState.user.isAdmin}
+            weekOffset={weekOffset}
+            onWeekChange={setWeekOffset}
+            demandKind={workArea}
+            onDemandKindChange={setWorkArea}
           />}
 
           {authState.user.isAdmin && (
@@ -2300,15 +2066,23 @@ function AdminConsole({
               fetchJson={fetchJson}
               setErrorPopup={setErrorPopup}
               isVisible={activeTab === 'generate-roster'}
-              onShowSaved={(weekStart) => { setSavedWeekStart(weekStart); switchTab('saved-rosters') }}
+              weekOffset={weekOffset}
+              setWeekOffset={setWeekOffset}
+              onShowSaved={(weekStart) => {
+                setWeekOffset(getWeekOffsetFromDate(weekStart))
+                setWorkArea('outside')
+                switchTab('saved-rosters')
+              }}
             />
           )}
           {activeTab === 'saved-rosters' && <SavedRosterPanel
-            key={savedWeekStart || 'upcoming'}
             fetchJson={fetchJson}
             setErrorPopup={setErrorPopup}
-            initialWeekStart={savedWeekStart}
             canEdit={authState.user.isAdmin}
+            weekOffset={weekOffset}
+            setWeekOffset={setWeekOffset}
+            workArea={workArea}
+            setWorkArea={setWorkArea}
           />}
         </section>
       </main>
@@ -2407,12 +2181,6 @@ function ScheduleEditor({
   const minimumEditableWeekOffset = schedule?.minimumEditableWeekOffset ?? minWeekOffset
   const canEdit = schedule?.canEdit !== false
 
-  function changeWeek(direction) {
-    setWeekOffset((current) =>
-      Math.min(maxWeekOffset, Math.max(minimumEditableWeekOffset, current + direction)),
-    )
-  }
-
   if (!schedule) {
     return null
   }
@@ -2424,33 +2192,13 @@ function ScheduleEditor({
           <span className="eyebrow">Weekly availability</span>
           <h2>{schedule.employeeName}</h2>
         </div>
-        <div className="week-navigation" aria-label="Week navigation">
-          <button
-            type="button"
-            className="week-arrow"
-            aria-label="Previous week"
-            onClick={() => changeWeek(-1)}
-            disabled={weekOffset <= minimumEditableWeekOffset || scheduleState.status === 'loading'}
-          >
-            ←
-          </button>
-          <div className="week-range">
-            <strong>{weekLabels[weekOffset]}</strong>
-            <span>
-              {dateFormatter.format(parseDate(schedule.weekStart))} –{' '}
-              {dateFormatter.format(parseDate(schedule.weekEnd))}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="week-arrow"
-            aria-label="Next week"
-            onClick={() => changeWeek(1)}
-            disabled={weekOffset === maxWeekOffset || scheduleState.status === 'loading'}
-          >
-            →
-          </button>
-        </div>
+        <WeekSelector
+          weekOffset={weekOffset}
+          onChange={setWeekOffset}
+          disabled={scheduleState.status === 'loading'}
+          minimumWeekOffset={minimumEditableWeekOffset}
+          maximumWeekOffset={maxWeekOffset}
+        />
       </div>
 
       {!canEdit && (
@@ -2577,10 +2325,6 @@ function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup }) {
     }
   }) : []
 
-  function changeWeek(direction) {
-    setWeekOffset((current) => Math.min(maxWeekOffset, Math.max(minWeekOffset, current + direction)))
-  }
-
   return (
     <section className="personal-roster" aria-labelledby="personal-roster-heading">
       <div className="schedule-heading personal-roster-heading">
@@ -2589,16 +2333,13 @@ function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup }) {
           <h2 id="personal-roster-heading">My roster</h2>
           <p className="personal-roster-intro">Only your scheduled shifts are shown here.</p>
         </div>
-        <div className="week-navigation" aria-label="Roster week navigation">
-          <button type="button" className="week-arrow" aria-label="Previous roster week"
-            onClick={() => changeWeek(-1)} disabled={weekOffset === minWeekOffset || rosterState.status === 'loading'}>←</button>
-          <div className="week-range">
-            <strong>{weekLabels[weekOffset]}</strong>
-            {roster && <span>{dateFormatter.format(parseDate(roster.weekStart))} – {dateFormatter.format(parseDate(roster.weekEnd))}</span>}
-          </div>
-          <button type="button" className="week-arrow" aria-label="Next roster week"
-            onClick={() => changeWeek(1)} disabled={weekOffset === maxWeekOffset || rosterState.status === 'loading'}>→</button>
-        </div>
+        <WeekSelector
+          weekOffset={weekOffset}
+          onChange={setWeekOffset}
+          disabled={rosterState.status === 'loading'}
+          minimumWeekOffset={minWeekOffset}
+          maximumWeekOffset={maxWeekOffset}
+        />
       </div>
 
       {rosterState.status === 'loading' && <p className="message info-message" role="status">Loading your roster…</p>}

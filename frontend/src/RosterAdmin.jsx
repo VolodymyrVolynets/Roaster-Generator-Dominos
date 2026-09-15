@@ -3,6 +3,8 @@ import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/si
 import { createRosterEventState, mergeRosterEvents } from './rosterEvents'
 import { compareRosterEmployees, employeeMatchesRosterKind, getRosterRoleGroup, rosterForKind, rosterRoleGroups } from './employeeGroups'
 import SavedRosterLabour from './SavedRosterLabour'
+import { AreaSelector, WeekSelector } from './SelectionControls'
+import { getWeekStartValue } from './weekSelection'
 
 const weightFields = [
   ['approximateHoursWeight', 'Match approximate hours', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s automatically calculated share; reduce it when shift shape or rest needs more flexibility. Set to 0 to disable it.'],
@@ -27,19 +29,6 @@ const averageShiftHours = (shifts) => shifts.length ? Math.round(shifts.reduce((
 const approximateHours = (employee) => employee.approximateHours ?? 0
 const rosterKind = 'drivers'
 const hourOptions = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`)
-
-function WeekSelector({ value, onChange, disabled }) {
-  return (
-    <label className="week-selector">
-      Week
-      <select value={value} onChange={(event) => onChange(Number(event.target.value))} disabled={disabled}>
-        <option value={1}>Next week</option>
-        <option value={2}>Week after next</option>
-        <option value={3}>Three weeks ahead</option>
-      </select>
-    </label>
-  )
-}
 
 function SettingsForm({ settings, setSettings, savedSettings, saveSettings, saving, running, error, onRetry }) {
   const dirty = settings && savedSettings && JSON.stringify(settings) !== JSON.stringify(savedSettings)
@@ -113,8 +102,7 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
   )
 }
 
-export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onShowSaved }) {
-  const [weekOffset, setWeekOffset] = useState(1)
+export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onShowSaved, weekOffset, setWeekOffset }) {
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
   const [logs, setLogs] = useState([])
@@ -132,6 +120,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
   const currentJobRef = useRef(null)
   const running = starting || runningStatuses.has(generation?.status)
   const dirtySettings = settings && savedSettings && JSON.stringify(settings) !== JSON.stringify(savedSettings)
+  const selectedWeekCanGenerate = weekOffset >= 1 && weekOffset <= 3
 
   useEffect(() => {
     if (!isVisible || dirtySettings) return
@@ -144,20 +133,31 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
   }, [fetchJson, setErrorPopup, settingsRefreshKey, isVisible, dirtySettings])
 
   useEffect(() => {
-    if (!isVisible) return
+    if (!isVisible || !selectedWeekCanGenerate) {
+      setSummary(null)
+      return
+    }
     let active = true
     setSummary(null)
     fetchJson(`/api/admin/roster/summary?weekOffset=${weekOffset}&rosterKind=${rosterKind}`, { cache: 'no-store' })
       .then((payload) => { if (active) setSummary(payload) })
       .catch((error) => { if (active) setErrorPopup(error.message) })
     return () => { active = false }
-  }, [fetchJson, setErrorPopup, weekOffset, rosterKind, isVisible])
+  }, [fetchJson, setErrorPopup, weekOffset, rosterKind, isVisible, selectedWeekCanGenerate])
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [logs])
 
   useEffect(() => {
+    if (!selectedWeekCanGenerate) {
+      setGeneration(null)
+      setLogs([])
+      setReplayError('')
+      setHubStatus('paused')
+      currentJobRef.current = null
+      return undefined
+    }
     let active = true
     let retryTimer
     let replayPending = false
@@ -237,7 +237,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
       // Stopping the connection never cancels the server's generation job.
       void connection.stop()
     }
-  }, [fetchJson, setErrorPopup, weekOffset, rosterKind])
+  }, [fetchJson, setErrorPopup, weekOffset, rosterKind, selectedWeekCanGenerate])
 
   async function saveSettings(event) {
     event.preventDefault()
@@ -283,8 +283,13 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
     <section className="admin-tools roster-generation-tools" hidden={!isVisible}>
       <div className="section-heading">
         <div><span className="eyebrow">Administration</span><h2>Generate roster</h2></div>
-        <WeekSelector value={weekOffset} onChange={setWeekOffset} disabled={running} />
+        <WeekSelector weekOffset={weekOffset} onChange={setWeekOffset} disabled={running} />
       </div>
+      {!selectedWeekCanGenerate && (
+        <p className="message info-message" role="status">
+          Roster generation is available from next week through three weeks ahead. Choose one of those weeks to continue.
+        </p>
+      )}
       <p className="demand-help">
         Build an exact demand match, then balance automatically calculated approximate hours, past-hour differences, shift lengths, and rest.
         A successful roster is saved automatically. An impossible week is explained in the activity log.
@@ -318,7 +323,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
         saveSettings={saveSettings} saving={savingSettings} running={running} error={settingsError}
         onRetry={() => setSettingsRefreshKey((value) => value + 1)} />
       <div className="roster-generation-actions">
-        <button type="button" onClick={generate} disabled={running || savingSettings || !settings || dirtySettings || summary?.demandPlanExists === false}>
+        <button type="button" onClick={generate} disabled={!selectedWeekCanGenerate || running || savingSettings || !settings || dirtySettings || summary?.demandPlanExists === false}>
           {starting ? 'Starting…' : running ? 'Generating roster…' : 'Generate driver roster'}
         </button>
         {running && <button type="button" className="danger-button" onClick={cancel} disabled={!generation?.jobId || starting || cancelling}>
@@ -764,10 +769,18 @@ function SavedRosterEmployeeTables({
   </>
 }
 
-export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, canEdit = true }) {
-  const [rosterKind, setRosterKind] = useState('drivers')
+export function SavedRosterPanel({
+  fetchJson,
+  setErrorPopup,
+  canEdit = true,
+  weekOffset,
+  setWeekOffset,
+  workArea,
+  setWorkArea,
+}) {
+  const rosterKind = workArea === 'inside' ? 'inside' : 'drivers'
+  const weekStart = getWeekStartValue(weekOffset)
   const [history, setHistory] = useState([])
-  const [selection, setSelection] = useState(initialWeekStart ? `date:${initialWeekStart}` : 'offset:1')
   const [roster, setRoster] = useState(null)
   const [availableEmployees, setAvailableEmployees] = useState([])
   const [draftShifts, setDraftShifts] = useState([])
@@ -782,7 +795,9 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
     let active = true
     setHistory([])
     fetchJson(`/api/admin/roster/history?rosterKind=${rosterKind}`, { cache: 'no-store' })
-      .then((payload) => { if (active) setHistory(payload.filter((item) => !item.rosterKind || item.rosterKind === rosterKind)) })
+      .then((payload) => {
+        if (active) setHistory(payload.filter((item) => !item.rosterKind || item.rosterKind === rosterKind))
+      })
       .catch((error) => { if (active) setErrorPopup(error.message) })
     return () => { active = false }
   }, [fetchJson, setErrorPopup, refreshKey, rosterKind])
@@ -806,9 +821,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
     setStatus('loading')
     setRoster(null)
     setEditStatus({ status: 'idle', message: '' })
-    const [kind, value] = selection.split(':')
-    const query = kind === 'date' ? `weekStart=${encodeURIComponent(value)}` : `weekOffset=${value}`
-    fetchJson(`/api/admin/roster?${query}&rosterKind=${rosterKind}`, { cache: 'no-store' }).then((payload) => {
+    fetchJson(`/api/admin/roster?weekStart=${encodeURIComponent(weekStart)}&rosterKind=${rosterKind}`, { cache: 'no-store' }).then((payload) => {
       if (active) {
         const selectedRoster = rosterForKind(payload, rosterKind)
         setRoster(selectedRoster)
@@ -820,7 +833,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       if (error.status !== 404) setErrorPopup(error.message)
     })
     return () => { active = false }
-  }, [fetchJson, setErrorPopup, selection, refreshKey, rosterKind])
+  }, [fetchJson, setErrorPopup, weekStart, refreshKey, rosterKind])
 
   useEffect(() => {
     if (!roster) return
@@ -941,33 +954,28 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       .sort(compareRosterEmployees),
   }))
   const populatedRosterEmployeeGroups = groupedRosterEmployees.filter((group) => group.employees.length > 0)
-  const savedDates = [...new Set([...(initialWeekStart ? [initialWeekStart] : []), ...history.map((item) => item.weekStart)])]
-    .sort((left, right) => right.localeCompare(left))
-  const [selectionKind, selectionValue] = selection.split(':')
-  const labourQuery = `${selectionKind === 'date' ? `weekStart=${encodeURIComponent(selectionValue)}` : `weekOffset=${selectionValue}`}&rosterKind=${rosterKind}`
+  const labourQuery = `weekStart=${encodeURIComponent(weekStart)}&rosterKind=${rosterKind}`
   const isDraft = roster?.solverStatus === 'draft' || roster?.id === '00000000-0000-0000-0000-000000000000'
 
   return (
     <section className="admin-tools saved-roster-tools">
       <div className="section-heading">
         <div><span className="eyebrow">Administration</span><h2>{rosterKind === 'inside' ? 'Inside roster' : 'Driver roster'}</h2></div>
-        <div className="roster-view-selectors">
-          <label className="week-selector">
-            Roster
-            <select value={rosterKind} onChange={(event) => setRosterKind(event.target.value)}>
-              <option value="drivers">Outside · drivers</option>
-              <option value="inside">Inside · managers and in-store</option>
-            </select>
-          </label>
-          <label className="week-selector">
-            Week
-            <select value={selection} onChange={(event) => setSelection(event.target.value)}>
-              <optgroup label="Upcoming weeks">
-                <option value="offset:1">Next week</option><option value="offset:2">Week after next</option><option value="offset:3">Three weeks ahead</option>
-              </optgroup>
-              {savedDates.length > 0 && <optgroup label="Saved weeks">{savedDates.map((date) => <option key={date} value={`date:${date}`}>Week of {formatDate(date)}</option>)}</optgroup>}
-            </select>
-          </label>
+        <div className="selection-toolbar roster-view-selectors">
+          <AreaSelector
+            value={rosterKind}
+            outsideValue="drivers"
+            onChange={(value) => setWorkArea(value === 'inside' ? 'inside' : 'outside')}
+            disabled={editing}
+          />
+          <WeekSelector
+            weekOffset={weekOffset}
+            onChange={setWeekOffset}
+            allowAllWeeks
+            disabled={editing}
+            highlightedWeekStarts={history.map((item) => item.weekStart)}
+            highlightLabel={`${rosterKind === 'inside' ? 'Inside' : 'Driver'} roster saved`}
+          />
         </div>
       </div>
       <div className="roster-generation-actions">
@@ -977,7 +985,7 @@ export function SavedRosterPanel({ fetchJson, setErrorPopup, initialWeekStart, c
       </div>
       {editStatus.message && !editing && <p className={`save-message ${editStatus.status}`} role="status">{editStatus.message}</p>}
       {status === 'loading' && <p className="message info-message" role="status">Loading saved roster…</p>}
-      {status === 'empty' && <p className="message info-message">No driver roster has been saved for this week. {canEdit ? 'Use Generate roster to create one.' : 'An administrator must generate one.'}</p>}
+      {status === 'empty' && <p className="message info-message">No {rosterKind === 'inside' ? 'inside' : 'driver'} roster has been saved for this week. {rosterKind === 'inside' && canEdit ? 'Start editing to create it manually.' : canEdit ? 'Use Generate roster to create one.' : 'An administrator must create one.'}</p>}
       {status === 'error' && <p className="message error-message" role="alert">The saved roster could not be loaded. Try refreshing.</p>}
       {roster && <>
         {!canEdit && <p className="message info-message" role="status">Read-only view for managers. Only administrators can edit saved roster shifts.</p>}
