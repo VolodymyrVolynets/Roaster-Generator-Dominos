@@ -455,7 +455,7 @@ public sealed class DemandService(
                 Position = column.Position,
                 Label = column.Label,
                 TargetSales = column.TargetSales,
-                RequiredDriverHours = column.TotalHours
+                RequiredStaffHours = column.TotalHours
             })
             .ToList();
 
@@ -468,7 +468,7 @@ public sealed class DemandService(
             UpdatedAtUtc = plan.UpdatedAtUtc,
             DeliveriesPerDriverHour = plan.DeliveriesPerDriverHour,
             PizzasPerInsideHour = plan.PizzasPerInsideHour,
-            WeeklyDriverHours = dailyStaffing.Sum(item => item.RequiredDriverHours),
+            WeeklyStaffHours = dailyStaffing.Sum(item => item.RequiredStaffHours),
             WeeklyTargetSales = dailyStaffing.Sum(item => item.TargetSales),
             Columns = columns,
             DailyStaffing = dailyStaffing,

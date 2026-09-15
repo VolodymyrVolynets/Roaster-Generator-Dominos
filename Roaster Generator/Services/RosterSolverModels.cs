@@ -14,7 +14,7 @@ public sealed record RosterSolverInput(
     string RosterKind = RosterKinds.Drivers,
     IReadOnlyDictionary<Guid, FairDriverHoursAllocation>? ExpectedHoursByEmployee = null);
 
-public sealed record RosterSolverHistory(Guid EmployeeId, DateOnly WeekStart, int ScheduledHours, int TargetHours,
+public sealed record RosterSolverHistory(Guid EmployeeId, DateOnly WeekStart, int ScheduledHours, double ApproximateHours,
     int? ShiftCount = null);
 
 public sealed record RosterSolverDemand(DateOnly Date, int Hour, int RequiredDrivers);
@@ -35,7 +35,7 @@ public sealed record RosterSolverProgress(string Stage, int Progress, string Mes
 public sealed class RosterSolverOptions
 {
     public double FairHoursAlpha { get; init; } = 0.7;
-    public int TargetHoursWeight { get; init; } = 100;
+    public int ApproximateHoursWeight { get; init; } = 100;
     public int HistoryFairnessWeight { get; init; } = 100;
     public int HistoryShiftLengthWeight { get; init; } = 100;
     public int FairnessSpreadWeight { get; init; } = 1000;
@@ -61,5 +61,5 @@ public sealed class RosterSolverResult
     public double WallTimeSeconds { get; init; }
     public int CandidateCount { get; init; }
     public double? ObjectiveValue { get; init; }
-    public double TargetUtilizationPercent { get; init; }
+    public double ApproximateHoursUtilizationPercent { get; init; }
 }

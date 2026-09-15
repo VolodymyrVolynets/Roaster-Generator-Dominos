@@ -190,7 +190,6 @@ public static class IdentitySeeder
             db.DriverProfiles.Add(new DriverProfile
             {
                 EmployeeId = employee.Id,
-                TargetHours = 20,
                 DriverType = DriverType.Car
             });
         }

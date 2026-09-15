@@ -24,10 +24,6 @@ public static class RosterKinds
         if (!IsGenerationEnabled(kind)) throw new RosterInputException(GenerationDisabledMessage);
     }
 
-    public static int TargetHours(Employee employee, string kind) => kind == Inside
-        ? employee.ManagerProfile?.TargetHours ?? employee.InStoreProfile?.TargetHours ?? 0
-        : employee.DriverProfile?.TargetHours ?? 0;
-
     public static string[] Roles(Employee employee) =>
         (employee.DriverProfile is not null ? new[] { RoleNames.Driver } : [])
         .Concat(employee.InStoreProfile is not null ? [RoleNames.InStore] : [])

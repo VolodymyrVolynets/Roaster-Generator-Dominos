@@ -141,7 +141,7 @@ public sealed class DemandPlanResponse
 
     public decimal PizzasPerInsideHour { get; init; }
 
-    public int WeeklyDriverHours { get; init; }
+    public int WeeklyStaffHours { get; init; }
 
     public decimal WeeklyTargetSales { get; init; }
 
@@ -208,7 +208,7 @@ public sealed class DemandStaffingDayResponse
 
     public decimal TargetSales { get; init; }
 
-    public int RequiredDriverHours { get; init; }
+    public int RequiredStaffHours { get; init; }
 
 }
 

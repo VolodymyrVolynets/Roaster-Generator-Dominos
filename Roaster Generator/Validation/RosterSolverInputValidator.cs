@@ -54,7 +54,7 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
 
                 var weights = new[]
                 {
-                    options.TargetHoursWeight,
+                    options.ApproximateHoursWeight,
                     options.HistoryFairnessWeight,
                     options.HistoryShiftLengthWeight,
                     options.FairnessSpreadWeight,
@@ -123,9 +123,10 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
                 }
 
                 if ((input.History ?? []).Any(item =>
-                        item.TargetHours is < 0 or > 168 || item.ScheduledHours is < 0 or > 168))
+                        !double.IsFinite(item.ApproximateHours) || item.ApproximateHours is < 0 or > 168 ||
+                        item.ScheduledHours is < 0 or > 168))
                 {
-                    context.AddFailure("Saved historical target and scheduled hours must be between 0 and 168.");
+                    context.AddFailure("Saved historical approximate and scheduled hours must be between 0 and 168.");
                 }
 
                 if ((input.History ?? []).Any(item => item.ShiftCount is < 0 ||

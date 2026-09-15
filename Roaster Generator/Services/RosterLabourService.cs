@@ -73,7 +73,7 @@ public sealed class RosterLabourService(AppDbContext db)
         if (!hasRoster) warnings.Add(rosterKind == RosterKinds.Inside
             ? "No saved inside roster exists for this week. Create and save the inside roster to calculate labour."
             : "No saved driver roster exists for this week. Generate a driver roster to calculate labour.");
-        if (demand is null) warnings.Add($"No {(rosterKind == RosterKinds.Inside ? "inside" : "outside")} demand template is available. Enter target sales to calculate labour percentages.");
+        if (demand is null) warnings.Add($"No {(rosterKind == RosterKinds.Inside ? "inside" : "outside")} demand plan exists for the selected week. Enter target sales to calculate labour percentages.");
         else if (sales.Any(value => value is null or <= 0))
             warnings.Add("Some days have missing or zero target sales. Labour percentages are unavailable for those days.");
         return new RosterLabourResponse

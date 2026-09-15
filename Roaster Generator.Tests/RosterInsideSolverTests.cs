@@ -178,37 +178,45 @@ public sealed partial class RosterSolverTests
     }
 
     [Fact]
-    public void InsideFairnessUsesManagerTargetsBeforeAnyOtherProfiles()
+    public void InsideFairnessUsesAutomaticHoursInsteadOfLegacyRoleProfiles()
     {
-        var first = InsideEmployee(manager: true, targetHours: 10);
+        var first = InsideEmployee(manager: true);
+        first.ManagerProfile!.TargetHours = 10;
         first.InStoreProfile = new InStoreProfile { TargetHours = 100 };
         first.DriverProfile = new DriverProfile { TargetHours = 100 };
-        var second = InsideEmployee(manager: true, targetHours: 20);
+        var second = InsideEmployee(manager: true);
+        second.ManagerProfile!.TargetHours = 20;
         var employees = new[] { first, second };
         var dates = Enumerable.Range(0, 3).Select(Monday.AddDays).ToArray();
         var input = InsideInput(employees,
             dates.SelectMany(date => employees.Select(employee => Available(employee, date, 12, 22))).ToArray(),
-            dates.SelectMany(date => Demand(date, 12, 10)).ToArray());
+            dates.SelectMany(date => Demand(date, 12, 10)).ToArray()) with
+        {
+            ExpectedHoursByEmployee = AutomaticHours((first, 10), (second, 20))
+        };
 
         var result = solver.Solve(input);
 
         AssertExactInsideRoster(input, result);
         Assert.Equal(10, Hours(result, first.Id));
         Assert.Equal(20, Hours(result, second.Id));
-        Assert.Equal(100, result.TargetUtilizationPercent);
+        Assert.Equal(100, result.ApproximateHoursUtilizationPercent);
     }
 
     [Fact]
-    public void InsideFairnessUsesInStoreTargetsForEmployeesWhoAreNotManagers()
+    public void InsideFairnessUsesAutomaticHoursForManagersAndInStoreEmployees()
     {
-        var manager = InsideEmployee(manager: true, targetHours: 20);
-        var first = InsideEmployee(targetHours: 10);
-        var second = InsideEmployee(targetHours: 10);
+        var manager = InsideEmployee(manager: true);
+        var first = InsideEmployee();
+        var second = InsideEmployee();
         var employees = new[] { manager, first, second };
         var dates = new[] { Monday, Monday.AddDays(1) };
         var input = InsideInput(employees,
             dates.SelectMany(date => employees.Select(employee => Available(employee, date, 12, 22))).ToArray(),
-            dates.SelectMany(date => Demand(date, 12, 10, requiredDrivers: 2)).ToArray());
+            dates.SelectMany(date => Demand(date, 12, 10, requiredDrivers: 2)).ToArray()) with
+        {
+            ExpectedHoursByEmployee = AutomaticHours((manager, 20), (first, 10), (second, 10))
+        };
 
         var result = solver.Solve(input);
 
@@ -216,7 +224,7 @@ public sealed partial class RosterSolverTests
         Assert.Equal(20, Hours(result, manager.Id));
         Assert.Equal(10, Hours(result, first.Id));
         Assert.Equal(10, Hours(result, second.Id));
-        Assert.Equal(100, result.TargetUtilizationPercent);
+        Assert.Equal(100, result.ApproximateHoursUtilizationPercent);
     }
 
     [Fact]
@@ -231,7 +239,10 @@ public sealed partial class RosterSolverTests
         }).ToArray();
         var input = InsideInput(employees,
             dates.SelectMany(date => employees.Select(employee => Available(employee, date, 12, 22))).ToArray(),
-            dates.SelectMany(date => Demand(date, 12, 10)).ToArray(), history: history);
+            dates.SelectMany(date => Demand(date, 12, 10)).ToArray(), history: history) with
+        {
+            ExpectedHoursByEmployee = AutomaticHours((employees[0], 20), (employees[1], 20))
+        };
 
         var result = solver.Solve(input);
 
@@ -243,12 +254,16 @@ public sealed partial class RosterSolverTests
     [Fact]
     public void InsideRosterCompensatesHistoricalShiftLengthWithoutChangingFairWeeklyHours()
     {
-        var employees = new[] { InsideEmployee(manager: true, targetHours: 8), InsideEmployee(manager: true, targetHours: 8) };
+        var employees = new[] { InsideEmployee(manager: true), InsideEmployee(manager: true) };
         var input = ShiftLengthHistoryInput(employees,
         [
             new(employees[0].Id, Monday.AddDays(-7), 24, 24, ShiftCount: 6),
             new(employees[1].Id, Monday.AddDays(-7), 24, 24, ShiftCount: 3)
-        ]) with { RosterKind = RosterKinds.Inside };
+        ]) with
+        {
+            RosterKind = RosterKinds.Inside,
+            ExpectedHoursByEmployee = AutomaticHours((employees[0], 8), (employees[1], 8))
+        };
 
         var result = solver.Solve(input);
 
@@ -274,7 +289,7 @@ public sealed partial class RosterSolverTests
     [Fact]
     public void AutomaticallyCalculatedHoursCannotExceedUsefulCapacity()
     {
-        var employee = Driver(targetHours: 20);
+        var employee = Driver();
         var invalid = new Dictionary<Guid, FairDriverHoursAllocation>
         {
             [employee.Id] = new(employee.Id, 12, 6, 1, 1)
@@ -285,12 +300,18 @@ public sealed partial class RosterSolverTests
             error => error.Contains("Automatically calculated hours"));
     }
 
-    private static Employee InsideEmployee(bool manager = false, int targetHours = 20) => new()
+    private static Employee InsideEmployee(bool manager = false) => new()
     {
         Id = Guid.NewGuid(), FirstName = "Test", LastName = manager ? "Manager" : "InStore",
-        ManagerProfile = manager ? new ManagerProfile { TargetHours = targetHours } : null,
-        InStoreProfile = manager ? null : new InStoreProfile { TargetHours = targetHours }
+        ManagerProfile = manager ? new ManagerProfile() : null,
+        InStoreProfile = manager ? null : new InStoreProfile()
     };
+
+    private static IReadOnlyDictionary<Guid, FairDriverHoursAllocation> AutomaticHours(
+        params (Employee Employee, double Hours)[] allocations) =>
+        allocations.ToDictionary(
+            item => item.Employee.Id,
+            item => new FairDriverHoursAllocation(item.Employee.Id, item.Hours, item.Hours, 1, 1));
 
     private static RosterSolverInput InsideInput(IReadOnlyList<Employee> employees, IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand, IReadOnlyList<RosterSolverBoundaryShift>? boundaries = null,

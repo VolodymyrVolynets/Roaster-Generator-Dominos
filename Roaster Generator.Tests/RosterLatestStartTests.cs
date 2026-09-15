@@ -28,7 +28,7 @@ public sealed partial class RosterSolverTests
         var input = Input([employee], [Available(employee, Monday, start, finish)], Demand(Monday, businessHour, 3),
             options: new RosterSolverOptions
             {
-                TargetHoursWeight = 0, HistoryFairnessWeight = 0, FairnessSpreadWeight = 0,
+                ApproximateHoursWeight = 0, HistoryFairnessWeight = 0, FairnessSpreadWeight = 0,
                 LongShiftBonus = 0, ShortShiftPenalty = 0, DailyShiftCountPenalty = 0,
                 ShortBreakPenalty = 0, MinimumRestHours = 0, PreferredRestHours = 0, MaxSolveSeconds = 1
             });

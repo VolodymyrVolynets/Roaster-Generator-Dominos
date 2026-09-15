@@ -118,11 +118,11 @@ public sealed class RosterWeekSummaryResponse
 
     public bool DemandPlanExists { get; init; }
 
-    public int RequiredDriverHours { get; init; }
+    public int RequiredHours { get; init; }
 
     public int EnteredAvailabilityHours { get; init; }
 
-    public int DriversWithoutAvailability { get; init; }
+    public int EmployeesWithoutAvailability { get; init; }
 
     public IReadOnlyList<RosterExpectedHoursResponse> ApproximateHours { get; init; } = [];
 }
@@ -142,8 +142,6 @@ public sealed class RosterEmployeeResponse
 
     public string EmployeeName { get; init; } = string.Empty;
 
-    public int TargetHours { get; init; }
-
     public double ApproximateHours { get; init; }
 
     public int ScheduledHours { get; init; }
@@ -151,7 +149,7 @@ public sealed class RosterEmployeeResponse
     public double AverageHoursPerShift => Shifts.Count == 0 ? 0
         : Math.Round(Shifts.Sum(shift => shift.DurationHours) / (double)Shifts.Count, 2);
 
-    public double? TargetPercentage { get; init; }
+    public double? ApproximatePercentage { get; init; }
 
     public int PreviousScheduledHours { get; init; }
 
@@ -159,15 +157,15 @@ public sealed class RosterEmployeeResponse
 
     public double? PreviousAverageHoursPerShift { get; init; }
 
-    public int PreviousTargetHours { get; init; }
+    public double PreviousApproximateHours { get; init; }
 
-    public double? PreviousTargetPercentage { get; init; }
+    public double? PreviousApproximatePercentage { get; init; }
 
     public int HistoryWeeks { get; init; }
 
-    public double? BalancedTargetHours { get; init; }
+    public double? BalancedApproximateHours { get; init; }
 
-    public double? CumulativeTargetPercentage { get; init; }
+    public double? CumulativeApproximatePercentage { get; init; }
 
     public IReadOnlyList<RosterShiftResponse> Shifts { get; init; } = [];
 }
@@ -246,7 +244,7 @@ public sealed class RosterCoverageResponse
 public sealed class RosterSettingsRequest
 {
     public double FairHoursAlpha { get; set; } = 0.7;
-    public int TargetHoursWeight { get; set; } = 100;
+    public int ApproximateHoursWeight { get; set; } = 100;
     public int HistoryFairnessWeight { get; set; } = 100;
     public int HistoryShiftLengthWeight { get; set; } = 100;
     public int FairnessSpreadWeight { get; set; } = 1000;

@@ -43,7 +43,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             .SingleOrDefaultAsync(p => p.WeekStart == weekStart && p.DemandKind == demandKind, ct)
             ?? throw new RosterInputException($"Enter {demandKind} demand for the week starting {weekStart:yyyy-MM-dd} before {(rosterKind == RosterKinds.Inside ? "creating" : "generating")} a roster.");
         if (plan.Columns.Count != 7 || !plan.Columns.Select(c => c.Position).Order().SequenceEqual(Enumerable.Range(0, 7)))
-            throw new RosterInputException("The demand template must contain exactly Monday through Sunday.");
+            throw new RosterInputException("The weekly demand plan must contain exactly Monday through Sunday.");
         var diagnostics = new List<string>();
         var warnings = new List<string>();
         var demand = new List<RosterSolverDemand>();
@@ -71,7 +71,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 warnings.Add($"{date.DayOfWeek}: demand entries outside configured shop hours are excluded.");
         }
         if (diagnostics.Count > 0)
-            throw new RosterInputException("The demand template is incomplete. Enter demand for every open hour (use 0 when no drivers are needed).", diagnostics);
+            throw new RosterInputException("The selected weekly demand plan is incomplete. Enter demand for every open hour (use 0 when no employees are needed).", diagnostics);
 
         var employeeQuery = rosterKind == RosterKinds.Inside
             ? InsideRosterEmployees.Query(db)
@@ -153,14 +153,19 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         {
             if (historicalPlan.SnapshotJson is null)
             {
-                warnings.Add($"Week {historicalPlan.WeekStart:yyyy-MM-dd}: historical targets were not saved by the old generator; this week is excluded from fairness history.");
+                warnings.Add($"Week {historicalPlan.WeekStart:yyyy-MM-dd}: automatically calculated hours were not saved by the old generator; this week is excluded from fairness history.");
                 continue;
             }
             var snapshot = JsonSerializer.Deserialize<RosterPlanResponse>(historicalPlan.SnapshotJson)
                 ?? throw new RosterInputException($"The saved fairness history for week {historicalPlan.WeekStart:yyyy-MM-dd} could not be read.");
-            history.AddRange(snapshot.Employees.Where(e => ids.Contains(e.EmployeeId))
+            var automaticHistory = snapshot.Employees
+                .Where(e => ids.Contains(e.EmployeeId) && e.ApproximateHours > 0)
                 .Select(e => new RosterSolverHistory(e.EmployeeId, historicalPlan.WeekStart, e.ScheduledHours,
-                    e.TargetHours, ReadHistoryShiftCount(e))));
+                    e.ApproximateHours, ReadHistoryShiftCount(e)))
+                .ToArray();
+            if (automaticHistory.Length == 0 && snapshot.Employees.Any(e => ids.Contains(e.EmployeeId)))
+                warnings.Add($"Week {historicalPlan.WeekStart:yyyy-MM-dd}: the saved roster predates automatic approximate hours; this week is excluded from fairness history.");
+            history.AddRange(automaticHistory);
         }
         var input = new RosterSolverInput(weekStart, employees, availability, demand, boundaries,
             RosterSettingsService.ToOptions(settings), history, rosterKind, fairHours.Drivers);

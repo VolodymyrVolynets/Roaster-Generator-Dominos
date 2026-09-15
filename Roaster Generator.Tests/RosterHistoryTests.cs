@@ -92,7 +92,7 @@ public sealed partial class RosterSolverTests
     }
 
     [Fact]
-    public void ZeroTargetHistoryDoesNotProduceUndefinedPercentages()
+    public void ZeroApproximateHoursHistoryDoesNotProduceUndefinedPercentages()
     {
         var employees = new[] { Driver(), Driver() };
         var input = Input(employees,
@@ -102,14 +102,14 @@ public sealed partial class RosterSolverTests
         var result = solver.Solve(input);
 
         AssertExactRoster(input, result);
-        Assert.True(double.IsFinite(result.TargetUtilizationPercent));
+        Assert.True(double.IsFinite(result.ApproximateHoursUtilizationPercent));
         Assert.True(result.ObjectiveValue is null || double.IsFinite(result.ObjectiveValue.Value));
     }
 
     [Fact]
     public void DefaultFairnessPreventsALargePercentageGapEvenWhenOneLongShiftWouldFit()
     {
-        var employees = new[] { Driver(targetHours: 10), Driver(targetHours: 10) };
+        var employees = new[] { Driver(), Driver() };
         var input = Input(employees,
             employees.Select(employee => Available(employee, Monday, 12, 19)).ToArray(), Demand(Monday, 12, 7));
 

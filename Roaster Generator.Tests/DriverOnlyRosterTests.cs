@@ -82,11 +82,11 @@ public sealed class DriverOnlyRosterTests
         Assert.Equal(driver.Id, Assert.Single(overview.Employees).EmployeeId);
         var summary = await new RosterPlanService(db, inputs).GetSummaryAsync(1, default);
         Assert.Equal(6, summary.EnteredAvailabilityHours);
-        Assert.Equal(0, summary.DriversWithoutAvailability);
+        Assert.Equal(0, summary.EmployeesWithoutAvailability);
     }
 
     [Fact]
-    public async Task SavedReadsAndFairnessUseOnlyDriverRostersAndLeaveLegacyInsideDataStored()
+    public async Task SavedReadsAndFairnessKeepDriverAndInsideRosterHistoryIsolated()
     {
         using var db = NewDb();
         var driver = AddEmployee(db, [RoleNames.Driver]);
@@ -94,7 +94,7 @@ public sealed class DriverOnlyRosterTests
         var monday = WeeklyScheduleService.GetWeekMonday(1);
         var currentDriver = AddPlan(db, RosterKinds.Drivers, monday, driver, 6);
         AddPlan(db, RosterKinds.Inside, monday, driver, 70);
-        var priorDriver = AddPlan(db, RosterKinds.Drivers, monday.AddDays(-7), driver, 12);
+        var priorDriver = AddPlan(db, RosterKinds.Drivers, monday.AddDays(-7), driver, 12, 19.75);
         var priorInside = AddPlan(db, RosterKinds.Inside, monday.AddDays(-7), driver, 100);
         AddBoundaryShift(priorDriver, driver, monday.AddDays(-1), 18, 0);
         AddBoundaryShift(priorInside, driver, monday.AddDays(-1), 20, 2);
@@ -111,11 +111,38 @@ public sealed class DriverOnlyRosterTests
         Assert.All(history.EnumerateArray(), item => Assert.Equal(RosterKinds.Drivers, item.GetProperty("RosterKind").GetString()));
 
         var loaded = await inputs.LoadAsync(monday, default);
-        Assert.Equal(12, Assert.Single(loaded.Input.History!).ScheduledHours);
+        var prior = Assert.Single(loaded.Input.History!);
+        Assert.Equal(12, prior.ScheduledHours);
+        Assert.Equal(19.75, prior.ApproximateHours);
         var boundary = Assert.Single(loaded.Input.BoundaryShifts);
         Assert.Equal(monday.ToDateTime(TimeOnly.MinValue), boundary.Finish);
         Assert.Equal(4, await db.RosterPlans.CountAsync());
         Assert.Equal(2, await db.RosterPlans.CountAsync(plan => plan.RosterKind == RosterKinds.Inside));
+    }
+
+    [Fact]
+    public async Task ManualTargetSnapshotIsExcludedFromAutomaticFairnessHistory()
+    {
+        using var db = NewDb();
+        var driver = AddEmployee(db, [RoleNames.Driver]);
+        AddDemand(db);
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var oldPlan = new RosterPlan
+        {
+            Id = Guid.NewGuid(),
+            WeekStart = monday.AddDays(-7),
+            RosterKind = RosterKinds.Drivers,
+            SnapshotJson = $$"""
+                {"Employees":[{"EmployeeId":"{{driver.Id}}","ScheduledHours":12,"TargetHours":40}]}
+                """
+        };
+        db.RosterPlans.Add(oldPlan);
+        await db.SaveChangesAsync();
+
+        var loaded = await NewInputs(db).LoadAsync(monday, default);
+
+        Assert.Empty(loaded.Input.History!);
+        Assert.Contains(loaded.Warnings, warning => warning.Contains("predates automatic approximate hours"));
     }
 
     [Fact]
@@ -183,7 +210,7 @@ public sealed class DriverOnlyRosterTests
         var employee = new Employee
         {
             Id = Guid.NewGuid(), IsActive = active, FirstName = "Test", LastName = "Employee",
-            DriverProfile = (driverProfile ?? roles.Contains(RoleNames.Driver)) ? new DriverProfile { TargetHours = 20 } : null,
+            DriverProfile = (driverProfile ?? roles.Contains(RoleNames.Driver)) ? new DriverProfile() : null,
             ManagerProfile = (managerProfile ?? roles.Contains(RoleNames.Manager)) ? new ManagerProfile() : null,
             InStoreProfile = roles.Contains(RoleNames.InStore) ? new InStoreProfile() : null
         };
@@ -223,13 +250,14 @@ public sealed class DriverOnlyRosterTests
         db.DemandPlans.Add(plan);
     }
 
-    private static RosterPlan AddPlan(AppDbContext db, string kind, DateOnly week, Employee employee, int hours)
+    private static RosterPlan AddPlan(AppDbContext db, string kind, DateOnly week, Employee employee, int hours,
+        double approximateHours = 20)
     {
         var plan = new RosterPlan { Id = Guid.NewGuid(), WeekStart = week, RosterKind = kind };
         plan.SnapshotJson = JsonSerializer.Serialize(new RosterPlanResponse
         {
             Id = plan.Id, WeekStart = week, RosterKind = kind, TotalScheduledHours = hours,
-            Employees = [new RosterEmployeeResponse { EmployeeId = employee.Id, TargetHours = 20, ScheduledHours = hours }]
+            Employees = [new RosterEmployeeResponse { EmployeeId = employee.Id, ApproximateHours = approximateHours, ScheduledHours = hours }]
         });
         db.RosterPlans.Add(plan);
         return plan;

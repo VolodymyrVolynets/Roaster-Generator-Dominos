@@ -10,7 +10,7 @@ public sealed partial class RosterSolverTests
     [Fact]
     public void HistoricallyShortShiftsReceiveLongerShiftsWithoutWideningWeeklyHourFairness()
     {
-        var employees = new[] { Driver(targetHours: 8), Driver(targetHours: 8) };
+        var employees = new[] { Driver(), Driver() };
         var history = Enumerable.Range(1, 4).SelectMany(week => new[]
         {
             new RosterSolverHistory(employees[0].Id, Monday.AddDays(-7 * week), 24, 24, ShiftCount: 6),
@@ -40,7 +40,7 @@ public sealed partial class RosterSolverTests
     [Fact]
     public void HistoricalAverageWeightsEachShiftRatherThanEachWeek()
     {
-        var employees = new[] { Driver(targetHours: 8), Driver(targetHours: 8) };
+        var employees = new[] { Driver(), Driver() };
         // First driver: 32 / 7 = 4.57h per shift, NOT (8 + 4) / 2 = 6h.
         // Second driver: 32 / 6 = 5.33h. The first driver should get the long shift.
         var input = ShiftLengthHistoryInput(employees,
@@ -60,7 +60,7 @@ public sealed partial class RosterSolverTests
     [Fact]
     public void ShiftHistoryNeverExtendsAShiftOutsideAvailabilityToImproveItsAverage()
     {
-        var employees = new[] { Driver(targetHours: 8), Driver(targetHours: 8) };
+        var employees = new[] { Driver(), Driver() };
         var input = ShiftLengthHistoryInput(employees,
         [
             new(employees[0].Id, Monday.AddDays(-7), 24, 24, ShiftCount: 6),
@@ -134,7 +134,7 @@ public sealed partial class RosterSolverTests
     [Fact]
     public void FullWeekWithMixedDriverTypesAndShiftHistoryFitsAShortServerBudget()
     {
-        var employees = Enumerable.Range(0, 20).Select(index => Driver(targetHours: 14,
+        var employees = Enumerable.Range(0, 20).Select(index => Driver(
             driverType: index % 3 == 0 ? DriverType.EBike : index % 3 == 1 ? DriverType.Moped : DriverType.Car)).ToArray();
         var dates = Enumerable.Range(0, 7).Select(Monday.AddDays).ToArray();
         var history = Enumerable.Range(1, 4).SelectMany(week => employees.Select((employee, index) =>
@@ -167,7 +167,7 @@ public sealed partial class RosterSolverTests
 
     private static RosterSolverOptions OnlyShiftHistoryPreference(int weight) => new()
     {
-        TargetHoursWeight = 0, HistoryFairnessWeight = 0, HistoryShiftLengthWeight = weight,
+        ApproximateHoursWeight = 0, HistoryFairnessWeight = 0, HistoryShiftLengthWeight = weight,
         FairnessSpreadWeight = 0, LongShiftBonus = 0, ShortShiftPenalty = 0,
         DailyShiftCountPenalty = 0, ShortBreakPenalty = 0, MaxSolveSeconds = 2
     };

@@ -148,7 +148,7 @@ public sealed class FairDriverHoursCalculatorTests
         };
         var input = new RosterSolverInput(Monday, [available, preferredButUnavailable],
             [Available(available, 10, 13)], demand, [],
-            new RosterSolverOptions { TargetHoursWeight = 1000, MaxSolveSeconds = 2 },
+            new RosterSolverOptions { ApproximateHoursWeight = 1000, MaxSolveSeconds = 2 },
             ExpectedHoursByEmployee: expected);
 
         var result = new RosterSolver().Solve(input);

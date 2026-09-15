@@ -125,7 +125,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                 $"Loaded {loaded.Input.Employees.Count} active employees and {loaded.Input.Demand.Sum(d => d.RequiredDrivers)} required {job.RosterKind} staff-hours. Latest shift start {loaded.Settings.LatestShiftStartHour:00}:00 (overnight finishes allowed). Minimum rest {loaded.Settings.MinimumRestHours}h; preferred rest {loaded.Settings.PreferredRestHours}h; solver budget {loaded.Settings.MaxSolveSeconds}s, one CPU worker.");
             var history = loaded.Input.History ?? [];
             Publish(job, "running", "fairness-history", 8,
-                $"Automatic hours use scarcity-weighted availability with alpha {loaded.Settings.FairHoursAlpha:F2}. Fairness also uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Current allocation weight {loaded.Settings.TargetHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");
+                $"Automatic hours use scarcity-weighted availability with alpha {loaded.Settings.FairHoursAlpha:F2}. Fairness also uses {history.Select(h => h.WeekStart).Distinct().Count()} saved week(s) from {job.WeekStart.AddDays(-28):yyyy-MM-dd} through {job.WeekStart.AddDays(-1):yyyy-MM-dd}. Current allocation weight {loaded.Settings.ApproximateHoursWeight}, history weight {loaded.Settings.HistoryFairnessWeight}, percentage-gap weight {loaded.Settings.FairnessSpreadWeight}.");
             foreach (var employee in loaded.Input.Employees)
             {
                 var allocation = loaded.Input.ExpectedHoursByEmployee?.GetValueOrDefault(employee.Id);
@@ -140,10 +140,10 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                 $"Historical shift-length weight {loaded.Settings.HistoryShiftLengthWeight}: uses actual shift counts from the previous four weeks to prefer longer 6–8h shifts for drivers whose earlier shifts were shorter than the group average. A weight of 0 disables this preference. Availability, exact demand and hour fairness still apply; snapshots without valid shift durations are excluded from this average.");
             foreach (var employee in loaded.Input.Employees)
             {
-                var previous = history.Where(h => h.EmployeeId == employee.Id && h.TargetHours > 0).ToList();
+                var previous = history.Where(h => h.EmployeeId == employee.Id && h.ApproximateHours > 0).ToList();
                 if (previous.Count > 0)
                     Publish(job, "running", "fairness-history", 8,
-                        $"{employee.FirstName} {employee.LastName}: previous {previous.Count} saved week(s), {previous.Sum(h => h.ScheduledHours)}/{previous.Sum(h => h.TargetHours)} approximate hours ({100d * previous.Sum(h => h.ScheduledHours) / previous.Sum(h => h.TargetHours):F1}%). This history is balanced against this week's allocation.");
+                        $"{employee.FirstName} {employee.LastName}: previous {previous.Count} saved week(s), {previous.Sum(h => h.ScheduledHours)}/{previous.Sum(h => h.ApproximateHours):F1} approximate hours ({100d * previous.Sum(h => h.ScheduledHours) / previous.Sum(h => h.ApproximateHours):F1}%). This history is balanced against this week's allocation.");
                 var previousShifts = shiftHistory.Where(h => h.EmployeeId == employee.Id).ToList();
                 if (previousShifts.Count > 0)
                 {

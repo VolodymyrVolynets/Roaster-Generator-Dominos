@@ -9,7 +9,7 @@ public sealed class RosterGenerationSettings
 
     public decimal FairHoursAlpha { get; set; } = 0.7m;
 
-    public int TargetHoursWeight { get; set; } = 100;
+    public int ApproximateHoursWeight { get; set; } = 100;
 
     public int HistoryFairnessWeight { get; set; } = 100;
 

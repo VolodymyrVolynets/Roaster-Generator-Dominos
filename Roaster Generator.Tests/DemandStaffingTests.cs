@@ -218,10 +218,10 @@ public sealed class DemandStaffingTests
         }
 
         var response = Service(db).ToResponse(plan);
-        Assert.Equal(4, response.WeeklyDriverHours);
+        Assert.Equal(4, response.WeeklyStaffHours);
         Assert.Equal(200m, response.WeeklyTargetSales);
         var sunday = response.DailyStaffing.Single(day => day.Position == 6);
-        Assert.Equal(2, sunday.RequiredDriverHours);
+        Assert.Equal(2, sunday.RequiredStaffHours);
         Assert.Equal(100m, sunday.TargetSales);
         Assert.All(response.Rows.Single(row => row.Hour == 11).Values, value => Assert.False(value.IsOpen));
         var json = JsonSerializer.Serialize(response, WebJson);

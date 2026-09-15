@@ -70,7 +70,7 @@ public sealed class RosterShiftHistoryContractTests
     }
 
     [Fact]
-    public void OlderSnapshotsWithoutShiftDurationsDoNotInventAHistoryAverage()
+    public void OlderSnapshotsDoNotReuseManualTargetHoursAsAutomaticHours()
     {
         const string snapshot = """
             {"ScheduledHours":12,"TargetHours":20,"Shifts":[{"StartTime":"12:00","FinishTime":"18:00"}]}
@@ -81,21 +81,21 @@ public sealed class RosterShiftHistoryContractTests
         Assert.Null(employee.PreviousShiftCount);
         Assert.Null(employee.PreviousAverageHoursPerShift);
         Assert.Equal(12, employee.ScheduledHours);
-        Assert.Equal(20, employee.TargetHours);
+        Assert.Equal(0, employee.ApproximateHours);
     }
 
     [Fact]
-    public void HistoryRecordWithoutOptionalShiftCountRemainsCompatible()
+    public void AutomaticHoursHistoryRecordWithoutOptionalShiftCountRemainsCompatible()
     {
         const string snapshot = """
-            {"EmployeeId":"00000000-0000-0000-0000-000000000001","WeekStart":"2026-08-31","ScheduledHours":12,"TargetHours":20}
+            {"EmployeeId":"00000000-0000-0000-0000-000000000001","WeekStart":"2026-08-31","ScheduledHours":12,"ApproximateHours":19.75}
             """;
         var historicalWeek = JsonSerializer.Deserialize<RosterSolverHistory>(snapshot)!;
 
         Assert.Null(historicalWeek.ShiftCount);
         Assert.Equal(12, historicalWeek.ScheduledHours);
-        Assert.Equal(20, historicalWeek.TargetHours);
-        Assert.Null(new RosterSolverHistory(Guid.NewGuid(), Monday.AddDays(-7), 12, 20).ShiftCount);
+        Assert.Equal(19.75, historicalWeek.ApproximateHours);
+        Assert.Null(new RosterSolverHistory(Guid.NewGuid(), Monday.AddDays(-7), 12, 19.75).ShiftCount);
     }
 
     [Theory]
@@ -117,12 +117,51 @@ public sealed class RosterShiftHistoryContractTests
     }
 
     [Fact]
-    public void NewHistoryShiftLengthPreferenceDefaultsTo100IncludingOlderRequestJson()
+    public void AutomaticHoursPreferencesDefaultTo100IncludingEmptyRequestJson()
     {
+        Assert.Equal(100, new RosterSettingsRequest().ApproximateHoursWeight);
+        Assert.Equal(100, new RosterGenerationSettings().ApproximateHoursWeight);
+        Assert.Equal(100, new RosterSolverOptions().ApproximateHoursWeight);
         Assert.Equal(100, new RosterSettingsRequest().HistoryShiftLengthWeight);
         Assert.Equal(100, new RosterGenerationSettings().HistoryShiftLengthWeight);
         Assert.Equal(100, new RosterSolverOptions().HistoryShiftLengthWeight);
         Assert.Equal(100, JsonSerializer.Deserialize<RosterSettingsRequest>("{}")!.HistoryShiftLengthWeight);
+    }
+
+    [Fact]
+    public void NewRosterContractsSerializeOnlyAutomaticHoursTerminology()
+    {
+        var employeeJson = JsonSerializer.Serialize(new RosterEmployeeResponse
+        {
+            ApproximateHours = 19.75,
+            ApproximatePercentage = 81.5,
+            PreviousApproximateHours = 38.25,
+            BalancedApproximateHours = 20.5
+        });
+        var settingsJson = JsonSerializer.Serialize(new RosterSettingsRequest
+        {
+            ApproximateHoursWeight = 250
+        });
+
+        Assert.Contains("ApproximateHours", employeeJson);
+        Assert.DoesNotContain("TargetHours", employeeJson);
+        Assert.Contains("ApproximateHoursWeight", settingsJson);
+        Assert.DoesNotContain("TargetHoursWeight", settingsJson);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    [InlineData(1000)]
+    public void ApproximateHoursWeightMapsToApiAndSolver(int weight)
+    {
+        var settings = new RosterGenerationSettings { ApproximateHoursWeight = weight };
+
+        var response = RosterSettingsService.ToResponse(settings);
+        var options = RosterSettingsService.ToOptions(response);
+
+        Assert.Equal(weight, response.ApproximateHoursWeight);
+        Assert.Equal(weight, options.ApproximateHoursWeight);
     }
 
     [Theory]

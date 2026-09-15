@@ -898,7 +898,7 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(10)
                         .HasColumnName("short_shift_penalty");
 
-                    b.Property<int>("TargetHoursWeight")
+                    b.Property<int>("ApproximateHoursWeight")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(100)
@@ -937,7 +937,7 @@ namespace Roaster_Generator.Data.Migrations
                             PreferredRestHours = 12,
                             ShortBreakPenalty = 100,
                             ShortShiftPenalty = 10,
-                            TargetHoursWeight = 100,
+                            ApproximateHoursWeight = 100,
                             TournamentSize = 2
                         });
                 });

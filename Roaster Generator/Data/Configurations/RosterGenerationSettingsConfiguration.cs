@@ -23,7 +23,8 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
             .HasDefaultValue(0.7m)
             .IsRequired();
 
-        builder.Property(settings => settings.TargetHoursWeight)
+        // Keep the deployed column name; only the active domain/API terminology changes.
+        builder.Property(settings => settings.ApproximateHoursWeight)
             .HasColumnName("target_hours_weight")
             .HasDefaultValue(100)
             .IsRequired();
@@ -93,7 +94,7 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
         {
             Id = RosterGenerationSettings.SingletonId,
             FairHoursAlpha = 0.7m,
-            TargetHoursWeight = 100,
+            ApproximateHoursWeight = 100,
             LongShiftBonus = 25,
             ShortShiftPenalty = 10,
             DailyShiftCountPenalty = 25,

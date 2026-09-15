@@ -84,8 +84,10 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     [Fact]
     public void IgnoresLegacyManualTargetsAndBalancesIdenticalAvailability()
     {
-        var lowTarget = Driver(targetHours: 20);
-        var highTarget = Driver(targetHours: 40);
+        var lowTarget = Driver();
+        var highTarget = Driver();
+        lowTarget.DriverProfile!.TargetHours = 20;
+        highTarget.DriverProfile!.TargetHours = 40;
         var employees = new[] { lowTarget, highTarget };
         var dates = Enumerable.Range(0, 3).Select(Monday.AddDays).ToArray();
         var input = Input(employees,
@@ -93,7 +95,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             dates.SelectMany(date => Demand(date, 12, 6)).ToArray(),
             options: new RosterSolverOptions
             {
-                TargetHoursWeight = 1000,
+                ApproximateHoursWeight = 1000,
                 LongShiftBonus = 0,
                 ShortShiftPenalty = 0,
                 DailyShiftCountPenalty = 0,
@@ -120,7 +122,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             dates.SelectMany(date => Demand(date, 12, 10)).ToArray(),
             options: new RosterSolverOptions
             {
-                TargetHoursWeight = 1000,
+                ApproximateHoursWeight = 1000,
                 LongShiftBonus = 0,
                 ShortShiftPenalty = 0,
                 DailyShiftCountPenalty = 0,
@@ -144,7 +146,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             employees.Select(employee => Available(employee, Monday, 12, 20)).ToArray(), Demand(Monday, 12, 8),
             options: new RosterSolverOptions
             {
-                TargetHoursWeight = 0,
+                ApproximateHoursWeight = 0,
                 HistoryFairnessWeight = 0,
                 FairnessSpreadWeight = 0,
                 LongShiftBonus = 1000,
@@ -171,7 +173,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             [.. Demand(Monday, 20, 6), .. Demand(tuesday, 10, 6)],
             options: new RosterSolverOptions
             {
-                TargetHoursWeight = 0,
+                ApproximateHoursWeight = 0,
                 HistoryFairnessWeight = 0,
                 FairnessSpreadWeight = 0,
                 LongShiftBonus = 0,
@@ -214,7 +216,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             dates.SelectMany(date => Demand(date, 12, 6)).ToArray(), boundaries,
             new RosterSolverOptions
             {
-                TargetHoursWeight = 0,
+                ApproximateHoursWeight = 0,
                 HistoryFairnessWeight = 0,
                 FairnessSpreadWeight = 0,
                 LongShiftBonus = 0,
@@ -233,15 +235,15 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void CoversDemandUsingZeroTargetEmployeeWithoutDivisionByZero()
+    public void CoversDemandUsingZeroAutomaticHoursWithoutDivisionByZero()
     {
-        var employee = Driver(targetHours: 0);
+        var employee = Driver();
         var input = Input([employee], [Available(employee, Monday, 12, 18)], Demand(Monday, 12, 6));
 
         var result = solver.Solve(input);
 
         AssertExactRoster(input, result);
-        Assert.True(double.IsFinite(result.TargetUtilizationPercent));
+        Assert.True(double.IsFinite(result.ApproximateHoursUtilizationPercent));
     }
 
     [Fact]
@@ -447,7 +449,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     [Fact]
     public void CancellationStopsAnActiveSolvePromptly()
     {
-        var employees = Enumerable.Range(0, 20).Select(_ => Driver(targetHours: 28)).ToArray();
+        var employees = Enumerable.Range(0, 20).Select(_ => Driver()).ToArray();
         var dates = Enumerable.Range(0, 7).Select(Monday.AddDays).ToArray();
         var input = Input(employees,
             dates.SelectMany(date => employees.Select(employee => Available(employee, date, 12, 20))).ToArray(),
@@ -584,7 +586,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     [Fact]
     public void TwentyEmployeesAndAFullWeekRespectTheServerTimeBudget()
     {
-        var employees = Enumerable.Range(0, 20).Select(_ => Driver(targetHours: 28)).ToArray();
+        var employees = Enumerable.Range(0, 20).Select(_ => Driver()).ToArray();
         var dates = Enumerable.Range(0, 7).Select(Monday.AddDays).ToArray();
         var input = Input(employees,
             dates.SelectMany(date => employees.Select(employee => Available(employee, date, 12, 20))).ToArray(),
@@ -631,19 +633,15 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         var allocations = employees.Select(employee =>
             result.Shifts.Where(shift => shift.EmployeeId == employee.Id).Sum(shift => shift.DurationHours)).ToArray();
         Assert.True(allocations.Max() - allocations.Min() <= 6,
-            $"The current allocation exceeds a 30-point target percentage gap: {string.Join(", ", allocations.Order())}.");
+            $"The current allocation exceeds a 30-point approximate-hours percentage gap: {string.Join(", ", allocations.Order())}.");
     }
 
-    private static Employee Driver(int targetHours = 20, DriverType driverType = DriverType.Car) => new()
+    private static Employee Driver(DriverType driverType = DriverType.Car) => new()
     {
         Id = Guid.NewGuid(),
         FirstName = "Test",
         LastName = "Driver",
-        DriverProfile = new DriverProfile
-        {
-            TargetHours = targetHours,
-            DriverType = driverType
-        }
+        DriverProfile = new DriverProfile { DriverType = driverType }
     };
 
     private static Shift Available(Employee employee, DateOnly date, int start, int finish) => new()
