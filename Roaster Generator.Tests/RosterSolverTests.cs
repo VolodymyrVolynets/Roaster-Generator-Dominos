@@ -33,14 +33,15 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(11)]
-    public void RefusesDemandRequiringAnIllegalShiftLength(int duration)
+    public void UsesTheBestPartialRosterWhenDemandCannotFormOnlyLegalShiftLengths(int duration)
     {
         var employee = Driver();
         var input = Input([employee], [Available(employee, Monday, 9, 23)], Demand(Monday, 10, duration));
 
         var result = solver.Solve(input);
 
-        AssertInfeasible(result);
+        if (duration == 11) AssertPartialRoster(input, result);
+        else AssertInfeasible(result);
     }
 
     [Fact]
@@ -78,7 +79,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         var input = Input([employee], [Available(employee, Monday, 9, 21)],
             [.. Demand(Monday, 10, 3), .. Demand(Monday, 16, 3)]);
 
-        AssertInfeasible(solver.Solve(input));
+        AssertPartialRoster(input, solver.Solve(input));
     }
 
     [Fact]
@@ -201,7 +202,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             [.. Demand(Monday, 20, 6), .. Demand(tuesday, 11, 6)],
             options: new RosterSolverOptions { MinimumRestHours = 10, PreferredRestHours = 12, MaxSolveSeconds = 2 });
 
-        AssertInfeasible(solver.Solve(input));
+        AssertPartialRoster(input, solver.Solve(input));
     }
 
     [Fact]
@@ -301,7 +302,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
 
         var result = solver.Solve(input);
 
-        AssertInfeasible(result);
+        AssertPartialRoster(input, result);
         Assert.Contains(result.Diagnostics, diagnostic =>
             diagnostic.Contains("Sunday", StringComparison.OrdinalIgnoreCase) &&
             diagnostic.Contains("13:00", StringComparison.Ordinal) &&
@@ -352,7 +353,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         var result = solver.Solve(input);
 
         if (expectedSuccess) AssertExactRoster(input, result);
-        else AssertInfeasible(result);
+        else AssertPartialRoster(input, result);
     }
 
     [Theory]
@@ -369,7 +370,7 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
         var result = solver.Solve(input);
 
         if (expectedSuccess) AssertExactRoster(input, result);
-        else AssertInfeasible(result);
+        else AssertPartialRoster(input, result);
     }
 
     [Fact]
@@ -696,5 +697,24 @@ public sealed partial class RosterSolverTests(ITestOutputHelper output)
             if (assigned.Any(shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.DriverType == DriverType.EBike))
                 Assert.Contains(assigned, shift => input.Employees.Single(employee => employee.Id == shift.EmployeeId).DriverProfile?.DriverType is DriverType.Car or DriverType.Moped);
         }
+    }
+
+    private static void AssertPartialRoster(RosterSolverInput input, RosterSolverResult result)
+    {
+        Assert.True(result.Success, $"{result.Status}: {result.Message}\n{string.Join('\n', result.Diagnostics)}");
+        Assert.Equal("partial", result.Status);
+        Assert.NotEmpty(result.Shifts);
+        Assert.Empty(RosterSolver.ValidatePartialDriverRoster(input, result.Shifts));
+        Assert.NotEmpty(RosterSolver.Validate(input, result.Shifts));
+        Assert.Equal(input.Demand.Sum(slot => slot.RequiredDrivers), result.TotalDemandHours);
+        Assert.Equal(result.Shifts.Sum(shift => shift.DurationHours), result.TotalScheduledHours);
+        Assert.True(result.TotalScheduledHours < result.TotalDemandHours);
+        var demand = input.Demand.ToDictionary(slot => (slot.Date, slot.Hour), slot => slot.RequiredDrivers);
+        foreach (var group in result.Shifts
+                     .SelectMany(shift => Enumerable.Range(shift.StartHour, shift.DurationHours)
+                         .Select(hour => (shift.Date, Hour: hour)))
+                     .GroupBy(slot => slot))
+            Assert.True(group.Count() <= demand.GetValueOrDefault(group.Key),
+                $"{group.Key.Date:yyyy-MM-dd} {group.Key.Hour:00}:00 scheduled {group.Count()} above demand {demand.GetValueOrDefault(group.Key)}.");
     }
 }

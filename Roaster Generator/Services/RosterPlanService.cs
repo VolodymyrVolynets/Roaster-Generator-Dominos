@@ -103,7 +103,9 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
     public async Task<RosterPlanResponse> SaveAsync(LoadedRosterInput loaded, RosterSolverResult result, CancellationToken ct)
     {
         RosterKinds.EnsureGenerationEnabled(loaded.Input.RosterKind);
-        var validation = RosterSolver.Validate(loaded.Input, result.Shifts);
+        var validation = result.Status == "partial"
+            ? RosterSolver.ValidatePartialDriverRoster(loaded.Input, result.Shifts)
+            : RosterSolver.Validate(loaded.Input, result.Shifts);
         if (!result.Success || validation.Count > 0)
             throw new RosterInputException("The generated roster failed final validation and was not saved.", validation);
         return await PersistValidatedAsync(loaded, result, ct);
@@ -265,12 +267,12 @@ public sealed class RosterPlanService(AppDbContext db, RosterInputService inputs
                     rests.Add((shifts[i].Start - shifts[i - 1].Finish).TotalHours);
         }
         var warnings = loaded.Warnings.Concat(result.Diagnostics).ToList();
-        if (result.Status == "feasible") warnings.Add(result.Message);
+        if (result.Status is "feasible" or "partial") warnings.Add(result.Message);
         if (spread > 30 && !warnings.Any(warning => warning.StartsWith("Fairness warning:", StringComparison.Ordinal)))
         {
             var least = employees.Where(e => e.ApproximatePercentage.HasValue).MinBy(e => e.ApproximatePercentage)!;
             var most = employees.Where(e => e.ApproximatePercentage.HasValue).MaxBy(e => e.ApproximatePercentage)!;
-            warnings.Add($"Fairness check: this week's approximate-hours gap is {spread:F1} percentage points ({least.EmployeeName}: {least.ApproximatePercentage:F1}%; {most.EmployeeName}: {most.ApproximatePercentage:F1}%). Review availability, scarcity, prior-week compensation and shift/rest constraints. Increasing fairness weights or the solve budget may improve the gap; exact coverage remains mandatory.");
+            warnings.Add($"Fairness check: this week's approximate-hours gap is {spread:F1} percentage points ({least.EmployeeName}: {least.ApproximatePercentage:F1}%; {most.EmployeeName}: {most.ApproximatePercentage:F1}%). Review availability, scarcity, prior-week compensation and shift/rest constraints. Increasing fairness weights or the solve budget may improve the gap; demand coverage is prioritized and generated rosters never exceed hourly demand.");
         }
         var coverage = loaded.Input.Demand.OrderBy(d => d.Date).ThenBy(d => d.Hour).Select(d => new RosterCoverageResponse
         {

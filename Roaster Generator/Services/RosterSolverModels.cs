@@ -52,7 +52,7 @@ public sealed class RosterSolverOptions
 public sealed class RosterSolverResult
 {
     public string Status { get; init; } = "invalid";
-    public bool Success => Status is "optimal" or "feasible";
+    public bool Success => Status is "optimal" or "feasible" or "partial";
     public string Message { get; init; } = string.Empty;
     public IReadOnlyList<RosterSolverShift> Shifts { get; init; } = [];
     public IReadOnlyList<string> Diagnostics { get; init; } = [];

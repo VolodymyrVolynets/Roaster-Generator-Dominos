@@ -52,7 +52,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             latestJobs[(job.WeekStart, job.RosterKind)] = job;
             if (latestJobs.Count > 32)
                 latestJobs.Remove(latestJobs.Where(p => p.Value != job).MinBy(p => p.Value.StartedAt).Key);
-            Publish(job, "started", "queued", 0, $"{rosterKind} roster generation queued. Only a roster with exact hourly coverage will be saved.");
+            Publish(job, "started", "queued", 0, $"{rosterKind} roster generation queued. Exact coverage will be attempted first; if it is impossible, the best legal under-covered driver roster may be saved. No hour will be overstaffed.");
             jobs.Writer.TryWrite(job);
         }
         return new RosterTimerStartResponse { JobId = job.JobId, WeekOffset = weekOffset, WeekStart = job.WeekStart, RosterKind = job.RosterKind,
@@ -137,7 +137,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             var groupAverageShiftHours = historyShiftCount > 0
                 ? shiftHistory.Sum(h => h.ScheduledHours) / (double)historyShiftCount : 0;
             Publish(job, "running", "fairness-history", 8,
-                $"Historical shift-length weight {loaded.Settings.HistoryShiftLengthWeight}: uses actual shift counts from the previous four weeks to prefer longer 6–8h shifts for drivers whose earlier shifts were shorter than the group average. A weight of 0 disables this preference. Availability, exact demand and hour fairness still apply; snapshots without valid shift durations are excluded from this average.");
+                $"Historical shift-length weight {loaded.Settings.HistoryShiftLengthWeight}: uses actual shift counts from the previous four weeks to prefer longer 6–8h shifts for drivers whose earlier shifts were shorter than the group average. A weight of 0 disables this preference. Availability, demand coverage without overstaffing and hour fairness still apply; snapshots without valid shift durations are excluded from this average.");
             foreach (var employee in loaded.Input.Employees)
             {
                 var previous = history.Where(h => h.EmployeeId == employee.Id && h.ApproximateHours > 0).ToList();
@@ -164,14 +164,18 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                 return;
             }
             stage = "validating";
-            Publish(job, "running", stage, 91, "Rechecking every demand hour, availability, shift duration, supervision and rest before saving.");
-            var validation = RosterSolver.Validate(loaded.Input, result.Shifts);
+            Publish(job, "running", stage, 91, "Rechecking every demand hour for overstaffing, availability, shift duration, supervision and rest before saving.");
+            var validation = result.Status == "partial"
+                ? RosterSolver.ValidatePartialDriverRoster(loaded.Input, result.Shifts)
+                : RosterSolver.Validate(loaded.Input, result.Shifts);
             if (validation.Count > 0) throw new RosterInputException("Final roster validation failed; no roster was saved.", validation);
             var current = await inputs.LoadAsync(job.WeekStart, ct, job.RosterKind);
             if (current.Fingerprint != loaded.Fingerprint)
                 throw new RosterInputException("Demand, availability, automatically calculated hours, settings or an adjacent roster changed during generation. Run generation again using the updated inputs. The previous saved roster was kept.");
             stage = "saving";
-            Publish(job, "running", stage, 96, "Exact coverage verified. Saving the roster and its settings, demand and employee snapshot to the database.");
+            Publish(job, "running", stage, 96, result.Status == "partial"
+                ? "Fallback driver coverage verified with no overstaffed hours. Saving the partial roster and its audit snapshot to the database."
+                : "Exact coverage verified. Saving the roster and its settings, demand and employee snapshot to the database.");
             var saved = await plans.SaveAsync(loaded, result, ct);
             Publish(job, "running", "fairness-check", 98,
                 $"Fairness checked: current approximate-hours percentage gap {saved.FairnessSpreadPercentagePoints:F1} points; gap including the previous four weeks {saved.HistoricalFairnessSpreadPercentagePoints:F1} points. Every employee's allocation and history will be shown with the saved roster.",
@@ -179,9 +183,12 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             ct.ThrowIfCancellationRequested();
             // Once committing starts, complete it and report the actual durable outcome, even if cancel arrives.
             await transaction.CommitAsync(CancellationToken.None);
+            var partial = saved.CoveragePercent is < 100;
             Publish(job, "completed", "saved", 100,
-                $"{job.RosterKind} roster saved: {saved.TotalScheduledHours}/{saved.TotalDemandHours} staff-hours, 100% exact coverage. Average {saved.AverageHoursPerShift:F2} hours per shift. {(saved.IsOptimal ? "Best weighted preference score proven." : "Valid roster found; preference optimization stopped at the time limit.")} Open Saved rosters to review.",
-                "info", saved.Warnings, saved.Id, saved.TotalScheduledHours);
+                partial
+                    ? $"Partial {job.RosterKind} roster saved: {saved.TotalScheduledHours}/{saved.TotalDemandHours} staff-hours, {saved.CoveragePercent:F1}% coverage, with no overstaffed hours. Open Saved rosters to review the highlighted shortages."
+                    : $"{job.RosterKind} roster saved: {saved.TotalScheduledHours}/{saved.TotalDemandHours} staff-hours, 100% exact coverage. Average {saved.AverageHoursPerShift:F2} hours per shift. {(saved.IsOptimal ? "Best weighted preference score proven." : "Valid roster found; preference optimization stopped at the time limit.")} Open Saved rosters to review.",
+                partial ? "warning" : "info", saved.Warnings, saved.Id, saved.TotalScheduledHours);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         { Publish(job, "cancelled", "cancelled", 100, "Generation cancelled. No new roster was saved; the previous saved roster was kept.", "warning"); }

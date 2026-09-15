@@ -36,10 +36,10 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
     <details className="roster-settings" open>
       <summary>Scheduling preferences</summary>
       <p className="demand-help">
-        Demand is exact at every hour. Every shift must be 3–10 hours, within availability, and start no later than {settings?.latestShiftStartHour ?? 20}:00.
+        Exact demand is the first target at every hour. If it is impossible, generation saves the legal driver roster with the least uncovered demand; it never schedules above demand. Every shift must be 3–10 hours, within availability, and start no later than {settings?.latestShiftStartHour ?? 20}:00.
         Shifts may finish after the latest start time or overnight, with at most one shift per business day.
         Approximate hours are calculated automatically from useful availability, hourly demand, and how many drivers can cover each hour.
-        Weight fields use a 0–1000 scale: higher values give that preference more influence and 0 disables it. Exact coverage,
+        Weight fields use a 0–1000 scale: higher values give that preference more influence and 0 disables it. Maximum demand coverage without overstaffing,
         availability, and hard shift rules always apply. Start with the defaults, then raise one weight at a time when a specific
         outcome needs more influence.
       </p>
@@ -291,8 +291,8 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
         </p>
       )}
       <p className="demand-help">
-        Build an exact demand match, then balance automatically calculated approximate hours, past-hour differences, shift lengths, and rest.
-        A successful roster is saved automatically. An impossible week is explained in the activity log.
+        Build an exact demand match when possible, then balance automatically calculated approximate hours, past-hour differences, shift lengths, and rest.
+        If exact coverage is impossible, the best legal under-covered roster is saved automatically and its shortages are highlighted. Generation never schedules more drivers than demand.
         {' '}Every e-bike shift must have a car or moped driver alongside it.
       </p>
       {summary && (
@@ -584,7 +584,7 @@ function FairnessComparison({ roster, employeeGroups }) {
   const warnings = []
   if (currentSpread > 30) warnings.push(`This week’s approximate-hours percentages differ by ${formatNumber(currentSpread)} percentage points, above the 30-point review threshold.`)
   if (hasHistory && cumulativeSpread > 30) warnings.push(`The cumulative approximate-hours percentages differ by ${formatNumber(cumulativeSpread)} percentage points across the saved history and this week.`)
-  if (warnings.length) warnings.push('Past-hour compensation, availability, exact demand, shift lengths, and rest limits may affect the gap. The search time budget can also limit improvement; review the individual percentages before using this roster.')
+  if (warnings.length) warnings.push('Past-hour compensation, availability, demand coverage, shift lengths, and rest limits may affect the gap. The search time budget can also limit improvement; review the individual percentages before using this roster.')
   return <details className="roster-fairness-details">
     <summary>
       <span>Fairness across five weeks</span>
@@ -1050,7 +1050,7 @@ export function SavedRosterPanel({
           <Metric label="Solver time" value={`${formatNumber(roster.solveSeconds)}s`} />
         </div>
         <p className="message info-message">
-          {isDraft ? 'This inside roster has not been saved. Administrators create it manually.' : roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.solverStatus === 'manual' ? 'Manually updated by an administrator; safety constraints were revalidated and any generation-rule overrides are listed in the notes.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
+          {isDraft ? 'This inside roster has not been saved. Administrators create it manually.' : roster.solverStatus === 'legacy' ? 'This older roster has no generation audit snapshot.' : roster.solverStatus === 'manual' ? 'Manually updated by an administrator; safety constraints were revalidated and any generation-rule overrides are listed in the notes.' : roster.solverStatus === 'partial' ? 'Exact coverage was impossible. The saved driver roster minimizes uncovered demand without scheduling above demand; review the highlighted shortages.' : roster.isOptimal ? 'Best preference score proven for these constraints.' : 'Valid roster saved; the solver has not proven the best possible preference score.'}
           {' '}Status: {formatStage(roster.solverStatus)}.
         </p>
         {!!roster.warnings?.length && <DiagnosticList entries={roster.warnings} title="Roster notes" />}

@@ -2152,7 +2152,7 @@ function ApproximateHoursPreview({ approximateHours, capacityHours, label = 'You
       </div>
       <p>
         {detail || (available
-          ? `Calculated from demand, useful availability and how scarce each hour is.${capacityHours != null ? ` Useful availability capacity: ${Number(capacityHours).toFixed(1)}h.` : ''} The roster generator uses this as a fairness target, while exact coverage and shift rules still come first.`
+          ? `Calculated from demand, useful availability and how scarce each hour is.${capacityHours != null ? ` Useful availability capacity: ${Number(capacityHours).toFixed(1)}h.` : ''} The roster generator uses this as a fairness target after maximizing demand coverage without overstaffing, while hard shift rules still apply.`
           : 'Complete outside demand and save availability to calculate this estimate. It updates before the roster is generated.')}
       </p>
     </section>

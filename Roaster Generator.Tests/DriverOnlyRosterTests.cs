@@ -93,6 +93,40 @@ public sealed class DriverOnlyRosterTests
     }
 
     [Fact]
+    public async Task PartialDriverRosterIsSavedWithShortagesAndNeverOverstaffsDemand()
+    {
+        using var db = NewDb();
+        AddEmployee(db, [RoleNames.Driver]);
+        AddDemand(db);
+        await db.SaveChangesAsync();
+
+        var demandPlan = await db.DemandPlans
+            .Include(plan => plan.Columns)
+            .Include(plan => plan.Rows).ThenInclude(row => row.Values)
+            .SingleAsync();
+        var monday = demandPlan.Columns.Single(column => column.Position == 0);
+        foreach (var row in demandPlan.Rows.Where(row => row.Hour is >= 12 and < 23))
+            row.Values.Single(value => value.DemandColumnId == monday.Id).Demand = 1;
+        await db.SaveChangesAsync();
+
+        var inputs = NewInputs(db);
+        var loaded = await inputs.LoadAsync(WeeklyScheduleService.GetWeekMonday(1), default);
+        var result = new RosterSolver().Solve(loaded.Input);
+
+        Assert.Equal("partial", result.Status);
+        Assert.True(result.Success);
+        var saved = await new RosterPlanService(db, inputs).SaveAsync(loaded, result, default);
+
+        Assert.Equal("partial", saved.SolverStatus);
+        Assert.Equal(11, saved.TotalDemandHours);
+        Assert.Equal(6, saved.TotalScheduledHours);
+        Assert.Equal(54.55, saved.CoveragePercent);
+        Assert.Contains(saved.Warnings, warning => warning.Contains("without overstaffing", StringComparison.OrdinalIgnoreCase));
+        Assert.All(saved.Coverage, slot => Assert.True(slot.Scheduled <= slot.Required));
+        Assert.Contains(saved.Coverage, slot => slot.Scheduled < slot.Required);
+    }
+
+    [Fact]
     public async Task SavedReadsAndFairnessKeepDriverAndInsideRosterHistoryIsolated()
     {
         using var db = NewDb();

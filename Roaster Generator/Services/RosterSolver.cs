@@ -8,9 +8,10 @@ using Roaster_Generator.Validation;
 namespace Roaster_Generator.Services;
 
 /// <summary>
-/// Enumerates every legal 3–10 hour shift starting no later than the configured latest start, then solves exact coverage with CP-SAT.
-/// Coverage, availability, supervision and minimum rest are hard constraints; only
-/// allocation fairness, shift shape and additional rest are weighted preferences.
+/// Enumerates every legal 3–10 hour shift starting no later than the configured latest start, then solves coverage with CP-SAT.
+/// Driver generation attempts exact coverage first and, when that is proven impossible, saves the closest legal under-covered roster.
+/// Overstaffing, availability, supervision and minimum rest are hard constraints; only allocation fairness, shift shape and
+/// additional rest are weighted preferences after exact coverage has been found.
 /// </summary>
 public sealed class RosterSolver
 {
@@ -101,7 +102,7 @@ public sealed class RosterSolver
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        reporter.Publish("building-model", 15, $"Prepared {candidates.Count:N0} legal shifts for {employees.Length} employees. Exact demand: {totalDemand} {EmployeeHoursLabel(input.RosterKind)}; approximate-hours utilization: {utilization:F1}%.");
+        reporter.Publish("building-model", 15, $"Prepared {candidates.Count:N0} legal shifts for {employees.Length} employees. Demand: {totalDemand} {EmployeeHoursLabel(input.RosterKind)}; approximate-hours utilization: {utilization:F1}%.");
         var coverage = input.Demand.Where(slot => slot.RequiredDrivers > 0).ToDictionary(
             slot => AbsoluteHour(input.WeekStart, slot.Date, slot.Hour), _ => new List<Candidate>());
         foreach (var candidate in candidates)
@@ -120,10 +121,14 @@ public sealed class RosterSolver
                     ? $"{FormatSlot(slot)}: need at least one manager. Inside employees cannot work without a manager covering every required hour."
                     : $"{FormatSlot(slot)}: need at least one car or moped driver. E-bike drivers cannot work without a car or moped driver alongside them.");
         }
-        if (shortages.Count > 0)
+        var provenImpossible = shortages.Count > 0;
+        if (provenImpossible && input.RosterKind != RosterKinds.Drivers)
             return Failure("infeasible", "Exact coverage is impossible with the current availability, supervision and shift limits.", shortages, candidates.Count);
 
         var diagnosticReserve = Math.Min(3.0, input.Options.MaxSolveSeconds * 0.2);
+        var remaining = input.Options.MaxSolveSeconds - clock.Elapsed.TotalSeconds;
+        if (!provenImpossible)
+        {
         // Find a complete schedule before introducing fairness tables and other preferences.
         // On small servers, optimization presolve must never consume the whole budget before
         // retaining a valid roster that a much smaller feasibility model can find quickly.
@@ -133,7 +138,7 @@ public sealed class RosterSolver
             return Failure("invalid", "The scheduling model could not be validated.", [modelError], candidates.Count);
 
         reporter.Publish("solving", 25, $"Solving exact hourly coverage with one CPU worker and a {input.Options.MaxSolveSeconds}-second total budget. Coverage, minimum rest and the {input.Options.LatestShiftStartHour:00}:00 latest shift start cannot be traded for a better score.");
-        var remaining = input.Options.MaxSolveSeconds - clock.Elapsed.TotalSeconds - diagnosticReserve;
+        remaining = input.Options.MaxSolveSeconds - clock.Elapsed.TotalSeconds - diagnosticReserve;
         if (remaining <= 0)
             return Failure("timed-out", "The time budget expired while preparing the model. Feasibility has not been determined; increase the solve limit.", candidateCount: candidates.Count);
 
@@ -199,11 +204,14 @@ public sealed class RosterSolver
         if (status == CpSolverStatus.ModelInvalid)
             return Failure("invalid", "The solver rejected the scheduling model.", [solver.Response?.SolutionInfo ?? "No model details were returned."], candidates.Count);
 
-        var provenImpossible = status == CpSolverStatus.Infeasible;
+        provenImpossible = status == CpSolverStatus.Infeasible;
+        }
         reporter.Publish("diagnosing", 90, provenImpossible
-            ? "Exact coverage is impossible under the combined rules. Locating the hours that remain uncovered in the closest legal assignment."
+            ? input.RosterKind == RosterKinds.Drivers
+                ? "Exact coverage is impossible under the combined rules. Building the closest legal driver roster without overstaffing any hour."
+                : "Exact coverage is impossible under the combined rules. Locating the hours that remain uncovered in the closest legal assignment."
             : "No complete roster was found before the search limit. Feasibility is unproven; checking a diagnostic assignment for specific gaps.");
-        var diagnostics = new List<string>();
+        var diagnostics = new List<string>(shortages);
         remaining = input.Options.MaxSolveSeconds - clock.Elapsed.TotalSeconds;
         if (remaining > 0.05)
         {
@@ -220,14 +228,41 @@ public sealed class RosterSolver
                     if (missingTotal == 0 && !provenImpossible && Validate(input, diagnosticShifts).Count == 0)
                         return Result("feasible", "Exact coverage was found during the diagnostic search. Preferences have not been optimized; increase the solve limit to improve fairness and shift quality.", diagnosticShifts, [], candidates.Count, null);
 
+                    var canSavePartial = input.RosterKind == RosterKinds.Drivers && diagnosticShifts.Count > 0 &&
+                        (provenImpossible || diagnosticStatus == CpSolverStatus.Optimal);
                     diagnostics.Add(diagnosticStatus == CpSolverStatus.Optimal
-                        ? $"At least {missingTotal} {EmployeeHoursLabel(input.RosterKind)} must remain uncovered under the current rules. The following is one minimum-shortage allocation; its shifts will not be saved."
-                        : $"The best diagnostic assignment found leaves {missingTotal} {EmployeeHoursLabel(input.RosterKind)} uncovered. This is an example of conflicting hours, not a proof that these exact gaps are unavoidable; its shifts will not be saved.");
+                        ? $"At least {missingTotal} {EmployeeHoursLabel(input.RosterKind)} must remain uncovered under the current rules. The following allocation has the minimum total shortage and does not overstaff any hour."
+                        : provenImpossible
+                            ? $"The fallback assignment leaves {missingTotal} {EmployeeHoursLabel(input.RosterKind)} uncovered. Exact coverage was already proven impossible; no hour is overstaffed."
+                            : $"The best diagnostic assignment found leaves {missingTotal} {EmployeeHoursLabel(input.RosterKind)} uncovered. This is an example of conflicting hours, not a proof that these exact gaps are unavoidable; its shifts will not be saved.");
                     foreach (var item in diagnosticModel.Missing)
                     {
                         var missing = (int)diagnosticSolver.Value(item.Missing);
                         if (missing > 0)
-                            diagnostics.Add($"{FormatSlot(item.Slot)}: need {missing} more {EmployeeLabel(input.RosterKind)} in the diagnostic assignment (demand {item.Slot.RequiredDrivers}). Availability, the {input.Options.LatestShiftStartHour:00}:00 latest shift start, one shift per day, {(input.RosterKind == RosterKinds.Inside ? "manager coverage" : "car/moped support")} or the {input.Options.MinimumRestHours}-hour minimum rest prevents filling every hour together.");
+                            diagnostics.Add($"{FormatSlot(item.Slot)}: need {missing} more {EmployeeLabel(input.RosterKind)} in the fallback assignment (demand {item.Slot.RequiredDrivers}). Availability, the {input.Options.LatestShiftStartHour:00}:00 latest shift start, one shift per day, {(input.RosterKind == RosterKinds.Inside ? "manager coverage" : "car/moped support")} or the {input.Options.MinimumRestHours}-hour minimum rest prevents filling every hour together.");
+                    }
+                    if (canSavePartial)
+                    {
+                        var partialCandidates = candidates
+                            .Where(candidate => diagnosticSolver.BooleanValue(diagnosticModel.Selected[candidate.Index]))
+                            .ToList();
+                        var heuristicBudget = Math.Min(0.65,
+                            Math.Max(0, input.Options.MaxSolveSeconds - clock.Elapsed.TotalSeconds) * 0.35);
+                        partialCandidates = ImproveIncumbent(input, employees, candidates, partialCandidates,
+                            heuristicBudget, cancellationToken);
+                        diagnosticShifts = partialCandidates
+                            .Select(candidate => new RosterSolverShift(candidate.EmployeeId, candidate.Date,
+                                candidate.Start, candidate.Finish))
+                            .OrderBy(shift => shift.Date).ThenBy(shift => shift.StartHour).ThenBy(shift => shift.EmployeeId)
+                            .ToArray();
+                        var validation = ValidatePartialDriverRoster(input, diagnosticShifts);
+                        if (validation.Count > 0)
+                            return Failure("invalid", "The under-covered driver roster failed independent validation and was not saved.", validation, candidates.Count);
+                        var coveredTotal = totalDemand - missingTotal;
+                        var coveragePercent = totalDemand == 0 ? 100 : 100d * coveredTotal / totalDemand;
+                        return Result("partial",
+                            $"Exact coverage is impossible. The generated driver roster covers {coveredTotal}/{totalDemand} staff-hours ({coveragePercent:F1}%) without overstaffing any hour.",
+                            diagnosticShifts, diagnostics, candidates.Count, diagnosticSolver.ObjectiveValue);
                     }
                 }
             }
@@ -258,7 +293,13 @@ public sealed class RosterSolver
 
     /// <summary>Checks actual shifts independently of the optimization model before persistence.</summary>
     public static IReadOnlyList<string> Validate(RosterSolverInput input, IReadOnlyList<RosterSolverShift> shifts) =>
-        ValidateCore(input, shifts, manualEdit: false).Errors;
+        ValidateCore(input, shifts, manualEdit: false, allowDriverShortages: false).Errors;
+
+    /// <summary>Checks a generated driver fallback while allowing shortages but continuing to reject every overstaffed hour.</summary>
+    public static IReadOnlyList<string> ValidatePartialDriverRoster(
+        RosterSolverInput input,
+        IReadOnlyList<RosterSolverShift> shifts) =>
+        ValidateCore(input, shifts, manualEdit: false, allowDriverShortages: true).Errors;
 
     /// <summary>
     /// Checks administrator edits while preserving structural, availability, rest and support rules.
@@ -267,12 +308,13 @@ public sealed class RosterSolver
     public static RosterEditValidationResult ValidateManualEdit(
         RosterSolverInput input,
         IReadOnlyList<RosterSolverShift> shifts) =>
-        ValidateCore(input, shifts, manualEdit: true);
+        ValidateCore(input, shifts, manualEdit: true, allowDriverShortages: false);
 
     private static RosterEditValidationResult ValidateCore(
         RosterSolverInput input,
         IReadOnlyList<RosterSolverShift> shifts,
-        bool manualEdit)
+        bool manualEdit,
+        bool allowDriverShortages)
     {
         var errors = RosterSolverInputValidator.ValidateInput(input).ToList();
         var warnings = new List<string>();
@@ -365,7 +407,8 @@ public sealed class RosterSolver
             var required = slot?.RequiredDrivers ?? 0;
             var assigned = actual.GetValueOrDefault(hour) ?? [];
             var label = slot is not null ? FormatSlot(slot) : input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour).ToString("dddd HH:mm", CultureInfo.InvariantCulture);
-            if (assigned.Count != required)
+            var generatedDriverShortage = allowDriverShortages && input.RosterKind == RosterKinds.Drivers && assigned.Count < required;
+            if (assigned.Count != required && !generatedDriverShortage)
                 errors.Add($"Demand mismatch: {label}: demand {required}, scheduled {assigned.Count}; {(assigned.Count < required ? $"need {required - assigned.Count} more {EmployeeLabel(input.RosterKind)}" : $"{assigned.Count - required} excess {EmployeeLabel(input.RosterKind)}")}.");
             if (input.RosterKind == RosterKinds.Inside &&
                 (assigned.Count > 0 || !manualEdit && required > 0) &&
@@ -591,7 +634,7 @@ public sealed class RosterSolver
             .Select(candidate => new RosterSolverShift(candidate.EmployeeId, candidate.Date, candidate.Start, candidate.Finish))
             .OrderBy(shift => shift.Date).ThenBy(shift => shift.StartHour).ThenBy(shift => shift.EmployeeId).ToArray();
 
-    /// <summary>Bounded local improvement of an already exact roster; no coverage is added or removed.</summary>
+    /// <summary>Bounded local improvement of an existing roster; no coverage is added or removed.</summary>
     private static List<Candidate> ImproveIncumbent(RosterSolverInput input, Employee[] employees,
         List<Candidate> candidates, List<Candidate> current, double seconds, CancellationToken token)
     {
@@ -836,7 +879,7 @@ public sealed class RosterSolver
             var maximum = ratios.MaxBy(item => item.Percentage);
             var spread = maximum.Percentage - minimum.Percentage;
             if (spread > 30.01)
-                yield return $"Fairness warning: approximate-hours utilization still spans {minimum.Percentage:F1}% ({Name(minimum.Employee)}) to {maximum.Percentage:F1}% ({Name(maximum.Employee)}), a {spread:F1}-percentage-point gap. Coverage remains exact. Availability, scarcity, shift/rest rules, selected weights or the search limit can restrict further balancing; review this allocation before using it.";
+                yield return $"Fairness warning: approximate-hours utilization still spans {minimum.Percentage:F1}% ({Name(minimum.Employee)}) to {maximum.Percentage:F1}% ({Name(maximum.Employee)}), a {spread:F1}-percentage-point gap. Demand coverage, availability, scarcity, shift/rest rules, selected weights or the search limit can restrict further balancing; review this allocation before using it.";
         }
     }
 

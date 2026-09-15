@@ -108,7 +108,7 @@ public sealed partial class RosterSolverTests
 
         var result = solver.Solve(input);
 
-        AssertInfeasible(result);
+        AssertPartialRoster(input, result);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("Monday 15:00") &&
             diagnostic.Contains("car or moped", StringComparison.OrdinalIgnoreCase));
     }
