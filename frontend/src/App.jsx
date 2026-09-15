@@ -1553,7 +1553,7 @@ function AdminConsole({
             <button
               type="button"
               className={activeTab === 'saved-rosters' ? 'admin-tab active' : 'admin-tab'}
-              onClick={() => { setSavedWeekStart(null); switchTab('saved-rosters') }}
+              onClick={() => switchTab('saved-rosters')}
             >
               Saved rosters
             </button>
