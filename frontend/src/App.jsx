@@ -2258,7 +2258,6 @@ function ScheduleEditor({
           capacityHours={schedule.approximateCapacityHours}
         />
       )}
-      <AvailabilityHeatmap heatmap={schedule.heatmap} weekStart={schedule.weekStart} />
 
       <div className="schedule-table" role="table" aria-label="Weekly availability">
         <div className="schedule-row schedule-header" role="row">
@@ -2325,6 +2324,8 @@ function ScheduleEditor({
           {saveState.status === 'saving' ? 'Saving…' : 'Save availability'}
         </button>
       </div>
+
+      <AvailabilityHeatmap heatmap={schedule.heatmap} weekStart={schedule.weekStart} />
     </form>
   )
 }
