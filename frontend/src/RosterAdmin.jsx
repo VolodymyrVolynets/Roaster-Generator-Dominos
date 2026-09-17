@@ -3,7 +3,7 @@ import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/si
 import { createRosterEventState, mergeRosterEvents } from './rosterEvents'
 import { compareRosterEmployees, employeeMatchesRosterKind, getRosterRoleGroup, rosterForKind, rosterRoleGroups } from './employeeGroups'
 import SavedRosterLabour from './SavedRosterLabour'
-import { AreaSelector, WeekSelector } from './SelectionControls'
+import { AreaSelector } from './SelectionControls'
 import { getWeekStartValue } from './weekSelection'
 
 const weightFields = [
@@ -102,7 +102,7 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
   )
 }
 
-export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onShowSaved, weekOffset, setWeekOffset, realtimeKey = 0 }) {
+export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onShowSaved, weekOffset, onWeekSelectionLockChange, realtimeKey = 0 }) {
   const [hubStatus, setHubStatus] = useState('connecting')
   const [generation, setGeneration] = useState(null)
   const [logs, setLogs] = useState([])
@@ -121,6 +121,11 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
   const running = starting || runningStatuses.has(generation?.status)
   const dirtySettings = settings && savedSettings && JSON.stringify(settings) !== JSON.stringify(savedSettings)
   const selectedWeekCanGenerate = weekOffset >= 1 && weekOffset <= 3
+
+  useEffect(() => {
+    onWeekSelectionLockChange('generation', isVisible && running)
+    return () => onWeekSelectionLockChange('generation', false)
+  }, [isVisible, onWeekSelectionLockChange, running])
 
   useEffect(() => {
     if (!isVisible || dirtySettings) return
@@ -283,7 +288,6 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
     <section className="admin-tools roster-generation-tools" hidden={!isVisible}>
       <div className="section-heading">
         <div><span className="eyebrow">Administration</span><h2>Generate roster</h2></div>
-        <WeekSelector weekOffset={weekOffset} onChange={setWeekOffset} disabled={running} />
       </div>
       {!selectedWeekCanGenerate && (
         <p className="message info-message" role="status">
@@ -774,14 +778,13 @@ export function SavedRosterPanel({
   setErrorPopup,
   canEdit = true,
   weekOffset,
-  setWeekOffset,
   workArea,
   setWorkArea,
+  onWeekSelectionLockChange,
   realtimeKey = 0,
 }) {
   const rosterKind = workArea === 'inside' ? 'inside' : 'drivers'
   const weekStart = getWeekStartValue(weekOffset)
-  const [history, setHistory] = useState([])
   const [roster, setRoster] = useState(null)
   const [availableEmployees, setAvailableEmployees] = useState([])
   const [draftShifts, setDraftShifts] = useState([])
@@ -792,6 +795,11 @@ export function SavedRosterPanel({
   const [refreshKey, setRefreshKey] = useState(0)
   const [labourRefreshKey, setLabourRefreshKey] = useState(0)
   const realtimeKeyRef = useRef(realtimeKey)
+
+  useEffect(() => {
+    onWeekSelectionLockChange('saved-roster', editing || editStatus.status === 'saving')
+    return () => onWeekSelectionLockChange('saved-roster', false)
+  }, [editStatus.status, editing, onWeekSelectionLockChange])
 
   useEffect(() => {
     if (realtimeKeyRef.current === realtimeKey) return
@@ -807,17 +815,6 @@ export function SavedRosterPanel({
     setRefreshKey((value) => value + 1)
     setLabourRefreshKey((value) => value + 1)
   }, [editing, realtimeKey])
-
-  useEffect(() => {
-    let active = true
-    setHistory([])
-    fetchJson(`/api/admin/roster/history?rosterKind=${rosterKind}`, { cache: 'no-store' })
-      .then((payload) => {
-        if (active) setHistory(payload.filter((item) => !item.rosterKind || item.rosterKind === rosterKind))
-      })
-      .catch((error) => { if (active) setErrorPopup(error.message) })
-    return () => { active = false }
-  }, [fetchJson, setErrorPopup, refreshKey, rosterKind])
 
   useEffect(() => {
     if (!canEdit) {
@@ -984,14 +981,6 @@ export function SavedRosterPanel({
             outsideValue="drivers"
             onChange={(value) => setWorkArea(value === 'inside' ? 'inside' : 'outside')}
             disabled={editing}
-          />
-          <WeekSelector
-            weekOffset={weekOffset}
-            onChange={setWeekOffset}
-            allowAllWeeks
-            disabled={editing}
-            highlightedWeekStarts={history.map((item) => item.weekStart)}
-            highlightLabel={`${rosterKind === 'inside' ? 'Inside' : 'Driver'} roster saved`}
           />
         </div>
       </div>

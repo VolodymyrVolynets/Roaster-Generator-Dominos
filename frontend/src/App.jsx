@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 import { calculateDemandLabour, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
 import { getAvailabilityEmployeeId } from './availabilityAccess'
@@ -30,6 +30,7 @@ const emptyEmployeeForm = {
   phoneNumber: '',
   payrollNumber: '',
   hourlyRate: 14.5,
+  maximumWeeklyHours: 45,
   roles: ['Driver'],
   driverType: 'Car',
 }
@@ -41,6 +42,7 @@ const employeeFieldLabels = {
   phoneNumber: 'Phone number',
   payrollNumber: 'Payroll number',
   hourlyRate: 'Hourly pay rate',
+  maximumWeeklyHours: 'Maximum weekly hours',
   roles: 'Roles',
   driverType: 'Driver type',
   identity: 'Employee login',
@@ -670,9 +672,9 @@ function DemandManager({
   employees = [],
   canEdit = true,
   weekOffset,
-  onWeekChange,
   demandKind,
   onDemandKindChange,
+  onWeekSelectionLockChange,
   realtimeKey = 0,
 }) {
   const [plans, setPlans] = useState([])
@@ -686,6 +688,11 @@ function DemandManager({
   const loadedPlanIdRef = useRef('')
   const receivedPlan = (payload) => ({ ...payload, labourEstimateCurrent: true })
   const weekStart = getWeekStartValue(weekOffset)
+
+  useEffect(() => {
+    onWeekSelectionLockChange('demand', status.status === 'saving')
+    return () => onWeekSelectionLockChange('demand', false)
+  }, [onWeekSelectionLockChange, status.status])
 
   useEffect(() => {
     fetchJson('/api/admin/demand')
@@ -965,14 +972,6 @@ function DemandManager({
         </div>
         <div className="selection-toolbar demand-scenario-controls">
           <AreaSelector value={demandKind} onChange={onDemandKindChange} disabled={status.status === 'saving'} />
-          <WeekSelector
-            weekOffset={weekOffset}
-            onChange={onWeekChange}
-            allowAllWeeks
-            disabled={status.status === 'saving'}
-            highlightedWeekStarts={plans.filter((item) => item.demandKind === demandKind).map((item) => item.weekStart)}
-            highlightLabel={`${isInsideDemand ? 'Inside' : 'Outside'} demand saved`}
-          />
         </div>
       </div>
 
@@ -1411,7 +1410,18 @@ function AdminConsole({
 }) {
   const [activeTab, setActiveTab] = useState('employees')
   const [workArea, setWorkArea] = useState('outside')
+  const [weekSelectionLocks, setWeekSelectionLocks] = useState({})
   const employeeEditorRef = useRef(null)
+
+  const updateWeekSelectionLock = useCallback((source, locked) => {
+    setWeekSelectionLocks((current) => {
+      if (Boolean(current[source]) === locked) return current
+      const next = { ...current }
+      if (locked) next[source] = true
+      else delete next[source]
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     if (employeeEditorOpen) {
@@ -1440,6 +1450,7 @@ function AdminConsole({
     updateEmployeeForm('phoneNumber', '')
     updateEmployeeForm('payrollNumber', '')
     updateEmployeeForm('hourlyRate', 14.5)
+    updateEmployeeForm('maximumWeeklyHours', 45)
     updateEmployeeForm('roles', ['Driver'])
     updateEmployeeForm('driverType', 'Car')
   }
@@ -1496,6 +1507,7 @@ function AdminConsole({
   const payrollNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'payrollNumber')
   const roleErrors = getEmployeeFieldErrors(employeeSaveState, 'roles')
   const hourlyRateErrors = getEmployeeFieldErrors(employeeSaveState, 'hourlyRate')
+  const maximumWeeklyHoursErrors = getEmployeeFieldErrors(employeeSaveState, 'maximumWeeklyHours')
   const driverTypeErrors = getEmployeeFieldErrors(employeeSaveState, 'driverType')
   const selectedDemandRealtimeKey = workArea === 'inside'
     ? realtimeVersions.demandInside
@@ -1518,9 +1530,17 @@ function AdminConsole({
             <p className="lead">Manage availability, configure demand, and generate balanced rosters.</p>
           </header>
 
-          <div className="app-toolbar">
-            <span className="role-badge">{authState.user.isAdmin ? 'Admin' : 'Manager'}</span>
-            <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
+          <div className="app-toolbar global-week-toolbar">
+            <div className="global-week-actions">
+              <span className="role-badge">{authState.user.isAdmin ? 'Admin' : 'Manager'}</span>
+              <WeekSelector
+                weekOffset={weekOffset}
+                onChange={setWeekOffset}
+                allowAllWeeks
+                disabled={Object.keys(weekSelectionLocks).length > 0}
+              />
+              <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
+            </div>
           </div>
 
           <nav className="admin-tabs" aria-label="Administrator sections">
@@ -1637,6 +1657,7 @@ function AdminConsole({
                           <span>Employee number: {employee.employeeNumber}</span>
                           <span>Payroll number: {employee.payrollNumber || 'Not set'}</span>
                           <span>Hourly pay: €{Number(employee.hourlyRate ?? 14.5).toFixed(2)}</span>
+                          <span>Maximum weekly hours: {employee.maximumWeeklyHours ?? 45}h</span>
                           <span>Phone: {employee.phoneNumber || 'Not set'}</span>
                           <span>Roles: {(employee.roles || []).join(', ') || 'Not set'}</span>
                           {employeeHasRole(employee, 'Driver') && (
@@ -1765,6 +1786,19 @@ function AdminConsole({
                       </small>
                     </div>
 
+                    <div className="employee-form-field">
+                      <label htmlFor="admin-employee-maximum-weekly-hours">Maximum weekly hours</label>
+                      <input id="admin-employee-maximum-weekly-hours" type="number" min="0" max="168" step="1" required
+                        value={employeeForm.maximumWeeklyHours ?? 45}
+                        onChange={(event) => updateEmployeeForm('maximumWeeklyHours', event.target.value === '' ? '' : Number(event.target.value))}
+                        aria-invalid={maximumWeeklyHoursErrors.length > 0}
+                        aria-describedby={`admin-employee-maximum-weekly-hours-help${maximumWeeklyHoursErrors.length > 0 ? ' admin-employee-maximumWeeklyHours-error' : ''}`} />
+                      <EmployeeFieldError field="maximumWeeklyHours" messages={maximumWeeklyHoursErrors} />
+                      <small id="admin-employee-maximum-weekly-hours-help">
+                        Default 45 hours. Caps automatic approximate hours for this employee; demand coverage can still require more scheduled hours.
+                      </small>
+                    </div>
+
                     <fieldset
                       className="employee-role-fieldset"
                       aria-invalid={roleErrors.length > 0}
@@ -1859,11 +1893,6 @@ function AdminConsole({
                   <span className="eyebrow">Admin overview</span>
                   <h2>Driver availability roster</h2>
                 </div>
-                <WeekSelector
-                  weekOffset={weekOffset}
-                  onChange={setWeekOffset}
-                  allowAllWeeks
-                />
               </div>
 
               {availability && (
@@ -1972,9 +2001,6 @@ function AdminConsole({
               )}
               <ScheduleEditor
                 schedule={schedule}
-                scheduleState={scheduleState}
-                weekOffset={weekOffset}
-                setWeekOffset={setWeekOffset}
                 saveState={saveState}
                 saveSchedule={saveSchedule}
                 updateDay={updateDay}
@@ -1990,11 +2016,6 @@ function AdminConsole({
                   <span className="eyebrow">Administration</span>
                   <h2>Employee availability</h2>
                 </div>
-                <WeekSelector
-                  weekOffset={weekOffset}
-                  onChange={setWeekOffset}
-                  allowAllWeeks
-                />
               </div>
 
               <div className="employee-picker">
@@ -2116,9 +2137,9 @@ function AdminConsole({
             employees={employees}
             canEdit={authState.user.isAdmin}
             weekOffset={weekOffset}
-            onWeekChange={setWeekOffset}
             demandKind={workArea}
             onDemandKindChange={setWorkArea}
+            onWeekSelectionLockChange={updateWeekSelectionLock}
             realtimeKey={planningRealtimeKey}
           />}
 
@@ -2127,9 +2148,9 @@ function AdminConsole({
               fetchJson={fetchJson}
               setErrorPopup={setErrorPopup}
               isVisible={activeTab === 'generate-roster'}
+              onWeekSelectionLockChange={updateWeekSelectionLock}
               realtimeKey={planningRealtimeKey}
               weekOffset={weekOffset}
-              setWeekOffset={setWeekOffset}
               onShowSaved={(weekStart) => {
                 setWeekOffset(getWeekOffsetFromDate(weekStart))
                 setWorkArea('outside')
@@ -2142,9 +2163,9 @@ function AdminConsole({
             setErrorPopup={setErrorPopup}
             canEdit={authState.user.isAdmin}
             weekOffset={weekOffset}
-            setWeekOffset={setWeekOffset}
             workArea={workArea}
             setWorkArea={setWorkArea}
+            onWeekSelectionLockChange={updateWeekSelectionLock}
             realtimeKey={selectedRosterRealtimeKey + (realtimeVersions.availability || 0) +
               (realtimeVersions.employees || 0) + (realtimeVersions.sickLeave || 0) +
               (realtimeVersions.settings || 0)}
@@ -2252,15 +2273,11 @@ function AvailabilityHeatmap({ heatmap, weekStart }) {
 
 function ScheduleEditor({
   schedule,
-  scheduleState,
-  weekOffset,
-  setWeekOffset,
   saveState,
   saveSchedule,
   updateDay,
   resetDay,
 }) {
-  const minimumEditableWeekOffset = schedule?.minimumEditableWeekOffset ?? minWeekOffset
   const canEdit = schedule?.canEdit !== false
 
   if (!schedule) {
@@ -2274,13 +2291,6 @@ function ScheduleEditor({
           <span className="eyebrow">Weekly availability</span>
           <h2>{schedule.employeeName}</h2>
         </div>
-        <WeekSelector
-          weekOffset={weekOffset}
-          onChange={setWeekOffset}
-          disabled={scheduleState.status === 'loading'}
-          minimumWeekOffset={minimumEditableWeekOffset}
-          maximumWeekOffset={maxWeekOffset}
-        />
       </div>
 
       {!canEdit && (
@@ -2384,7 +2394,7 @@ const personalRosterDateFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'short',
 })
 
-function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup, realtimeKey = 0 }) {
+function PersonalRosterPanel({ weekOffset, setErrorPopup, realtimeKey = 0 }) {
   const [rosterState, setRosterState] = useState({ status: 'loading', roster: null, message: '' })
 
   useEffect(() => {
@@ -2422,13 +2432,6 @@ function PersonalRosterPanel({ weekOffset, setWeekOffset, setErrorPopup, realtim
           <h2 id="personal-roster-heading">My roster</h2>
           <p className="personal-roster-intro">Only your scheduled shifts are shown here.</p>
         </div>
-        <WeekSelector
-          weekOffset={weekOffset}
-          onChange={setWeekOffset}
-          disabled={rosterState.status === 'loading'}
-          minimumWeekOffset={minWeekOffset}
-          maximumWeekOffset={maxWeekOffset}
-        />
       </div>
 
       {rosterState.status === 'loading' && <p className="message info-message" role="status">Loading your roster…</p>}
@@ -2517,13 +2520,22 @@ function EmployeeWorkspace({
             <p className="lead">{lead}</p>
           </header>
 
-          <div className="app-toolbar">
+          <div className="app-toolbar global-week-toolbar">
             <div className="current-employee">
               <span className="eyebrow">Signed in as</span>
               <strong>{authState.user.employeeName || authState.user.username}</strong>
             </div>
-            <span className="role-badge">{roleLabel}</span>
-            <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
+            <div className="global-week-actions">
+              <span className="role-badge">{roleLabel}</span>
+              <WeekSelector
+                weekOffset={weekOffset}
+                onChange={setWeekOffset}
+                disabled={scheduleState.status === 'loading' || saveState.status === 'saving'}
+                minimumWeekOffset={minWeekOffset}
+                maximumWeekOffset={maxWeekOffset}
+              />
+              <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
+            </div>
           </div>
 
           <nav className="workspace-tabs" aria-label="Employee sections">
@@ -2560,7 +2572,7 @@ function EmployeeWorkspace({
           ) : activeTab === 'sick-leave' ? (
             <SickLeavePanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.sickLeave} />
           ) : activeTab === 'roster' && variant === 'driver' ? (
-            <PersonalRosterPanel weekOffset={weekOffset} setWeekOffset={setWeekOffset} setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.roster} />
+            <PersonalRosterPanel weekOffset={weekOffset} setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.roster} />
           ) : (
             <>
               {children}
@@ -2583,9 +2595,6 @@ function EmployeeWorkspace({
 
               <ScheduleEditor
                 schedule={schedule}
-                scheduleState={scheduleState}
-                weekOffset={weekOffset}
-                setWeekOffset={setWeekOffset}
                 saveState={saveState}
                 saveSchedule={saveSchedule}
                 updateDay={updateDay}
@@ -2734,6 +2743,7 @@ function App() {
         phoneNumber: employee.phoneNumber,
         payrollNumber: employee.payrollNumber || '',
         hourlyRate: employee.hourlyRate ?? 14.5,
+        maximumWeeklyHours: employee.maximumWeeklyHours ?? 45,
         roles: employee.roles?.length ? employee.roles : ['Driver'],
         driverType: employee.driverType || 'Car',
       })

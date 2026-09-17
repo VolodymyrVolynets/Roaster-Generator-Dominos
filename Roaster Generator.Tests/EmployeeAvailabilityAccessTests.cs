@@ -167,10 +167,11 @@ public sealed class EmployeeAvailabilityAccessTests
     }
 
     [Fact]
-    public async Task ManagerAvailabilityStillValidatesTheEditableWeekAndShopHours()
+    public async Task ManagersCanReadHistoricalOwnAvailabilityButStillValidateEdits()
     {
         using var fixture = new ScheduleFixture([RoleNames.Manager]);
-        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.GetSchedule(fixture.EmployeeId, 0, default));
+        var historical = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 0, default));
+        Assert.False(historical.CanEdit);
 
         var request = NewAvailability();
         request.Days[0].StartTime = new TimeOnly(8, 0);

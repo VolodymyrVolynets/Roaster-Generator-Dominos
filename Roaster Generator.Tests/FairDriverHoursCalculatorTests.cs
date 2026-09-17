@@ -154,6 +154,54 @@ public sealed class FairDriverHoursCalculatorTests
         Assert.Equal(6, result.Drivers[driver.Id].ExpectedHours, 4);
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(20, 20)]
+    [InlineData(60, 60)]
+    [InlineData(168, 70)]
+    public void EmployeeSpecificMaximumReplacesTheGlobalWeeklyCap(int maximum, int expected)
+    {
+        var driver = Driver();
+        driver.MaximumWeeklyHours = maximum;
+        var availability = Enumerable.Range(0, 7)
+            .Select(day => Available(driver, 10, 20, Monday.AddDays(day))).ToArray();
+        var demand = Enumerable.Range(0, 7).SelectMany(day => Enumerable.Range(10, 10)
+            .Select(hour => new RosterSolverDemand(Monday.AddDays(day), hour, 1))).ToArray();
+
+        var result = Calculate([driver], availability, demand);
+
+        Assert.Equal(expected, result.Drivers[driver.Id].CapacityHours, 4);
+        Assert.Equal(expected, result.Drivers[driver.Id].ExpectedHours, 4);
+        Assert.Equal(70 - expected, result.UnallocatedDemandHours, 4);
+    }
+
+    [Fact]
+    public void EmployeeMaximumCapsAreRedistributedIndependently()
+    {
+        var limited = Driver();
+        limited.MaximumWeeklyHours = 2;
+        var broad = Driver();
+
+        var result = Calculate([limited, broad],
+            [Available(limited, 10, 20), Available(broad, 10, 20)], Demand(10, 10));
+
+        Assert.Equal(2, result.Drivers[limited.Id].ExpectedHours, 4);
+        Assert.Equal(8, result.Drivers[broad.Id].ExpectedHours, 4);
+        Assert.Equal(0, result.UnallocatedDemandHours, 4);
+    }
+
+    [Fact]
+    public void InsideApproximateHoursUseTheSameEmployeeProperty()
+    {
+        var employee = new Employee { Id = Guid.NewGuid(), MaximumWeeklyHours = 4,
+            InStoreProfile = new InStoreProfile() };
+
+        var result = calculator.Calculate([employee], [Available(employee, 10, 20)],
+            Demand(10, 10), rosterKind: RosterKinds.Inside);
+
+        Assert.Equal(4, result.Drivers[employee.Id].ExpectedHours, 4);
+    }
+
     [Fact]
     public void SolverKeepsCoverageAboveApproximateHoursPreference()
     {

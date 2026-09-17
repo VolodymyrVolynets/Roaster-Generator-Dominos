@@ -17,6 +17,9 @@ public sealed class EmployeeRequest
     // Older clients may omit pay; updates preserve the existing value in that case.
     public decimal? HourlyRate { get; set; }
 
+    // Omitted values preserve the current limit on updates; new employees default to 45.
+    public int? MaximumWeeklyHours { get; set; }
+
     public List<string> Roles { get; set; } = ["Driver"];
 
     public DriverType DriverType { get; set; } = DriverType.Car;
@@ -37,6 +40,8 @@ public sealed class EmployeeResponse
     public string? PayrollNumber { get; init; }
 
     public decimal HourlyRate { get; init; }
+
+    public int MaximumWeeklyHours { get; init; }
 
     public bool IsActive { get; init; }
 

@@ -104,6 +104,13 @@ h2 {
   margin-top: 24px;
 }
 
+.global-week-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin-left: auto;
+}
+
 .admin-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -3505,6 +3512,26 @@ select:disabled {
   .employee-workspace .app-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .global-week-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .global-week-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .global-week-actions .week-selector {
+    order: -1;
+    width: 100%;
+  }
+
+  .global-week-actions .secondary-button {
+    margin-left: auto;
   }
 
   .employee-workspace .current-employee {

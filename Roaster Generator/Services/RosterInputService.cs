@@ -140,6 +140,8 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 warnings.Add($"{employee.FirstName} {employee.LastName}: approved sick leave removes availability on {sickDates} day{(sickDates == 1 ? string.Empty : "s")} this week.");
             if (!availability.Any(s => s.EmployeeId == employee.Id))
                 warnings.Add($"{employee.FirstName} {employee.LastName}: no availability entered; approximate hours are 0.");
+            else if (employee.MaximumWeeklyHours == 0)
+                warnings.Add($"{employee.FirstName} {employee.LastName}: maximum weekly hours is 0; approximate hours are 0.");
             else if (fairHours.Drivers.GetValueOrDefault(employee.Id)?.ExpectedHours == 0)
                 warnings.Add($"{employee.FirstName} {employee.LastName}: availability does not overlap any positive demand; approximate hours are 0.");
         }
@@ -175,6 +177,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             Employees = employees.Select(e => new
             {
                 e.Id,
+                e.MaximumWeeklyHours,
                 Roles = RosterKinds.Roles(e),
                 e.DriverProfile?.DriverType
             }),

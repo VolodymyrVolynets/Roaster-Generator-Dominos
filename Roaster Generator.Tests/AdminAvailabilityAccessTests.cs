@@ -16,7 +16,9 @@ public sealed class AdminAvailabilityAccessTests
     [Theory]
     [InlineData(RoleNames.Admin, 4)]
     [InlineData(RoleNames.Admin, -4)]
-    public async Task AdministratorsCanViewAvailabilityOutsideTheThreeWeekHorizon(string role, int weekOffset)
+    [InlineData(RoleNames.Manager, 4)]
+    [InlineData(RoleNames.Manager, -4)]
+    public async Task ManagementCanViewAvailabilityOutsideTheThreeWeekHorizon(string role, int weekOffset)
     {
         using var db = NewDb();
         var controller = CreateController(db, role);
@@ -26,17 +28,6 @@ public sealed class AdminAvailabilityAccessTests
         var response = Assert.IsType<WeeklyAvailabilityResponse>(result.Value);
 
         Assert.Equal(WeeklyScheduleService.GetWeekMonday(weekOffset), response.WeekStart);
-    }
-
-    [Fact]
-    public async Task ManagersRemainLimitedToTheNextThreeAvailabilityWeeks()
-    {
-        using var db = NewDb();
-        var controller = CreateController(db, RoleNames.Manager);
-
-        var result = await controller.Get(4, default);
-
-        Assert.IsType<BadRequestObjectResult>(result);
     }
 
     private static AdminAvailabilityController CreateController(AppDbContext db, string role)

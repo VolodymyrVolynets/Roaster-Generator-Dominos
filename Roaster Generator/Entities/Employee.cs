@@ -16,6 +16,8 @@ public sealed class Employee
 
     public decimal HourlyRate { get; set; } = 14.5m;
 
+    public int MaximumWeeklyHours { get; set; } = 45;
+
     public bool IsActive { get; set; } = true;
 
     public DriverProfile? DriverProfile { get; set; }

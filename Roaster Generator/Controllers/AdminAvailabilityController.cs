@@ -25,7 +25,7 @@ public sealed class AdminAvailabilityController(
         {
             WeekOffset = weekOffset ?? WeeklyScheduleService.MinWeekOffset
         };
-        var validationResult = await (User.IsInRole(RoleNames.Admin)
+        var validationResult = await (User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.Manager)
             ? adminWeekValidator
             : weekValidator).ValidateAsync(selection, cancellationToken);
 

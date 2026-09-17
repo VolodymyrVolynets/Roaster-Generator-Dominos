@@ -120,6 +120,76 @@ public sealed class EmployeePayRateTests
         EmployeeNumber = "pay-test", FirstName = "Test", LastName = "Employee", Roles = [role]
     };
 
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(0, true)]
+    [InlineData(45, true)]
+    [InlineData(168, true)]
+    [InlineData(-1, false)]
+    [InlineData(169, false)]
+    public void MaximumWeeklyHoursRequiresAValidWholeHourLimit(int? maximum, bool expected)
+    {
+        var request = Request();
+        request.MaximumWeeklyHours = maximum;
+        var validation = new EmployeeRequestValidator().Validate(request);
+        Assert.Equal(expected, validation.IsValid);
+        if (!expected) Assert.All(validation.Errors,
+            error => Assert.Equal(nameof(EmployeeRequest.MaximumWeeklyHours), error.PropertyName));
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Driver)]
+    [InlineData(RoleNames.InStore)]
+    [InlineData(RoleNames.Manager)]
+    public async Task MaximumHoursDefaultPersistAndSurviveLegacyUpdatesAcrossRoles(string role)
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request(role);
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.Equal(45, created.MaximumWeeklyHours);
+
+        request.MaximumWeeklyHours = 0;
+        var zero = ReadEmployee(await fixture.Controller.Update(created.Id, request, default));
+        Assert.Equal(0, zero.MaximumWeeklyHours);
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Equal(0, (await fixture.Db.Employees.SingleAsync(e => e.Id == created.Id)).MaximumWeeklyHours);
+
+        request.MaximumWeeklyHours = 60;
+        Assert.Equal(60, ReadEmployee(await fixture.Controller.Update(created.Id, request, default)).MaximumWeeklyHours);
+        request.MaximumWeeklyHours = null;
+        Assert.Equal(60, ReadEmployee(await fixture.Controller.Update(created.Id, request, default)).MaximumWeeklyHours);
+        request.MaximumWeeklyHours = -1;
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.Update(created.Id, request, default));
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Equal(60, (await fixture.Db.Employees.SingleAsync(e => e.Id == created.Id)).MaximumWeeklyHours);
+    }
+
+    [Fact]
+    public void MaximumHoursDatabaseMappingPreservesExplicitZeroAndDefaultsToFortyFive()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=unused").Options);
+        var property = db.Model.FindEntityType(typeof(Employee))!.FindProperty(nameof(Employee.MaximumWeeklyHours))!;
+        Assert.Equal(45, new Employee().MaximumWeeklyHours);
+        Assert.Equal(45, property.GetDefaultValue());
+        Assert.Equal(ValueGenerated.Never, property.ValueGenerated);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(30)]
+    [InlineData(60)]
+    public async Task ExplicitMaximumHoursPersistOnCreate(int maximum)
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.MaximumWeeklyHours = maximum;
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.Equal(maximum, created.MaximumWeeklyHours);
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Equal(maximum, (await fixture.Db.Employees.SingleAsync(e => e.Id == created.Id)).MaximumWeeklyHours);
+    }
+
     private static EmployeeResponse ReadEmployee(IActionResult result) =>
         Assert.IsType<EmployeeResponse>(Assert.IsType<OkObjectResult>(result).Value);
 

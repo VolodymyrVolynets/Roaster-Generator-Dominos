@@ -9,7 +9,6 @@ public interface IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        double maximumWeeklyHours = 45,
         string rosterKind = RosterKinds.Drivers);
 }
 
@@ -35,13 +34,12 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        double maximumWeeklyHours = 45,
         string rosterKind = RosterKinds.Drivers)
     {
         if (!double.IsFinite(alpha) || alpha is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(alpha), "Fairness alpha must be between 0 and 1.");
-        if (!double.IsFinite(maximumWeeklyHours) || maximumWeeklyHours < 0)
-            throw new ArgumentOutOfRangeException(nameof(maximumWeeklyHours), "Maximum weekly hours cannot be negative.");
+        if (drivers.Any(employee => employee.MaximumWeeklyHours is < 0 or > 168))
+            throw new ArgumentOutOfRangeException(nameof(drivers), "Maximum weekly hours must be between 0 and 168.");
 
         RosterKinds.EnsureEnabled(rosterKind);
         var eligible = drivers.Where(employee => employee.IsActive &&
@@ -80,7 +78,7 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
             }
         }
 
-        var capacities = eligible.ToDictionary(driver => driver.Id, driver => Math.Min(maximumWeeklyHours,
+        var capacities = eligible.ToDictionary(driver => driver.Id, driver => Math.Min(driver.MaximumWeeklyHours,
             usefulSlots[driver.Id].GroupBy(slot => slot.Date)
                 .Sum(day => Math.Min(10, day.Count()))));
         var fairScores = eligible.ToDictionary(driver => driver.Id, driver =>

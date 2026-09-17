@@ -104,6 +104,7 @@ public sealed class AdminEmployeesController(
             PhoneNumber = phoneNumber,
             PayrollNumber = payrollNumber,
             HourlyRate = request.HourlyRate ?? 14.5m,
+            MaximumWeeklyHours = request.MaximumWeeklyHours ?? 45,
             IsActive = true
         };
 
@@ -232,6 +233,7 @@ public sealed class AdminEmployeesController(
         employee.PhoneNumber = phoneNumber;
         employee.PayrollNumber = payrollNumber;
         employee.HourlyRate = request.HourlyRate ?? employee.HourlyRate;
+        employee.MaximumWeeklyHours = request.MaximumWeeklyHours ?? employee.MaximumWeeklyHours;
 
         SynchronizeProfiles(employee, roles, request);
 

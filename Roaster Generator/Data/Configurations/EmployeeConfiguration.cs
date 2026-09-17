@@ -49,6 +49,12 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .ValueGeneratedNever()
             .IsRequired();
 
+        builder.Property(employee => employee.MaximumWeeklyHours)
+            .HasColumnName("maximum_weekly_hours")
+            .HasDefaultValue(45)
+            .ValueGeneratedNever()
+            .IsRequired();
+
         builder.Property(employee => employee.IsActive)
             .HasColumnName("is_active")
             .HasDefaultValue(true)

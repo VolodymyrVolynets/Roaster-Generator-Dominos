@@ -35,6 +35,11 @@ public sealed class EmployeeRequestValidator : AbstractValidator<EmployeeRequest
             .Must(rate => !rate.HasValue || decimal.Round(rate.Value, 2) == rate.Value)
             .WithMessage("Hourly rate must have no more than two decimal places.");
 
+        RuleFor(request => request.MaximumWeeklyHours)
+            .InclusiveBetween(0, 168)
+            .When(request => request.MaximumWeeklyHours.HasValue)
+            .WithMessage("Maximum weekly hours must be between 0 and 168 whole hours.");
+
         RuleFor(request => request.Roles)
             .NotNull()
             .Must(roles => roles is not null && roles.Count > 0)

@@ -75,6 +75,32 @@ public sealed class AvailabilityHeatmapTests
     }
 
     [Fact]
+    public async Task ChangingEmployeeMaximumRefreshesEstimatesAndRosterInputFingerprint()
+    {
+        using var db = NewDb();
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var driver = AddDriver(db, "Capped");
+        AddAvailability(db, driver, monday, 12, 18);
+        AddCompleteDemand(db, monday);
+        await db.SaveChangesAsync();
+        var inputs = new RosterInputService(db, new RosterSettingsService(db), Options.Create(new ShopHoursOptions()));
+        var service = new WeeklyScheduleService(db, inputs);
+        var before = await inputs.LoadAsync(monday, default);
+
+        driver.MaximumWeeklyHours = 3;
+        await db.SaveChangesAsync();
+        var after = await inputs.LoadAsync(monday, default);
+        var personal = await service.GetWeekAsync(driver.Id, 1, default);
+        var overview = await service.GetWeekForAllAsync(1, default);
+
+        Assert.Equal(3d, after.Input.ExpectedHoursByEmployee![driver.Id].ExpectedHours);
+        Assert.Equal(3d, personal!.ApproximateHours);
+        Assert.Equal(3d, overview.Employees.Single(e => e.EmployeeId == driver.Id).ApproximateHours);
+        Assert.NotEqual(before.Fingerprint, after.Fingerprint);
+        Assert.NotEqual(before.AvailabilityFingerprint, after.AvailabilityFingerprint);
+    }
+
+    [Fact]
     public async Task HeatmapUsesBusinessDayOvernightHoursAndApprovedSickLeave()
     {
         using var db = NewDb();
