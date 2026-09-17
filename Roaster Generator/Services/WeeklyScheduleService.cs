@@ -43,8 +43,11 @@ public sealed class WeeklyScheduleService(
             ? (await GetApproximateHoursAsync(weekStart, cancellationToken)).GetValueOrDefault(employeeId)
             : null;
         var heatmap = isDriver ? await BuildHeatmapAsync(weekStart, cancellationToken) : null;
+        int? driversWithoutAvailability = isDriver
+            ? await CountDriversWithoutAvailabilityAsync(weekStart, cancellationToken)
+            : null;
 
-        return BuildResponse(employee, weekStart, shifts, heatmap, approximateHours);
+        return BuildResponse(employee, weekStart, shifts, heatmap, approximateHours, driversWithoutAvailability);
     }
 
     public async Task<WeeklyAvailabilityResponse> GetWeekForAllAsync(
@@ -141,8 +144,11 @@ public sealed class WeeklyScheduleService(
             ? (await GetApproximateHoursAsync(weekStart, cancellationToken)).GetValueOrDefault(employeeId)
             : null;
         var heatmap = isDriver ? await BuildHeatmapAsync(weekStart, cancellationToken) : null;
+        int? driversWithoutAvailability = isDriver
+            ? await CountDriversWithoutAvailabilityAsync(weekStart, cancellationToken)
+            : null;
 
-        var response = BuildResponse(employee, weekStart, savedShifts, heatmap, approximateHours);
+        var response = BuildResponse(employee, weekStart, savedShifts, heatmap, approximateHours, driversWithoutAvailability);
         if (events is not null)
         {
             await events.AvailabilityChangedAsync(employeeId, weekStart, isDriver, cancellationToken);
@@ -184,7 +190,8 @@ public sealed class WeeklyScheduleService(
         DateOnly weekStart,
         IReadOnlyCollection<Shift> shifts,
         AvailabilityHeatmapResponse? heatmap = null,
-        FairDriverHoursAllocation? approximateHours = null)
+        FairDriverHoursAllocation? approximateHours = null,
+        int? driversWithoutAvailability = null)
     {
         var shiftsByDate = shifts.ToDictionary(shift => shift.Date);
 
@@ -212,9 +219,19 @@ public sealed class WeeklyScheduleService(
             WeekEnd = weekStart.AddDays(6),
             ApproximateHours = approximateHours?.ExpectedHours,
             ApproximateCapacityHours = approximateHours?.CapacityHours,
+            DriversWithoutAvailability = driversWithoutAvailability,
             Heatmap = heatmap,
             Days = days
         };
+    }
+
+    private Task<int> CountDriversWithoutAvailabilityAsync(DateOnly weekStart, CancellationToken cancellationToken)
+    {
+        var weekEnd = weekStart.AddDays(7);
+        // Count saved entries, not demand coverage or sick-leave-adjusted capacity.
+        // There is no separate submission record, so an entirely empty week counts too.
+        return DriverRosterEmployees.Query(db).CountAsync(employee => !db.Shifts.Any(shift =>
+            shift.EmployeeId == employee.Id && shift.Date >= weekStart && shift.Date < weekEnd), cancellationToken);
     }
 
     private async Task<IReadOnlyDictionary<Guid, FairDriverHoursAllocation>> GetApproximateHoursAsync(

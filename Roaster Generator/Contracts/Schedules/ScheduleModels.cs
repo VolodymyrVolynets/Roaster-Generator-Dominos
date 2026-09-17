@@ -39,6 +39,9 @@ public sealed class WeeklyScheduleResponse
 
     public double? ApproximateCapacityHours { get; init; }
 
+    // Aggregate only; present for eligible drivers, including when demand is missing.
+    public int? DriversWithoutAvailability { get; init; }
+
     public AvailabilityHeatmapResponse? Heatmap { get; init; }
 
     public IReadOnlyList<ScheduleDayResponse> Days { get; init; } = [];

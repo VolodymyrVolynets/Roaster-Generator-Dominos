@@ -143,7 +143,106 @@ public sealed class AvailabilityHeatmapTests
         var inStoreSchedule = await service.GetWeekAsync(inStore.Id, 1, default);
 
         Assert.NotNull(driverSchedule!.Heatmap);
+        Assert.Equal(1, driverSchedule.DriversWithoutAvailability);
         Assert.Null(inStoreSchedule!.Heatmap);
+        Assert.Null(inStoreSchedule.DriversWithoutAvailability);
+    }
+
+    [Fact]
+    public async Task MissingAvailabilityCountUsesSelectedWeekAndWorksWithoutDemand()
+    {
+        using var db = NewDb();
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var current = AddDriver(db, "Current");
+        var entered = AddDriver(db, "Entered");
+        var nextWeekOnly = AddDriver(db, "NextWeekOnly");
+        AddDriver(db, "Empty");
+        AddAvailability(db, current, monday, 12, 18);
+        AddAvailability(db, current, monday.AddDays(1), 12, 18);
+        AddAvailability(db, entered, monday.AddDays(6), 20, 2);
+        AddAvailability(db, nextWeekOnly, monday.AddDays(7), 12, 18);
+        await db.SaveChangesAsync();
+        var service = new WeeklyScheduleService(db, null);
+
+        var selected = await service.GetWeekAsync(current.Id, 1, default);
+        var next = await service.GetWeekAsync(current.Id, 2, default);
+
+        Assert.False(selected!.Heatmap!.DemandPlanExists);
+        Assert.Equal(2, selected.DriversWithoutAvailability);
+        Assert.Equal(3, next!.DriversWithoutAvailability);
+    }
+
+    [Fact]
+    public async Task MissingAvailabilityCountExcludesInactiveInsideAndUnmatchedDriverProfilesOrRoles()
+    {
+        using var db = NewDb();
+        var current = AddDriver(db, "Current");
+        AddDriver(db, "OtherEligible");
+        AddDriver(db, "Inactive").IsActive = false;
+        AddDriver(db, "InsideProfile").InStoreProfile = new InStoreProfile();
+        AddDriver(db, "ManagerProfile").ManagerProfile = new ManagerProfile();
+        var missingProfile = AddDriver(db, "MissingProfile");
+        db.DriverProfiles.Remove(missingProfile.DriverProfile!);
+        missingProfile.DriverProfile = null;
+        var staleProfile = AddDriver(db, "StaleProfile");
+        var userId = db.Users.Local.Single(user => user.EmployeeId == staleProfile.Id).Id;
+        db.UserRoles.RemoveRange(db.UserRoles.Local.Where(membership => membership.UserId == userId).ToArray());
+        var mixedRole = AddDriver(db, "InsideRole");
+        var insideRole = new IdentityRole<Guid> { Id = Guid.NewGuid(), Name = RoleNames.InStore };
+        db.Roles.Add(insideRole);
+        db.UserRoles.Add(new IdentityUserRole<Guid>
+        {
+            UserId = db.Users.Local.Single(user => user.EmployeeId == mixedRole.Id).Id, RoleId = insideRole.Id
+        });
+        await db.SaveChangesAsync();
+
+        var response = await new WeeklyScheduleService(db, null).GetWeekAsync(current.Id, 1, default);
+
+        Assert.Equal(2, response!.DriversWithoutAvailability);
+    }
+
+    [Fact]
+    public async Task MissingAvailabilityCountRefreshesAfterSavingAndClearingTheWeek()
+    {
+        using var db = NewDb();
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var current = AddDriver(db, "Current");
+        var other = AddDriver(db, "Other");
+        await db.SaveChangesAsync();
+        var service = new WeeklyScheduleService(db, null);
+        var entered = new WeeklyScheduleRequest
+        {
+            WeekOffset = 1,
+            Days = [new ScheduleDayRequest { Date = monday, StartTime = new TimeOnly(12, 0), FinishTime = new TimeOnly(18, 0) }]
+        };
+
+        Assert.Equal(2, (await service.GetWeekAsync(current.Id, 1, default))!.DriversWithoutAvailability);
+        Assert.Equal(1, (await service.ReplaceWeekAsync(current.Id, entered, default))!.DriversWithoutAvailability);
+        Assert.Equal(0, (await service.ReplaceWeekAsync(other.Id, entered, default))!.DriversWithoutAvailability);
+        Assert.Equal(0, (await service.GetWeekAsync(current.Id, 1, default))!.DriversWithoutAvailability);
+        var cleared = await service.ReplaceWeekAsync(current.Id, new WeeklyScheduleRequest { WeekOffset = 1 }, default);
+        Assert.Equal(1, cleared!.DriversWithoutAvailability);
+    }
+
+    [Fact]
+    public async Task SavedAvailabilityCountsEvenWhenSicknessOrVehicleLimitsPreventWorking()
+    {
+        using var db = NewDb();
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var driver = AddDriver(db, "Entered");
+        driver.DriverProfile!.IsOwn = false;
+        driver.MaximumWeeklyHours = 0;
+        AddAvailability(db, driver, monday, 12, 18);
+        db.SickLeaveRequests.Add(new SickLeaveRequest
+        {
+            Id = Guid.NewGuid(), EmployeeId = driver.Id, StartDate = monday, FinishDate = monday.AddDays(6),
+            Status = SickLeaveStatus.Approved
+        });
+        await db.SaveChangesAsync();
+
+        var response = await new WeeklyScheduleService(db, null).GetWeekAsync(driver.Id, 1, default);
+
+        Assert.Equal(0, response!.DriversWithoutAvailability);
     }
 
     [Fact]

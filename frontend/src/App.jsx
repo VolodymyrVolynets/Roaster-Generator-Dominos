@@ -2320,6 +2320,14 @@ function ScheduleEditor({
         />
       )}
 
+      {schedule.driversWithoutAvailability != null && (
+        <p className="message info-message" role="status">
+          <strong>{schedule.driversWithoutAvailability}</strong>{' '}
+          {schedule.driversWithoutAvailability === 1 ? 'driver has' : 'drivers have'} no saved availability for the selected week.
+          {' '}This includes you if your week is empty. Estimates may change as more drivers save availability.
+        </p>
+      )}
+
       <div className="schedule-table" role="table" aria-label="Weekly availability">
         <div className="schedule-row schedule-header" role="row">
           <span role="columnheader">Day</span>
