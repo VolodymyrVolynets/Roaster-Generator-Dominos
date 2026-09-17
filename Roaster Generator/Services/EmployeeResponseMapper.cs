@@ -19,6 +19,7 @@ public static class EmployeeResponseMapper
         MaximumWeeklyHours = employee.MaximumWeeklyHours,
         IsActive = employee.IsActive,
         Roles = roles.ToArray(),
-        DriverType = employee.DriverProfile?.DriverType
+        DriverType = employee.DriverProfile?.DriverType,
+        IsOwn = employee.DriverProfile?.IsOwn
     };
 }

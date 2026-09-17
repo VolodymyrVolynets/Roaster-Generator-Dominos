@@ -9,7 +9,9 @@ public interface IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        string rosterKind = RosterKinds.Drivers);
+        string rosterKind = RosterKinds.Drivers,
+        CompanyVehicleFleet? fleet = null,
+        IReadOnlyList<RosterSolverBoundaryShift>? boundaries = null);
 }
 
 public sealed record FairDriverHoursAllocation(
@@ -34,7 +36,9 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
         IReadOnlyList<Shift> availability,
         IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7,
-        string rosterKind = RosterKinds.Drivers)
+        string rosterKind = RosterKinds.Drivers,
+        CompanyVehicleFleet? fleet = null,
+        IReadOnlyList<RosterSolverBoundaryShift>? boundaries = null)
     {
         if (!double.IsFinite(alpha) || alpha is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(alpha), "Fairness alpha must be between 0 and 1.");
@@ -42,6 +46,10 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
             throw new ArgumentOutOfRangeException(nameof(drivers), "Maximum weekly hours must be between 0 and 168.");
 
         RosterKinds.EnsureEnabled(rosterKind);
+        fleet ??= new CompanyVehicleFleet();
+        boundaries ??= [];
+        if (CompanyVehicleFleet.Types.Any(type => fleet.Count(type) is < 0 or > 1000))
+            throw new ArgumentOutOfRangeException(nameof(fleet), "Company vehicle counts must be between 0 and 1000.");
         var eligible = drivers.Where(employee => employee.IsActive &&
                 (rosterKind == RosterKinds.Inside
                     ? employee.ManagerProfile is not null || employee.InStoreProfile is not null
@@ -62,12 +70,18 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
         var usefulSlots = eligible.ToDictionary(driver => driver.Id,
             _ => new HashSet<(DateOnly Date, int Hour)>());
         var coverableDemand = 0d;
+        var hourlyDrivers = new List<(RosterSolverDemand Slot, Employee[] Drivers)>();
 
         foreach (var slot in demandedSlots)
         {
-            var available = eligible.Where(driver => IsAvailable(
+            var available = eligible.Where(driver => driver.MaximumWeeklyHours > 0 && IsAvailable(
                 windows.GetValueOrDefault(driver.Id) ?? [], slot.Date, slot.Hour)).ToArray();
+            if (rosterKind == RosterKinds.Drivers)
+                available = fleet.UsableDrivers(available, slot.RequiredDrivers,
+                    slot.Date.ToDateTime(TimeOnly.MinValue).AddHours(slot.Hour), boundaries);
             if (available.Length == 0) continue;
+
+            hourlyDrivers.Add((slot, available));
 
             coverableDemand += Math.Min(slot.RequiredDrivers, available.Length);
             var slotWeight = slot.RequiredDrivers / (double)available.Length;
@@ -78,15 +92,19 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
             }
         }
 
-        var capacities = eligible.ToDictionary(driver => driver.Id, driver => Math.Min(driver.MaximumWeeklyHours,
+        var capacities = eligible.ToDictionary(driver => driver.Id, driver => Math.Min((double)driver.MaximumWeeklyHours,
             usefulSlots[driver.Id].GroupBy(slot => slot.Date)
                 .Sum(day => Math.Min(10, day.Count()))));
         var fairScores = eligible.ToDictionary(driver => driver.Id, driver =>
             rawScores[driver.Id] <= Epsilon ? 0 : alpha == 0 ? 1 : Math.Pow(rawScores[driver.Id], alpha));
         var expected = eligible.ToDictionary(driver => driver.Id, _ => 0d);
         var totalDemand = demandedSlots.Sum(slot => (double)slot.RequiredDrivers);
-        var distributable = Math.Min(coverableDemand, capacities.Values.Sum());
-        var remaining = distributable;
+        // Weekly shares alone can count a shared vehicle twice. First find the maximum
+        // fractional hours that fit actual availability, fleet, support and employee caps.
+        using var hourlyAllocation = rosterKind == RosterKinds.Drivers
+            ? new HourlyDriverAllocation(eligible, hourlyDrivers, fleet, boundaries) : null;
+        var distributable = hourlyAllocation?.MaximumHours() ?? Math.Min(coverableDemand, capacities.Values.Sum());
+        var remaining = hourlyAllocation is null ? distributable : 0;
 
         while (remaining > Epsilon)
         {
@@ -107,6 +125,9 @@ public sealed class FairDriverHoursCalculator : IFairDriverHoursCalculator
             if (distributed <= Epsilon) break;
             remaining -= distributed;
         }
+
+        if (hourlyAllocation is not null)
+            expected = hourlyAllocation.AllocateFairly(fairScores, capacities, distributable);
 
         var allocations = eligible.ToDictionary(driver => driver.Id, driver => new FairDriverHoursAllocation(
             driver.Id,

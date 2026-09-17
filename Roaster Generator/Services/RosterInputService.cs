@@ -113,26 +113,17 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
         var availability = await db.Shifts.AsNoTracking().Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart && s.Date < weekEnd)
             .OrderBy(s => s.EmployeeId).ThenBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync(ct);
         availability = availability.Where(shift => !unavailableDates.Contains((shift.EmployeeId, shift.Date))).ToList();
-        var boundaryEntities = await db.RosterShifts.AsNoTracking()
-            .Where(s => ids.Contains(s.EmployeeId) && s.Date >= weekStart.AddDays(-3) && s.Date < weekEnd.AddDays(3)
-                && s.RosterPlan.RosterKind == rosterKind && (s.Date < weekStart || s.Date >= weekEnd))
-            .OrderBy(s => s.EmployeeId).ThenBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync(ct);
-        var boundaries = boundaryEntities.Select(s =>
-        {
-            var startHour = s.StartTime.Hour;
-            if (startHour < 6) startHour += 24;
-            var finishHour = s.FinishTime.Hour;
-            while (finishHour <= startHour) finishHour += 24;
-            return new RosterSolverBoundaryShift(s.EmployeeId, s.Date.ToDateTime(TimeOnly.MinValue).AddHours(startHour),
-                s.Date.ToDateTime(TimeOnly.MinValue).AddHours(finishHour));
-        }).ToList();
+        var boundaries = await RosterBoundaryShifts.LoadAsync(db, weekStart, rosterKind, ids, ct);
         var settings = await settingsService.GetAsync(ct);
+        var options = RosterSettingsService.ToOptions(settings);
         var fairHours = fairHoursCalculator.Calculate(
             employees,
             availability,
             demand,
             settings.FairHoursAlpha,
-            rosterKind: rosterKind);
+            rosterKind: rosterKind,
+            fleet: CompanyVehicleFleet.From(options),
+            boundaries: boundaries);
         foreach (var employee in employees)
         {
             var sickDates = unavailableDates.Count(item => item.EmployeeId == employee.Id && item.Date >= weekStart && item.Date < weekEnd);
@@ -143,7 +134,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             else if (employee.MaximumWeeklyHours == 0)
                 warnings.Add($"{employee.FirstName} {employee.LastName}: maximum weekly hours is 0; approximate hours are 0.");
             else if (fairHours.Drivers.GetValueOrDefault(employee.Id)?.ExpectedHours == 0)
-                warnings.Add($"{employee.FirstName} {employee.LastName}: availability does not overlap any positive demand; approximate hours are 0.");
+                warnings.Add($"{employee.FirstName} {employee.LastName}: no hours can be allocated within demand, useful availability, vehicle and support limits; approximate hours are 0.");
         }
         if (fairHours.UnallocatedDemandHours > 0.001)
             warnings.Add($"Useful availability can receive {fairHours.TotalAllocatedHours:F1} of {fairHours.TotalDemandHours:F1} demanded {employeeLabel}-hours; {fairHours.UnallocatedDemandHours:F1} hours could not be allocated approximately.");
@@ -170,7 +161,7 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
             history.AddRange(automaticHistory);
         }
         var input = new RosterSolverInput(weekStart, employees, availability, demand, boundaries,
-            RosterSettingsService.ToOptions(settings), history, rosterKind, fairHours.Drivers);
+            options, history, rosterKind, fairHours.Drivers);
         var demandFingerprint = Fingerprint(demand);
         var availabilityFingerprint = Fingerprint(new
         {
@@ -179,8 +170,12 @@ public sealed class RosterInputService(AppDbContext db, RosterSettingsService se
                 e.Id,
                 e.MaximumWeeklyHours,
                 Roles = RosterKinds.Roles(e),
-                e.DriverProfile?.DriverType
+                e.DriverProfile?.DriverType,
+                IsOwn = rosterKind == RosterKinds.Drivers ? e.DriverProfile?.IsOwn : null
             }),
+            Fleet = rosterKind == RosterKinds.Drivers ? CompanyVehicleFleet.From(options) : null,
+            FleetReservations = rosterKind == RosterKinds.Drivers
+                ? boundaries.Where(shift => shift.CompanyVehicleType.HasValue).ToArray() : [],
             Availability = availability.Select(s => new { s.EmployeeId, s.Date, s.StartTime, s.FinishTime }),
             ApproximateHours = fairHours.Drivers.Values.OrderBy(item => item.EmployeeId)
         });

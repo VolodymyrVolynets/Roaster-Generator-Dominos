@@ -10,5 +10,7 @@ public sealed class DriverProfile
 
     public DriverType DriverType { get; set; } = DriverType.Car;
 
+    public bool IsOwn { get; set; } = true;
+
     public Employee Employee { get; set; } = null!;
 }

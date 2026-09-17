@@ -9,6 +9,9 @@ public sealed class RosterSettingsRequestValidator : AbstractValidator<RosterSet
 {
     public RosterSettingsRequestValidator()
     {
+        RuleFor(request => request.CompanyCars).InclusiveBetween(0, 1000);
+        RuleFor(request => request.CompanyMopeds).InclusiveBetween(0, 1000);
+        RuleFor(request => request.CompanyEBikes).InclusiveBetween(0, 1000);
         RuleFor(request => request.FairHoursAlpha).InclusiveBetween(0, 1);
         RuleFor(request => request.ApproximateHoursWeight).InclusiveBetween(0, 1000);
         RuleFor(request => request.HistoryFairnessWeight).InclusiveBetween(0, 1000);

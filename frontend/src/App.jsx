@@ -33,6 +33,7 @@ const emptyEmployeeForm = {
   maximumWeeklyHours: 45,
   roles: ['Driver'],
   driverType: 'Car',
+  isOwn: true,
 }
 
 const employeeFieldLabels = {
@@ -1453,6 +1454,7 @@ function AdminConsole({
     updateEmployeeForm('maximumWeeklyHours', 45)
     updateEmployeeForm('roles', ['Driver'])
     updateEmployeeForm('driverType', 'Car')
+    updateEmployeeForm('isOwn', true)
   }
 
   function closeEmployeeEditor() {
@@ -1514,7 +1516,8 @@ function AdminConsole({
     : realtimeVersions.demandDrivers
   const planningRealtimeKey = (selectedDemandRealtimeKey || 0) +
     (realtimeVersions.availability || 0) + (realtimeVersions.employees || 0) +
-    (realtimeVersions.sickLeave || 0) + (realtimeVersions.settings || 0)
+    (realtimeVersions.sickLeave || 0) + (realtimeVersions.settings || 0) +
+    (workArea === 'inside' ? 0 : (realtimeVersions.rosterDrivers || 0))
   const selectedRosterRealtimeKey = workArea === 'inside'
     ? (realtimeVersions.rosterInside || 0) + (realtimeVersions.demandInside || 0)
     : (realtimeVersions.rosterDrivers || 0) + (realtimeVersions.demandDrivers || 0)
@@ -1663,6 +1666,7 @@ function AdminConsole({
                           {employeeHasRole(employee, 'Driver') && (
                             <>
                               <span>Driver type: {employee.driverType || 'Car'}</span>
+                              <span>Vehicle: {employee.isOwn !== false ? 'Own vehicle' : 'Company vehicle'}</span>
                             </>
                           )}
                           <span className="employee-card-status">
@@ -1841,6 +1845,16 @@ function AdminConsole({
                             <option value="EBike">E-bike</option>
                           </select>
                           <EmployeeFieldError field="driverType" messages={driverTypeErrors} />
+                        </div>
+                        <div className="employee-form-field">
+                          <label htmlFor="admin-employee-vehicle-ownership">Vehicle ownership</label>
+                          <select id="admin-employee-vehicle-ownership"
+                            value={employeeForm.isOwn !== false ? 'own' : 'company'}
+                            onChange={(event) => updateEmployeeForm('isOwn', event.target.value === 'own')}>
+                            <option value="own">Own vehicle</option>
+                            <option value="company">Company vehicle</option>
+                          </select>
+                          <small>Company vehicles are shared. Overlapping shifts cannot exceed the saved count for this driver's vehicle type.</small>
                         </div>
                       </>
                     )}
@@ -2631,7 +2645,7 @@ function App() {
   const isAdmin = isSystemAdmin || isManager
   const realtimeVersions = useApplicationEvents(isAuthenticated, authState.user?.employeeId)
   const scheduleRealtimeKey = realtimeVersions.availability + realtimeVersions.demandDrivers +
-    realtimeVersions.sickLeave + realtimeVersions.employees + realtimeVersions.settings
+    realtimeVersions.sickLeave + realtimeVersions.employees + realtimeVersions.settings + realtimeVersions.rosterDrivers
   const availabilityEmployeeId = getAvailabilityEmployeeId(
     isAuthenticated ? authState.user : null,
     selectedEmployeeId,
@@ -2746,6 +2760,7 @@ function App() {
         maximumWeeklyHours: employee.maximumWeeklyHours ?? 45,
         roles: employee.roles?.length ? employee.roles : ['Driver'],
         driverType: employee.driverType || 'Car',
+        isOwn: employee.isOwn ?? true,
       })
     }
   }, [employees, selectedEmployeeId, isCreatingEmployee])

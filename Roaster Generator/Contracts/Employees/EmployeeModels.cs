@@ -23,6 +23,9 @@ public sealed class EmployeeRequest
     public List<string> Roles { get; set; } = ["Driver"];
 
     public DriverType DriverType { get; set; } = DriverType.Car;
+
+    // Preserve ownership when older clients omit it. New driver profiles default to true.
+    public bool? IsOwn { get; set; }
 }
 
 public sealed class EmployeeResponse
@@ -48,4 +51,6 @@ public sealed class EmployeeResponse
     public IReadOnlyList<string> Roles { get; init; } = [];
 
     public DriverType? DriverType { get; init; }
+
+    public bool? IsOwn { get; init; }
 }

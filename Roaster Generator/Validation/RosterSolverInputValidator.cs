@@ -19,6 +19,10 @@ public sealed class RosterSolverInputValidator : AbstractValidator<RosterSolverI
             {
                 var options = input.Options;
 
+                if (new[] { options.CompanyCars, options.CompanyMopeds, options.CompanyEBikes }
+                    .Any(count => count is < 0 or > 1000))
+                    context.AddFailure("Company vehicle counts must be between 0 and 1000.");
+
                 if (!RosterKinds.IsValid(input.RosterKind))
                 {
                     context.AddFailure("Select a valid roster kind: drivers or inside.");

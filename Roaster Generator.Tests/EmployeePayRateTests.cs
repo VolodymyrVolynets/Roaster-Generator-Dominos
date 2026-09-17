@@ -193,6 +193,51 @@ public sealed class EmployeePayRateTests
     private static EmployeeResponse ReadEmployee(IActionResult result) =>
         Assert.IsType<EmployeeResponse>(Assert.IsType<OkObjectResult>(result).Value);
 
+    [Fact]
+    public async Task DriverOwnershipDefaultsToTrueAndPreservesExplicitFalseOnLegacyUpdates()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.True(created.IsOwn);
+
+        request.IsOwn = false;
+        Assert.False(ReadEmployee(await fixture.Controller.Update(created.Id, request, default)).IsOwn);
+        fixture.Db.ChangeTracker.Clear();
+        Assert.False((await fixture.Db.DriverProfiles.SingleAsync(p => p.EmployeeId == created.Id)).IsOwn);
+
+        request.IsOwn = null;
+        Assert.False(ReadEmployee(await fixture.Controller.Update(created.Id, request, default)).IsOwn);
+        request.IsOwn = true;
+        Assert.True(ReadEmployee(await fixture.Controller.Update(created.Id, request, default)).IsOwn);
+    }
+
+    [Fact]
+    public async Task CompanyVehicleOwnershipPersistsOnCreateAndIsAbsentForInsideEmployees()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.IsOwn = false;
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.False(created.IsOwn);
+        fixture.Db.ChangeTracker.Clear();
+        Assert.False((await fixture.Db.DriverProfiles.SingleAsync(p => p.EmployeeId == created.Id)).IsOwn);
+
+        request.Roles = [RoleNames.InStore];
+        Assert.Null(ReadEmployee(await fixture.Controller.Update(created.Id, request, default)).IsOwn);
+    }
+
+    [Fact]
+    public void OwnershipDatabaseMappingPreservesFalseAndDefaultsExistingDriversToOwnVehicles()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=unused").Options);
+        var property = db.Model.FindEntityType(typeof(DriverProfile))!.FindProperty(nameof(DriverProfile.IsOwn))!;
+        Assert.True(new DriverProfile().IsOwn);
+        Assert.Equal(true, property.GetDefaultValue());
+        Assert.Equal(ValueGenerated.Never, property.ValueGenerated);
+    }
+
     private sealed class EmployeeFixture : IDisposable
     {
         private readonly ServiceProvider services = new ServiceCollection().BuildServiceProvider();

@@ -367,6 +367,7 @@ public sealed class AdminEmployeesController(
         {
             employee.DriverProfile ??= new DriverProfile { EmployeeId = employee.Id };
             employee.DriverProfile.DriverType = request.DriverType;
+            employee.DriverProfile.IsOwn = request.IsOwn ?? employee.DriverProfile.IsOwn;
         }
         else if (employee.DriverProfile is not null)
         {

@@ -23,7 +23,14 @@ const formatNumber = (value) => numberFormatter.format(Number(value ?? 0))
 const formatStage = (stage) => (stage || 'starting').replace(/[-_]/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 const parseDate = (value) => new Date(`${value}T12:00:00`)
 const formatDate = (value) => value ? dateFormatter.format(parseDate(value)) : ''
-const withSettingsDefaults = (settings) => ({ fairHoursAlpha: 0.7, approximateHoursWeight: 100, historyFairnessWeight: 100, historyShiftLengthWeight: 100, fairnessSpreadWeight: 1000, latestShiftStartHour: 20, ...settings })
+const withSettingsDefaults = (settings = {}) => ({
+  fairHoursAlpha: 0.7, approximateHoursWeight: 100, historyFairnessWeight: 100,
+  historyShiftLengthWeight: 100, fairnessSpreadWeight: 1000, latestShiftStartHour: 20,
+  ...settings,
+  companyCars: settings.companyCars ?? 0,
+  companyMopeds: settings.companyMopeds ?? 0,
+  companyEBikes: settings.companyEBikes ?? 0,
+})
 const averageFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 const averageShiftHours = (shifts) => shifts.length ? Math.round(shifts.reduce((total, shift) => total + shift.durationHours, 0) * 100 / shifts.length) / 100 : 0
 const approximateHours = (employee) => employee.approximateHours ?? 0
@@ -49,6 +56,20 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
       </div> : <p className="message info-message">Loading saved preferences…</p> : (
         <form onSubmit={saveSettings}>
           <fieldset className="roster-settings-fields" disabled={saving || running}>
+            <h3>Company vehicles</h3>
+            <p className="demand-help">Enter the vehicles available at the same time. Drivers using their own vehicle do not use these counts. A count of 0 prevents company-vehicle shifts of that type. E-bike drivers always need a car or moped driver alongside them.</p>
+            <div className="roster-settings-grid">
+              {[
+                ['companyCars', 'Company cars'],
+                ['companyMopeds', 'Company mopeds'],
+                ['companyEBikes', 'Company e-bikes'],
+              ].map(([field, label]) => <label key={field}>
+                <span>{label}</span>
+                <input type="number" min="0" max="1000" step="1" required value={settings[field]}
+                  onChange={(event) => setSettings({ ...settings, [field]: event.target.value === '' ? '' : Number(event.target.value) })} />
+              </label>)}
+            </div>
+            <p className="demand-help">Saved counts also update approximate hours and availability guidance.</p>
             <div className="roster-settings-grid">
               <label>
                 <span>Availability fairness alpha</span>

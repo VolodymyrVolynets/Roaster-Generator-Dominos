@@ -259,7 +259,7 @@ public sealed class AvailabilityHeatmapTests
         db.DemandPlans.Add(plan);
     }
 
-    private static void AddCompleteDemand(AppDbContext db, DateOnly weekStart)
+    private static void AddCompleteDemand(AppDbContext db, DateOnly weekStart, int required = 1)
     {
         var plan = new DemandPlan
         {
@@ -279,11 +279,95 @@ public sealed class AvailabilityHeatmapTests
                 row.Values.Add(new DemandValue
                 {
                     Id = Guid.NewGuid(), DemandRowId = row.Id, DemandColumnId = column.Id,
-                    Demand = column.Position == 0 && sourceHour < 18 ? 1 : 0
+                    Demand = column.Position == 0 && sourceHour < 18 ? required : 0
                 });
             plan.Rows.Add(row);
         }
         foreach (var column in columns) plan.Columns.Add(column);
         db.DemandPlans.Add(plan);
+    }
+
+    [Fact]
+    public async Task FleetAndOwnershipChangesRefreshPersonalAdminHeatmapAndGeneratorInputsTogether()
+    {
+        using var db = NewDb();
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var first = AddDriver(db, "FirstBike");
+        var second = AddDriver(db, "SecondBike");
+        var support = AddDriver(db, "SupportCar");
+        foreach (var bike in new[] { first, second })
+        {
+            bike.DriverProfile!.DriverType = DriverType.EBike;
+            bike.DriverProfile.IsOwn = false;
+        }
+        foreach (var employee in new[] { first, second, support })
+            AddAvailability(db, employee, monday, 12, 18);
+        AddCompleteDemand(db, monday, required: 3);
+        var settings = await db.RosterGenerationSettings.SingleAsync();
+        settings.CompanyEBikes = 1;
+        await db.SaveChangesAsync();
+        var inputs = new RosterInputService(db, new RosterSettingsService(db), Options.Create(new ShopHoursOptions()));
+        var service = new WeeklyScheduleService(db, inputs);
+        var before = await inputs.LoadAsync(monday, default);
+        var personal = await service.GetWeekAsync(first.Id, 1, default);
+        var overview = await service.GetWeekForAllAsync(1, default);
+
+        Assert.Equal(3d, personal!.ApproximateHours);
+        Assert.Equal(personal.ApproximateHours, overview.Employees.Single(e => e.EmployeeId == first.Id).ApproximateHours);
+        Assert.Equal(3d, before.Input.ExpectedHoursByEmployee![first.Id].ExpectedHours);
+        Assert.Equal(3d, before.Input.ExpectedHoursByEmployee[second.Id].ExpectedHours);
+        Assert.Equal(6d, before.Input.ExpectedHoursByEmployee[support.Id].ExpectedHours);
+        Assert.All(overview.Heatmap.Slots, slot => Assert.Equal(2, slot.AvailableDrivers));
+        Assert.All(personal.Heatmap!.Slots, slot => Assert.Equal(1, slot.ShortageDrivers));
+
+        settings.CompanyEBikes = 2;
+        await db.SaveChangesAsync();
+        var increased = await inputs.LoadAsync(monday, default);
+        Assert.All(increased.Input.ExpectedHoursByEmployee!.Values, hours => Assert.Equal(6d, hours.ExpectedHours));
+        Assert.NotEqual(before.AvailabilityFingerprint, increased.AvailabilityFingerprint);
+        Assert.All((await service.GetWeekForAllAsync(1, default)).Heatmap.Slots,
+            slot => Assert.Equal(3, slot.AvailableDrivers));
+
+        settings.CompanyEBikes = 1;
+        first.DriverProfile!.IsOwn = true;
+        await db.SaveChangesAsync();
+        var ownBike = await inputs.LoadAsync(monday, default);
+        Assert.All(ownBike.Input.ExpectedHoursByEmployee!.Values, hours => Assert.Equal(6d, hours.ExpectedHours));
+        Assert.NotEqual(before.AvailabilityFingerprint, ownBike.AvailabilityFingerprint);
+        Assert.Equal(6d, (await service.GetWeekAsync(second.Id, 1, default))!.ApproximateHours);
+        Assert.All((await service.GetWeekForAllAsync(1, default)).Heatmap.Slots,
+            slot => Assert.Equal(3, slot.AvailableDrivers));
+    }
+
+    [Fact]
+    public async Task PreviousWeeksOvernightCompanyShiftReservesTheVehicleForEstimatesAndHeatmap()
+    {
+        using var db = NewDb();
+        var monday = WeeklyScheduleService.GetWeekMonday(1);
+        var driver = AddDriver(db, "Current");
+        var previous = AddDriver(db, "Previous");
+        driver.DriverProfile!.IsOwn = previous.DriverProfile!.IsOwn = false;
+        previous.IsActive = false;
+        AddAvailability(db, driver, monday, 12, 18);
+        AddCompleteDemand(db, monday);
+        (await db.RosterGenerationSettings.SingleAsync()).CompanyCars = 1;
+        db.RosterPlans.Add(new RosterPlan
+        {
+            Id = Guid.NewGuid(), WeekStart = monday.AddDays(-7), RosterKind = RosterKinds.Drivers,
+            Shifts = [new RosterShift
+            {
+                Id = Guid.NewGuid(), EmployeeId = previous.Id, Date = monday.AddDays(-1),
+                StartTime = new TimeOnly(20, 0), FinishTime = new TimeOnly(15, 0)
+            }]
+        });
+        await db.SaveChangesAsync();
+        var inputs = new RosterInputService(db, new RosterSettingsService(db), Options.Create(new ShopHoursOptions()));
+        var loaded = await inputs.LoadAsync(monday, default);
+        var boundary = Assert.Single(loaded.Input.BoundaryShifts);
+        Assert.Equal(DriverType.Car, boundary.CompanyVehicleType);
+        Assert.Equal(monday.ToDateTime(new TimeOnly(15, 0)), boundary.Finish);
+        Assert.Equal(3d, loaded.Input.ExpectedHoursByEmployee![driver.Id].ExpectedHours);
+        var overview = await new WeeklyScheduleService(db, inputs).GetWeekForAllAsync(1, default);
+        Assert.All(overview.Heatmap.Slots, slot => Assert.Equal(slot.Hour < 15 ? 0 : 1, slot.AvailableDrivers));
     }
 }

@@ -10,7 +10,7 @@ namespace Roaster_Generator.Services;
 /// <summary>
 /// Enumerates every legal 3–10 hour shift starting no later than the configured latest start, then solves coverage with CP-SAT.
 /// Driver generation attempts exact coverage first and, when that is proven impossible, saves the closest legal under-covered roster.
-/// Overstaffing, availability, supervision and minimum rest are hard constraints; only allocation fairness, shift shape and
+/// Overstaffing, availability, company fleet capacity, supervision and minimum rest are hard constraints; only allocation fairness, shift shape and
 /// additional rest are weighted preferences after exact coverage has been found.
 /// </summary>
 public sealed class RosterSolver
@@ -36,7 +36,7 @@ public sealed class RosterSolver
         {
             var calculated = new FairDriverHoursCalculator().Calculate(
                 input.Employees, input.Availability, input.Demand, input.Options.FairHoursAlpha,
-                rosterKind: input.RosterKind);
+                rosterKind: input.RosterKind, fleet: CompanyVehicleFleet.From(input.Options), boundaries: input.BoundaryShifts);
             input = input with { ExpectedHoursByEmployee = calculated.Drivers };
         }
 
@@ -53,6 +53,7 @@ public sealed class RosterSolver
         var boundary = input.BoundaryShifts.GroupBy(shift => shift.EmployeeId)
             .ToDictionary(group => group.Key, group => group.OrderBy(shift => shift.Start).ToArray());
         var employeeById = employees.ToDictionary(employee => employee.Id);
+        var fleet = CompanyVehicleFleet.From(input.Options);
         var candidates = new List<Candidate>();
         foreach (var availability in input.Availability.OrderBy(shift => shift.EmployeeId).ThenBy(shift => shift.Date))
         {
@@ -75,6 +76,12 @@ public sealed class RosterSolver
                         // slot must be covered by a manager inside, or a car/moped driver.
                         if (!demand.TryGetValue((availability.Date, hour), out var slot) ||
                             slot.RequiredDrivers == 0 || (!CanWorkIndependently(employee, input.RosterKind) && slot.RequiredDrivers == 1))
+                        {
+                            usable = false;
+                            break;
+                        }
+                        if (input.RosterKind == RosterKinds.Drivers && CompanyVehicleFleet.RequiredBy(employee) is { } type &&
+                            fleet.Remaining(type, availability.Date.ToDateTime(TimeOnly.MinValue).AddHours(hour), input.BoundaryShifts) == 0)
                         {
                             usable = false;
                             break;
@@ -114,6 +121,14 @@ public sealed class RosterSolver
         {
             var choices = coverage[AbsoluteHour(input.WeekStart, slot.Date, slot.Hour)];
             var available = choices.Select(candidate => candidate.EmployeeId).Distinct().Count();
+            if (input.RosterKind == RosterKinds.Drivers)
+            {
+                var fleetCapacity = fleet.SimultaneousCapacity(choices.Select(candidate => candidate.EmployeeId)
+                    .Distinct().Select(id => employeeById[id]), slot.Date.ToDateTime(TimeOnly.MinValue).AddHours(slot.Hour), input.BoundaryShifts);
+                if (fleetCapacity < available && fleetCapacity < slot.RequiredDrivers)
+                    shortages.Add($"{FormatSlot(slot)}: company vehicle limits allow only {fleetCapacity} drivers including own vehicles; demand is {slot.RequiredDrivers}.");
+                available = fleetCapacity;
+            }
             if (available < slot.RequiredDrivers)
                 shortages.Add($"{FormatSlot(slot)}: need {slot.RequiredDrivers - available} more {EmployeeLabel(input.RosterKind)}. Demand {slot.RequiredDrivers}; only {available} can cover this hour in a legal 3–10 hour shift within availability, the {input.Options.LatestShiftStartHour:00}:00 latest shift start and the {input.Options.MinimumRestHours}-hour rest rule. Shifts may finish overnight, but cannot start after {input.Options.LatestShiftStartHour:00}:00 or after midnight.");
             if (!choices.Any(candidate => candidate.CanWorkIndependently))
@@ -420,6 +435,18 @@ public sealed class RosterSolver
                 assigned.Any(employee => employee.DriverProfile?.DriverType == DriverType.EBike) &&
                 !assigned.Any(employee => CanWorkIndependently(employee, input.RosterKind)))
                 errors.Add($"{label}: e-bike drivers are scheduled without a car or moped driver alongside them.");
+            if (input.RosterKind == RosterKinds.Drivers)
+            {
+                var fleet = CompanyVehicleFleet.From(input.Options);
+                var dateTime = input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour);
+                foreach (var type in CompanyVehicleFleet.Types)
+                {
+                    var used = assigned.Count(employee => CompanyVehicleFleet.RequiredBy(employee) == type);
+                    var available = fleet.Remaining(type, dateTime, input.BoundaryShifts);
+                    if (used > available)
+                        errors.Add($"{label}: company {type} capacity exceeded; {used} drivers need vehicles but only {available} are available.");
+                }
+            }
         }
         foreach (var boundary in input.BoundaryShifts)
             if (times.TryGetValue(boundary.EmployeeId, out var entries))
@@ -509,12 +536,21 @@ public sealed class RosterSolver
         }
 
         var missing = new List<(RosterSolverDemand Slot, IntVar Missing)>();
+        var companyTypes = employees.ToDictionary(employee => employee.Id, CompanyVehicleFleet.RequiredBy);
         foreach (var slot in input.Demand.Where(slot => slot.RequiredDrivers > 0).OrderBy(slot => slot.Date).ThenBy(slot => slot.Hour))
         {
             token.ThrowIfCancellationRequested();
             var options = coverage[AbsoluteHour(input.WeekStart, slot.Date, slot.Hour)];
             var assigned = LinearExpr.Sum(options.Select(candidate => selected[candidate.Index]));
             var independent = LinearExpr.Sum(options.Where(candidate => candidate.CanWorkIndependently).Select(candidate => selected[candidate.Index]));
+            if (input.RosterKind == RosterKinds.Drivers)
+            {
+                var fleet = CompanyVehicleFleet.From(input.Options);
+                foreach (var type in CompanyVehicleFleet.Types)
+                    model.Add(LinearExpr.Sum(options.Where(candidate => companyTypes[candidate.EmployeeId] == type)
+                        .Select(candidate => selected[candidate.Index])) <=
+                        fleet.Remaining(type, slot.Date.ToDateTime(TimeOnly.MinValue).AddHours(slot.Hour), input.BoundaryShifts));
+            }
             if (diagnostic)
             {
                 var deficit = model.NewIntVar(0, slot.RequiredDrivers, $"missing{missing.Count}");
@@ -750,9 +786,20 @@ public sealed class RosterSolver
                          other.AbsoluteStart < addition.AbsoluteFinish + input.Options.MinimumRestHours)) return false;
             }
             // Coverage counts stay identical by construction; required role support can still change.
-            foreach (var hour in removed.SelectMany(candidate => Enumerable.Range(candidate.AbsoluteStart, candidate.Length)).Distinct())
-                if (!remaining.Concat(added).Any(candidate => candidate.CanWorkIndependently && candidate.AbsoluteStart <= hour && candidate.AbsoluteFinish > hour))
+            foreach (var hour in removed.Concat(added).SelectMany(candidate => Enumerable.Range(candidate.AbsoluteStart, candidate.Length)).Distinct())
+            {
+                var assigned = remaining.Concat(added).Where(candidate => candidate.AbsoluteStart <= hour && candidate.AbsoluteFinish > hour).ToArray();
+                if (!assigned.Any(candidate => candidate.CanWorkIndependently))
                     return false;
+                if (input.RosterKind == RosterKinds.Drivers)
+                {
+                    var fleet = CompanyVehicleFleet.From(input.Options);
+                    foreach (var type in CompanyVehicleFleet.Types)
+                        if (assigned.Count(candidate => CompanyVehicleFleet.RequiredBy(employeeById[candidate.EmployeeId]) == type) >
+                            fleet.Remaining(type, input.WeekStart.ToDateTime(TimeOnly.MinValue).AddHours(hour), input.BoundaryShifts))
+                            return false;
+                }
+            }
             proposal = remaining.Concat(added).ToList();
             return true;
         }

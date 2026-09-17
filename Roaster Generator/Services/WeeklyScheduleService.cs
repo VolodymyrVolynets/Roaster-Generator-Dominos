@@ -254,14 +254,18 @@ public sealed class WeeklyScheduleService(
         }
 
         var drivers = await DriverRosterEmployees.Query(db).AsNoTracking()
-            .Select(employee => employee.Id)
+            .Include(employee => employee.DriverProfile)
             .ToListAsync(cancellationToken);
+        var driverIds = drivers.Select(employee => employee.Id).ToArray();
+        var settings = await new RosterSettingsService(db).GetAsync(cancellationToken);
+        var fleet = CompanyVehicleFleet.From(RosterSettingsService.ToOptions(settings));
+        var boundaries = await RosterBoundaryShifts.LoadAsync(db, weekStart, RosterKinds.Drivers, driverIds, cancellationToken);
         var weekEnd = weekStart.AddDays(7);
         var availability = await db.Shifts.AsNoTracking()
-            .Where(shift => drivers.Contains(shift.EmployeeId) && shift.Date >= weekStart && shift.Date < weekEnd)
+            .Where(shift => driverIds.Contains(shift.EmployeeId) && shift.Date >= weekStart && shift.Date < weekEnd)
             .ToListAsync(cancellationToken);
         var sickLeave = await db.SickLeaveRequests.AsNoTracking()
-            .Where(request => drivers.Contains(request.EmployeeId) && request.Status == SickLeaveStatus.Approved &&
+            .Where(request => driverIds.Contains(request.EmployeeId) && request.Status == SickLeaveStatus.Approved &&
                 request.StartDate < weekEnd && request.FinishDate >= weekStart)
             .Select(request => new { request.EmployeeId, request.StartDate, request.FinishDate })
             .ToListAsync(cancellationToken);
@@ -290,8 +294,10 @@ public sealed class WeeklyScheduleService(
             .ThenBy(slot => slot.Hour)
             .Select(slot =>
             {
-                var available = drivers.Count(driverId => IsAvailable(
-                    windows.GetValueOrDefault(driverId) ?? [], slot.Date, slot.Hour));
+                var hour = slot.Date.ToDateTime(TimeOnly.MinValue).AddHours(slot.Hour);
+                var usable = fleet.UsableDrivers(drivers.Where(driver => IsAvailable(
+                    windows.GetValueOrDefault(driver.Id) ?? [], slot.Date, slot.Hour)), slot.Required, hour, boundaries);
+                var available = fleet.SimultaneousCapacity(usable, hour, boundaries);
                 var shortage = Math.Max(0, slot.Required - available);
                 var level = shortage > 0
                     ? "shortage"
@@ -322,7 +328,7 @@ public sealed class WeeklyScheduleService(
             DemandPlanExists = true,
             Message = slots.Count == 0
                 ? "This week's outside demand does not currently require any drivers."
-                : "Red hours are short of drivers; amber hours have little or no spare availability.",
+                : "Red hours are short of drivers; amber hours have little or no spare capacity. Counts account for company vehicles and car/moped support for e-bikes.",
             Slots = slots
         };
     }

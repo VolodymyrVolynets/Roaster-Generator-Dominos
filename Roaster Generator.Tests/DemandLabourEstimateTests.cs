@@ -77,6 +77,35 @@ public sealed class DemandLabourEstimateTests
         Assert.Null(response!.LabourEstimate);
     }
 
+    [Fact]
+    public async Task OutsideLabourUsesVehicleConstrainedHoursAndRefreshesWhenFleetChanges()
+    {
+        using var db = NewDb();
+        var first = AddDriver(db, "CompanyCheap", 10m);
+        var second = AddDriver(db, "CompanyExpensive", 20m);
+        var own = AddDriver(db, "OwnCar", 30m);
+        first.DriverProfile!.IsOwn = second.DriverProfile!.IsOwn = false;
+        foreach (var driver in new[] { first, second, own }) AddAvailability(db, driver, 12, 18);
+        var plan = AddDemand(db, DemandKinds.Outside, hour => hour is >= 12 and < 18 ? 3 : 0);
+        var settings = await db.RosterGenerationSettings.SingleAsync();
+        settings.CompanyCars = 1;
+        await db.SaveChangesAsync();
+        var service = Service(db);
+        var limited = (await service.GetPlanAsync(plan.Id, default))!.LabourEstimate!;
+        Assert.Equal(12, limited.TotalApproximateHours, 4);
+        Assert.Equal(6, limited.UnallocatedDemandHours, 4);
+        Assert.Equal(22.5m, limited.WeightedAverageHourlyRate);
+        Assert.Equal(270m, limited.ApproximateBaseLabourCost);
+
+        settings.CompanyCars = 2;
+        await db.SaveChangesAsync();
+        var increased = (await service.GetPlanAsync(plan.Id, default))!.LabourEstimate!;
+        Assert.Equal(18, increased.TotalApproximateHours, 4);
+        Assert.Equal(0, increased.UnallocatedDemandHours, 4);
+        Assert.Equal(20m, increased.WeightedAverageHourlyRate);
+        Assert.Equal(360m, increased.ApproximateBaseLabourCost);
+    }
+
     private static AppDbContext NewDb()
     {
         var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()

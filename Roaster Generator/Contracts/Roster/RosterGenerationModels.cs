@@ -243,6 +243,10 @@ public sealed class RosterCoverageResponse
 
 public sealed class RosterSettingsRequest
 {
+    // Missing fleet fields preserve saved counts for older clients.
+    public int? CompanyCars { get; set; }
+    public int? CompanyMopeds { get; set; }
+    public int? CompanyEBikes { get; set; }
     public double FairHoursAlpha { get; set; } = 0.7;
     public int ApproximateHoursWeight { get; set; } = 100;
     public int HistoryFairnessWeight { get; set; } = 100;

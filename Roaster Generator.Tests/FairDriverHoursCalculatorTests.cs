@@ -229,6 +229,119 @@ public sealed class FairDriverHoursCalculatorTests
         IReadOnlyList<Shift> availability, IReadOnlyList<RosterSolverDemand> demand,
         double alpha = 0.7) => calculator.Calculate(drivers, availability, demand, alpha);
 
+    [Fact]
+    public void TwoCompanyEbikersShareOneBikeAndReceiveEqualApproximateHours()
+    {
+        var first = Driver();
+        var second = Driver();
+        foreach (var employee in new[] { first, second })
+        {
+            employee.DriverProfile!.DriverType = DriverType.EBike;
+            employee.DriverProfile.IsOwn = false;
+        }
+        var support = Driver();
+        var drivers = new[] { first, second, support };
+        var result = calculator.Calculate(drivers, drivers.Select(e => Available(e, 12, 18)).ToArray(),
+            Demand(12, 6, 3), fleet: new CompanyVehicleFleet(EBikes: 1));
+        Assert.Equal(6, result.Drivers[support.Id].ExpectedHours, 4);
+        Assert.Equal(3, result.Drivers[first.Id].ExpectedHours, 4);
+        Assert.Equal(3, result.Drivers[second.Id].ExpectedHours, 4);
+        Assert.Equal(12, result.TotalAllocatedHours, 4);
+        Assert.Equal(6, result.UnallocatedDemandHours, 4);
+    }
+
+    [Fact]
+    public void LimitedSupportHoursAlsoLimitSharedBikeApproximateHours()
+    {
+        var ebike = Driver();
+        ebike.DriverProfile!.DriverType = DriverType.EBike;
+        ebike.DriverProfile.IsOwn = false;
+        var support = Driver();
+        support.MaximumWeeklyHours = 2;
+        var result = calculator.Calculate([ebike, support], [Available(ebike, 12, 18), Available(support, 12, 18)],
+            Demand(12, 6, 3), fleet: new CompanyVehicleFleet(EBikes: 1));
+        Assert.Equal(2, result.Drivers[ebike.Id].ExpectedHours, 4);
+        Assert.Equal(2, result.Drivers[support.Id].ExpectedHours, 4);
+        Assert.Equal(4, result.TotalAllocatedHours, 4);
+    }
+
+    [Fact]
+    public void NoCompanySupportVehicleMeansNoApproximateEbikeHours()
+    {
+        var support = Driver();
+        support.DriverProfile!.IsOwn = false;
+        var ebike = Driver();
+        ebike.DriverProfile!.DriverType = DriverType.EBike;
+        var result = calculator.Calculate([support, ebike], [Available(support, 12, 18), Available(ebike, 12, 18)], Demand(12, 6, 2));
+        Assert.Equal(0, result.TotalAllocatedHours);
+        Assert.All(result.Drivers.Values, allocation => Assert.Equal(0, allocation.ExpectedHours));
+    }
+
+    [Fact]
+    public void EachEbikeEstimateIsLimitedToHoursWithSupportEvenWhenAnotherBikeIsAvailable()
+    {
+        var first = Driver();
+        var second = Driver();
+        first.DriverProfile!.DriverType = second.DriverProfile!.DriverType = DriverType.EBike;
+        second.MaximumWeeklyHours = 1;
+        var support = Driver();
+        support.MaximumWeeklyHours = 2;
+        var drivers = new[] { first, second, support };
+        var result = calculator.Calculate(drivers, drivers.Select(e => Available(e, 12, 18)).ToArray(), Demand(12, 6, 3));
+        Assert.Equal(2, result.Drivers[first.Id].ExpectedHours, 4);
+        Assert.Equal(1, result.Drivers[second.Id].ExpectedHours, 4);
+        Assert.Equal(2, result.Drivers[support.Id].ExpectedHours, 4);
+        Assert.Equal(5, result.TotalAllocatedHours, 4);
+    }
+
+    [Fact]
+    public void OwnBikesCannotInflateTheSupportedHoursAvailableFromOneCompanyBike()
+    {
+        var first = Driver();
+        var second = Driver();
+        var own = Driver();
+        foreach (var driver in new[] { first, second, own }) driver.DriverProfile!.DriverType = DriverType.EBike;
+        first.DriverProfile!.IsOwn = second.DriverProfile!.IsOwn = false;
+        own.MaximumWeeklyHours = 1;
+        var support = Driver();
+        support.MaximumWeeklyHours = 2;
+        var drivers = new[] { first, second, own, support };
+        var result = calculator.Calculate(drivers, drivers.Select(e => Available(e, 12, 18)).ToArray(),
+            Demand(12, 6, 4), fleet: new CompanyVehicleFleet(EBikes: 1));
+        Assert.Equal(1, result.Drivers[first.Id].ExpectedHours, 4);
+        Assert.Equal(1, result.Drivers[second.Id].ExpectedHours, 4);
+        Assert.Equal(1, result.Drivers[own.Id].ExpectedHours, 4);
+        Assert.Equal(2, result.Drivers[support.Id].ExpectedHours, 4);
+        Assert.Equal(5, result.TotalAllocatedHours, 4);
+    }
+
+    [Fact]
+    public void SharedCarApproximateHoursRespectHourlyOverlapAndOwnVehicles()
+    {
+        var first = Driver();
+        var second = Driver();
+        first.DriverProfile!.IsOwn = second.DriverProfile!.IsOwn = false;
+        var own = Driver();
+        var result = calculator.Calculate([first, second, own],
+            [Available(first, 12, 15), Available(second, 12, 15), Available(own, 15, 18)],
+            Demand(12, 6, 2), fleet: new CompanyVehicleFleet(Cars: 1));
+        Assert.Equal(1.5, result.Drivers[first.Id].ExpectedHours, 4);
+        Assert.Equal(1.5, result.Drivers[second.Id].ExpectedHours, 4);
+        Assert.Equal(3, result.Drivers[own.Id].ExpectedHours, 4);
+        Assert.Equal(6, result.TotalAllocatedHours, 4);
+    }
+
+    [Fact]
+    public void NeighboringFleetReservationsReduceApproximateHours()
+    {
+        var driver = Driver();
+        driver.DriverProfile!.IsOwn = false;
+        var result = calculator.Calculate([driver], [Available(driver, 12, 18)], Demand(12, 6),
+            fleet: new CompanyVehicleFleet(Cars: 1),
+            boundaries: [new(Guid.NewGuid(), Monday.ToDateTime(new TimeOnly(12, 0)), Monday.ToDateTime(new TimeOnly(15, 0)), DriverType.Car)]);
+        Assert.Equal(3, result.Drivers[driver.Id].ExpectedHours, 4);
+    }
+
     private static Employee Driver() => new()
     {
         Id = Guid.NewGuid(),

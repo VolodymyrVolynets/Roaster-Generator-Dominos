@@ -16,6 +16,9 @@ public sealed class RosterSettingsService(AppDbContext db)
         var settings = await db.RosterGenerationSettings
             .SingleAsync(s => s.Id == RosterGenerationSettings.SingletonId, ct);
         settings.FairHoursAlpha = (decimal)request.FairHoursAlpha;
+        settings.CompanyCars = request.CompanyCars ?? settings.CompanyCars;
+        settings.CompanyMopeds = request.CompanyMopeds ?? settings.CompanyMopeds;
+        settings.CompanyEBikes = request.CompanyEBikes ?? settings.CompanyEBikes;
         settings.ApproximateHoursWeight = request.ApproximateHoursWeight;
         settings.HistoryFairnessWeight = request.HistoryFairnessWeight;
         settings.HistoryShiftLengthWeight = request.HistoryShiftLengthWeight;
@@ -34,6 +37,9 @@ public sealed class RosterSettingsService(AppDbContext db)
 
     public static RosterSettingsRequest ToResponse(RosterGenerationSettings settings) => new()
     {
+        CompanyCars = settings.CompanyCars,
+        CompanyMopeds = settings.CompanyMopeds,
+        CompanyEBikes = settings.CompanyEBikes,
         FairHoursAlpha = (double)settings.FairHoursAlpha,
         ApproximateHoursWeight = settings.ApproximateHoursWeight,
         HistoryFairnessWeight = settings.HistoryFairnessWeight,
@@ -51,6 +57,9 @@ public sealed class RosterSettingsService(AppDbContext db)
 
     public static RosterSolverOptions ToOptions(RosterSettingsRequest settings) => new()
     {
+        CompanyCars = settings.CompanyCars ?? 0,
+        CompanyMopeds = settings.CompanyMopeds ?? 0,
+        CompanyEBikes = settings.CompanyEBikes ?? 0,
         FairHoursAlpha = settings.FairHoursAlpha,
         ApproximateHoursWeight = settings.ApproximateHoursWeight,
         HistoryFairnessWeight = settings.HistoryFairnessWeight,

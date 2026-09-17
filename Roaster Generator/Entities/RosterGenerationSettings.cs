@@ -9,6 +9,10 @@ public sealed class RosterGenerationSettings
 
     public decimal FairHoursAlpha { get; set; } = 0.7m;
 
+    public int CompanyCars { get; set; }
+    public int CompanyMopeds { get; set; }
+    public int CompanyEBikes { get; set; }
+
     public int ApproximateHoursWeight { get; set; } = 100;
 
     public int HistoryFairnessWeight { get; set; } = 100;

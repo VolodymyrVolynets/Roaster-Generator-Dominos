@@ -1,4 +1,5 @@
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Services;
 
@@ -19,7 +20,8 @@ public sealed record RosterSolverHistory(Guid EmployeeId, DateOnly WeekStart, in
 
 public sealed record RosterSolverDemand(DateOnly Date, int Hour, int RequiredDrivers);
 
-public sealed record RosterSolverBoundaryShift(Guid EmployeeId, DateTime Start, DateTime Finish);
+public sealed record RosterSolverBoundaryShift(Guid EmployeeId, DateTime Start, DateTime Finish,
+    DriverType? CompanyVehicleType = null);
 
 public sealed record RosterSolverShift(Guid EmployeeId, DateOnly Date, int StartHour, int FinishHour)
 {
@@ -34,6 +36,9 @@ public sealed record RosterSolverProgress(string Stage, int Progress, string Mes
 
 public sealed class RosterSolverOptions
 {
+    public int CompanyCars { get; init; }
+    public int CompanyMopeds { get; init; }
+    public int CompanyEBikes { get; init; }
     public double FairHoursAlpha { get; init; } = 0.7;
     public int ApproximateHoursWeight { get; init; } = 100;
     public int HistoryFairnessWeight { get; init; } = 100;

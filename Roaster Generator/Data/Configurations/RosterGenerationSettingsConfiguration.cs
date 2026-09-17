@@ -12,6 +12,13 @@ public sealed class RosterGenerationSettingsConfiguration : IEntityTypeConfigura
 
         builder.HasKey(settings => settings.Id);
 
+        builder.Property(settings => settings.CompanyCars)
+            .HasColumnName("company_cars").HasDefaultValue(0).ValueGeneratedNever().IsRequired();
+        builder.Property(settings => settings.CompanyMopeds)
+            .HasColumnName("company_mopeds").HasDefaultValue(0).ValueGeneratedNever().IsRequired();
+        builder.Property(settings => settings.CompanyEBikes)
+            .HasColumnName("company_ebikes").HasDefaultValue(0).ValueGeneratedNever().IsRequired();
+
         builder.Property(settings => settings.Id)
             .HasColumnName("id")
             .HasColumnType("uuid")

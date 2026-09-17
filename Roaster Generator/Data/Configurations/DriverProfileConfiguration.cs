@@ -29,6 +29,12 @@ public sealed class DriverProfileConfiguration : IEntityTypeConfiguration<Driver
             .HasDefaultValue(DriverType.Car)
             .IsRequired();
 
+        builder.Property(profile => profile.IsOwn)
+            .HasColumnName("is_own")
+            .HasDefaultValue(true)
+            .ValueGeneratedNever()
+            .IsRequired();
+
         builder.HasOne(profile => profile.Employee)
             .WithOne(employee => employee.DriverProfile)
             .HasForeignKey<DriverProfile>(profile => profile.EmployeeId)
