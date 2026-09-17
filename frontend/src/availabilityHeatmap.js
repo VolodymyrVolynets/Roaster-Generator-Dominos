@@ -19,3 +19,23 @@ export function availabilityHeatmapDetail(slot) {
   const spare = slot.availableDrivers - slot.requiredDrivers
   return `${coverage} · ${spare === 0 ? 'no spare availability' : `${spare} spare`}`
 }
+
+export function buildAvailabilityHeatmapDays(grid) {
+  const levels = ['shortage', 'tight', 'limited', 'covered']
+  return grid.dates.map((date) => {
+    const slots = grid.hours.map((hour) => grid.slots.get(`${date}:${hour}`)).filter(Boolean)
+    return {
+      date,
+      slots,
+      shortageHours: slots.filter((slot) => slot.shortageDrivers > 0).length,
+      level: levels.find((level) => slots.some((slot) => slot.level === level)) || 'empty',
+    }
+  })
+}
+
+export function availabilityHeatmapStatus(slot) {
+  if (!slot) return 'No drivers required'
+  if (slot.shortageDrivers > 0) return `Need ${slot.shortageDrivers} more`
+  const spare = slot.availableDrivers - slot.requiredDrivers
+  return spare > 0 ? `${spare} spare` : 'No spare'
+}

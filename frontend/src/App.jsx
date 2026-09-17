@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 import { calculateDemandLabour, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
 import { getAvailabilityEmployeeId } from './availabilityAccess'
-import { availabilityHeatmapDetail, buildAvailabilityHeatmapGrid } from './availabilityHeatmap'
+import { AvailabilityHeatmap } from './DriverAvailabilityHeatmap'
 import { AreaSelector, WeekSelector } from './SelectionControls'
 import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
 import { useApplicationEvents } from './useApplicationEvents'
@@ -2227,60 +2227,6 @@ function ApproximateHoursPreview({ approximateHours, capacityHours, label = 'You
           ? `Calculated from demand, useful availability and how scarce each hour is.${capacityHours != null ? ` Useful availability capacity: ${Number(capacityHours).toFixed(1)}h.` : ''} The roster generator uses this as a fairness target after maximizing demand coverage without overstaffing, while hard shift rules still apply.`
           : 'Complete outside demand and save availability to calculate this estimate. It updates before the roster is generated.')}
       </p>
-    </section>
-  )
-}
-
-function AvailabilityHeatmap({ heatmap, weekStart }) {
-  if (!heatmap) return null
-  if (!heatmap.demandPlanExists) {
-    return <p className="message info-message availability-heatmap-message">{heatmap.message}</p>
-  }
-  if (!heatmap.slots?.length) {
-    return <p className="message info-message availability-heatmap-message">{heatmap.message}</p>
-  }
-
-  const grid = buildAvailabilityHeatmapGrid(heatmap, weekStart)
-  const labelForHour = (hour) => heatmap.slots.find((slot) => slot.hour === hour)?.startTime || `${hour % 24}:00`
-
-  return (
-    <section className="availability-heatmap" aria-labelledby={`availability-heatmap-${weekStart}`}>
-      <div className="availability-heatmap-heading">
-        <div>
-          <span className="eyebrow">Best times to offer</span>
-          <h3 id={`availability-heatmap-${weekStart}`}>Driver availability heatmap</h3>
-          <p>{heatmap.message} Counts include current saved availability and refresh after saving.</p>
-        </div>
-        <div className="availability-heatmap-legend" aria-label="Heatmap legend">
-          <span className="heatmap-legend-shortage">Needs drivers</span>
-          <span className="heatmap-legend-tight">No spare</span>
-          <span className="heatmap-legend-limited">One spare</span>
-          <span className="heatmap-legend-covered">Covered</span>
-        </div>
-      </div>
-      <div className="availability-heatmap-scroll">
-        <table>
-          <caption className="visually-hidden">Required drivers compared with saved driver availability by hour</caption>
-          <thead><tr>
-            <th scope="col">Time</th>
-            {grid.dates.map((date) => <th scope="col" key={date}>
-              <span>{parseDate(date).toLocaleDateString(undefined, { weekday: 'short' })}</span>
-              <small>{dateFormatter.format(parseDate(date))}</small>
-            </th>)}
-          </tr></thead>
-          <tbody>{grid.hours.map((hour) => <tr key={hour}>
-            <th scope="row">{labelForHour(hour)}{hour >= 24 && <small>+1 day</small>}</th>
-            {grid.dates.map((date) => {
-              const slot = grid.slots.get(`${date}:${hour}`)
-              const detail = availabilityHeatmapDetail(slot)
-              return <td key={date} className={slot ? `heatmap-${slot.level}` : 'heatmap-empty'} title={detail}>
-                {slot ? <><strong>{slot.availableDrivers}/{slot.requiredDrivers}</strong><small>{slot.shortageDrivers > 0 ? `+${slot.shortageDrivers} needed` : 'available / need'}</small></> : <span>—</span>}
-                <span className="visually-hidden">{detail}</span>
-              </td>
-            })}
-          </tr>)}</tbody>
-        </table>
-      </div>
     </section>
   )
 }
