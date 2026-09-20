@@ -375,6 +375,7 @@ function HolidayTable({ holidays, showEmployee = false, showApprove = false, onA
         <thead>
           <tr>
             {showEmployee && <th>Employee</th>}
+            {showEmployee && <th>Payroll number</th>}
             <th>Hours</th>
             <th>Status</th>
             <th>Requested</th>
@@ -391,6 +392,7 @@ function HolidayTable({ holidays, showEmployee = false, showApprove = false, onA
                   <small>#{holiday.employeeNumber}</small>
                 </td>
               )}
+              {showEmployee && <td>{holiday.payrollNumber || 'Not set'}</td>}
               <td>{holiday.hours}</td>
               <td><span className={`holiday-status ${holiday.status.toLowerCase()}`}>{holiday.status}</span></td>
               <td>{formatHolidayDate(holiday.createdAtUtc)}</td>
