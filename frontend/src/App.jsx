@@ -955,14 +955,34 @@ function DemandManager({
   function demandCell(row, column, field, label) {
     const value = row.values.find((item) => item.position === column.position) || {}
     const missing = value.isOpen && value[field] == null
+    const isDriverCount = field === 'demand'
+    const isReadOnly = !canEdit || value.isOpen === false
+    const maximum = field === 'demand' ? 100000000 : 1000000
+    const numericValue = Number(value[field])
+    const currentValue = Number.isFinite(numericValue) && value[field] != null ? numericValue : 0
+    const hourLabel = `${column.label} ${String(row.hour).padStart(2, '0')}:00`
+    const input = <input
+      className={isDriverCount ? 'demand-stepper-input' : undefined}
+      type="number" min="0" max={maximum}
+      step={isInsideDemand || field === 'demand' ? '1' : '0.01'} value={value[field] ?? ''}
+      onChange={(event) => updateDemandValue(row.hour, column.position, field, event.target.value)}
+      readOnly={isReadOnly} aria-readonly={isReadOnly}
+      placeholder={value.isOpen === false ? 'Closed' : '—'}
+      aria-label={`${hourLabel} ${label}`}
+      title={missing ? `${label} missing for this open hour` : undefined} />
+
     return <td key={`${row.hour}-${column.position}-${field}`} className={missing ? 'demand-missing-value' : undefined}>
-      <input type="number" min="0" max={field === 'demand' ? 100000000 : 1000000}
-        step={isInsideDemand || field === 'demand' ? '1' : '0.01'} value={value[field] ?? ''}
-        onChange={(event) => updateDemandValue(row.hour, column.position, field, event.target.value)}
-        readOnly={!canEdit || value.isOpen === false} aria-readonly={!canEdit || value.isOpen === false}
-        placeholder={value.isOpen === false ? 'Closed' : '—'}
-        aria-label={`${column.label} ${String(row.hour).padStart(2, '0')}:00 ${label}`}
-        title={missing ? `${label} missing for this open hour` : undefined} />
+      {isDriverCount && !isReadOnly ? <div className="demand-stepper" role="group" aria-label={`${hourLabel} drivers`}>
+        <button type="button" className="demand-stepper-button demand-stepper-remove"
+          disabled={currentValue <= 0}
+          onClick={() => updateDemandValue(row.hour, column.position, field, String(Math.max(0, currentValue - 1)))}
+          aria-label={`Remove one driver at ${hourLabel}`} title="Remove one driver">−</button>
+        {input}
+        <button type="button" className="demand-stepper-button demand-stepper-add"
+          disabled={currentValue >= maximum}
+          onClick={() => updateDemandValue(row.hour, column.position, field, String(Math.min(maximum, currentValue + 1)))}
+          aria-label={`Add one driver at ${hourLabel}`} title="Add one driver">+</button>
+      </div> : input}
     </td>
   }
 

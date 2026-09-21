@@ -2050,6 +2050,69 @@ input:focus {
   text-align: right;
 }
 
+.demand-stepper {
+  display: grid;
+  grid-template-columns: 40px minmax(46px, 1fr) 40px;
+  align-items: center;
+  gap: 5px;
+  min-width: 136px;
+}
+
+.demand-table td .demand-stepper-input {
+  min-height: 40px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-align: center;
+  appearance: textfield;
+}
+
+.demand-stepper-input::-webkit-inner-spin-button,
+.demand-stepper-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.demand-stepper-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid rgba(125, 211, 252, 0.72);
+  border-radius: 9px;
+  color: #f0f9ff;
+  background: #0369a1;
+  box-shadow: 0 3px 10px rgba(2, 6, 23, 0.35);
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.demand-stepper-remove {
+  border-color: rgba(251, 113, 133, 0.75);
+  color: #fff1f2;
+  background: #9f1239;
+}
+
+.demand-stepper-button:hover:not(:disabled),
+.demand-stepper-button:focus-visible {
+  border-color: #e0f2fe;
+  color: #082f49;
+  background: #bae6fd;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.24);
+}
+
+.demand-stepper-remove:hover:not(:disabled),
+.demand-stepper-remove:focus-visible {
+  border-color: #ffe4e6;
+  color: #4c0519;
+  background: #fecdd3;
+  box-shadow: 0 0 0 3px rgba(251, 113, 133, 0.24);
+}
+
 .demand-result {
   color: #6ee7b7;
   font-weight: 800;
@@ -3834,5 +3897,31 @@ select:disabled {
   .demand-mobile-table th,
   .demand-mobile-table td {
     width: 33.333%;
+  }
+
+  .demand-mobile-table .demand-stepper {
+    grid-template-columns: repeat(2, minmax(36px, 1fr));
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .demand-mobile-table .demand-stepper-input {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .demand-mobile-table .demand-stepper-remove {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .demand-mobile-table .demand-stepper-add {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .demand-mobile-table .demand-stepper-button {
+    width: 100%;
+    min-height: 40px;
   }
 }
