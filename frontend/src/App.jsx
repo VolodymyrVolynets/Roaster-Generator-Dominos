@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 import { calculateDemandLabour, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
 import { getAvailabilityEmployeeId } from './availabilityAccess'
+import { countAvailabilityDays, getAvailabilityLimitErrors, isAvailabilityTimeAllowed } from './availabilityLimits'
 import { AvailabilityHeatmap } from './DriverAvailabilityHeatmap'
 import { AreaSelector, WeekSelector } from './SelectionControls'
 import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
@@ -2212,7 +2213,7 @@ function AdminConsole({
   )
 }
 
-function TimeSelector({ id, label, value, onChange, disabled = false }) {
+function TimeSelector({ id, label, value, onChange, disabled = false, isTimeAllowed }) {
   const selectedHour = value ? value.split(':')[0] : ''
 
   return (
@@ -2227,7 +2228,7 @@ function TimeSelector({ id, label, value, onChange, disabled = false }) {
       >
         <option value="">HH</option>
         {hours.map((hour) => (
-          <option key={hour} value={hour}>
+          <option key={hour} value={hour} disabled={isTimeAllowed ? !isTimeAllowed(`${hour}:00`) : false}>
             {hour}
           </option>
         ))}
@@ -2265,6 +2266,10 @@ function ScheduleEditor({
   if (!schedule) {
     return null
   }
+  const enteredDayCount = countAvailabilityDays(schedule.days)
+  const maximumDays = schedule.maximumAvailabilityDaysPerWeek
+  const maximumHours = schedule.maximumAvailabilityHoursPerDay
+  const limitErrors = getAvailabilityLimitErrors(schedule)
 
   return (
     <form className="schedule-form" onSubmit={saveSchedule}>
@@ -2279,6 +2284,16 @@ function ScheduleEditor({
         <p className="message info-message" role="status">
           Availability for next week is locked from Saturday. Select the week after next to make changes.
         </p>
+      )}
+
+      {maximumDays != null && maximumHours != null && (
+        <p className="message info-message" role="status">
+          Enter up to {maximumHours} hours per day and {maximumDays} days per week. Overnight hours count toward the same day.
+          {' '}{enteredDayCount}/{maximumDays} days entered. Reset a day to choose a different one. An administrator can make exceptions.
+        </p>
+      )}
+      {limitErrors.length > 0 && (
+        <p className="message error-message" role="alert">{limitErrors.join(' ')}</p>
       )}
 
       {schedule.heatmap && (
@@ -2324,7 +2339,8 @@ function ScheduleEditor({
                 label={`${day.dayOfWeek} start time`}
                 value={day.startTime || ''}
                 onChange={(value) => updateDay(day.date, 'startTime', value)}
-                disabled={!canEdit}
+                disabled={!canEdit || (maximumDays != null && enteredDayCount >= maximumDays && !day.startTime && !day.finishTime)}
+                isTimeAllowed={(value) => isAvailabilityTimeAllowed(day, 'startTime', value, maximumHours)}
               />
             </div>
             <div role="cell">
@@ -2336,7 +2352,8 @@ function ScheduleEditor({
                 label={`${day.dayOfWeek} finish time`}
                 value={day.finishTime || ''}
                 onChange={(value) => updateDay(day.date, 'finishTime', value)}
-                disabled={!canEdit}
+                disabled={!canEdit || (maximumDays != null && enteredDayCount >= maximumDays && !day.startTime && !day.finishTime)}
+                isTimeAllowed={(value) => isAvailabilityTimeAllowed(day, 'finishTime', value, maximumHours)}
               />
             </div>
             <div role="cell">
@@ -2357,7 +2374,7 @@ function ScheduleEditor({
         <span className={`save-message ${saveState.status}`} aria-live="polite">
           {saveState.message || 'Leave both fields empty for a day off.'}
         </span>
-        <button type="submit" disabled={!canEdit || saveState.status === 'saving'}>
+        <button type="submit" disabled={!canEdit || limitErrors.length > 0 || saveState.status === 'saving'}>
           {saveState.status === 'saving' ? 'Saving…' : 'Save availability'}
         </button>
       </div>
@@ -2891,6 +2908,12 @@ function App() {
     event.preventDefault()
     if (!availabilityEmployeeId || schedule?.employeeId !== availabilityEmployeeId ||
         scheduleState.status !== 'success' || schedule?.canEdit === false || saveState.status === 'saving') {
+      return
+    }
+    const limitMessage = getAvailabilityLimitErrors(schedule).join(' ')
+    if (limitMessage) {
+      setSaveState({ status: 'error', message: limitMessage })
+      setErrorPopup(limitMessage)
       return
     }
     setSaveState({ status: 'saving' })

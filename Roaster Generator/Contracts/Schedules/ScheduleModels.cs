@@ -35,6 +35,12 @@ public sealed class WeeklyScheduleResponse
 
     public bool CanEdit { get; set; } = true;
 
+    // Entry limits for the authenticated caller; null allows administrator overrides
+    // or indicates an employee role that is not subject to driver entry limits.
+    public int? MaximumAvailabilityHoursPerDay { get; set; }
+
+    public int? MaximumAvailabilityDaysPerWeek { get; set; }
+
     public double? ApproximateHours { get; init; }
 
     public double? ApproximateCapacityHours { get; init; }

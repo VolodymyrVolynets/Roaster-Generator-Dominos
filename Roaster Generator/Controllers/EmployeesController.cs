@@ -115,7 +115,12 @@ public sealed class EmployeesController(
             return accessResult;
         }
 
-        var validationResult = await scheduleValidator.ValidateAsync(request, cancellationToken);
+        var validationResult = await scheduleValidator.ValidateAsync(request, options =>
+        {
+            options.IncludeRulesNotInRuleSet();
+            if (LimitDriverAvailability)
+                options.IncludeRuleSets(WeeklyScheduleRequestValidator.DriverLimitsRuleSet);
+        }, cancellationToken);
 
         if (!validationResult.IsValid)
         {
@@ -157,11 +162,17 @@ public sealed class EmployeesController(
 
     private void ApplyEditAccess(WeeklyScheduleResponse schedule, int weekOffset)
     {
+        schedule.MaximumAvailabilityHoursPerDay = LimitDriverAvailability
+            ? WeeklyScheduleRequestValidator.MaximumDriverHoursPerDay : null;
+        schedule.MaximumAvailabilityDaysPerWeek = LimitDriverAvailability
+            ? WeeklyScheduleRequestValidator.MaximumDriverDaysPerWeek : null;
         schedule.MinimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(
             User.IsInRole(RoleNames.Admin));
         schedule.CanEdit = weekOffset >= schedule.MinimumEditableWeekOffset &&
             weekOffset <= WeeklyScheduleService.MaxWeekOffset;
     }
+
+    private bool LimitDriverAvailability => User.IsInRole(RoleNames.Driver) && !User.IsInRole(RoleNames.Admin);
 
     private async Task<IActionResult?> CheckScheduleAccessAsync(
         Guid employeeId,

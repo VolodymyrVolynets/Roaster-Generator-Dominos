@@ -108,6 +108,123 @@ public sealed class EmployeeAvailabilityAccessTests
         Assert.Equal(new TimeOnly(14, 0), (await fixture.Db.Shifts.SingleAsync(shift => shift.EmployeeId == fixture.OtherEmployeeId)).StartTime);
     }
 
+    [Theory]
+    [InlineData(12, 22, true)]
+    [InlineData(15, 1, true)]
+    [InlineData(12, 23, false)]
+    [InlineData(14, 1, false)]
+    [InlineData(12, 1, false)]
+    public async Task DriverDailyLimitCountsOvernightHours(int start, int finish, bool allowed)
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        var current = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.Equal(10, current.MaximumAvailabilityHoursPerDay);
+        Assert.Equal(6, current.MaximumAvailabilityDaysPerWeek);
+
+        var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId,
+            NewAvailability(start: start, finish: finish), default);
+
+        if (allowed)
+        {
+            var saved = ReadSchedule(result);
+            Assert.Equal($"{start:00}:00", saved.Days[0].StartTime);
+            Assert.Equal($"{finish:00}:00", saved.Days[0].FinishTime);
+            Assert.Equal(10, saved.MaximumAvailabilityHoursPerDay);
+            Assert.Equal(6, saved.MaximumAvailabilityDaysPerWeek);
+        }
+        else
+        {
+            var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+            Assert.Contains(problem.Errors["Days[0].FinishTime"], message => message.Contains("10 hours"));
+            Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+            Assert.All(await fixture.Db.Shifts.ToListAsync(), shift => Assert.Equal(new TimeOnly(12, 0), shift.StartTime));
+        }
+    }
+
+    [Theory]
+    [InlineData(6, true)]
+    [InlineData(7, false)]
+    public async Task DriversCanSubmitSixDaysButNotSeven(int days, bool allowed)
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId,
+            NewAvailability(activeDays: days, start: 15, finish: 1), default);
+
+        if (allowed)
+        {
+            var saved = ReadSchedule(result);
+            Assert.Equal(6, saved.Days.Count(day => day.StartTime is not null));
+            Assert.Equal(6, await fixture.Db.Shifts.CountAsync(shift => shift.EmployeeId == fixture.EmployeeId));
+        }
+        else
+        {
+            var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+            Assert.Contains(problem.Errors["Days"], message => message.Contains("6 days"));
+            Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+        }
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Admin)]
+    [InlineData(RoleNames.Admin, RoleNames.Driver)]
+    public async Task AdminsCanOverrideBothDriverAvailabilityLimits(params string[] roles)
+    {
+        using var fixture = new ScheduleFixture(roles);
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(fixture.OtherEmployeeId,
+            NewAvailability(activeDays: 7, start: 12, finish: 1), default));
+
+        Assert.Null(saved.MaximumAvailabilityHoursPerDay);
+        Assert.Null(saved.MaximumAvailabilityDaysPerWeek);
+        Assert.All(saved.Days, day =>
+        {
+            Assert.Equal("12:00", day.StartTime);
+            Assert.Equal("01:00", day.FinishTime);
+        });
+        Assert.Equal(7, await fixture.Db.Shifts.CountAsync(shift => shift.EmployeeId == fixture.OtherEmployeeId));
+    }
+
+    [Theory]
+    [InlineData(RoleNames.InStore)]
+    [InlineData(RoleNames.Manager)]
+    public async Task DriverEntryLimitsDoNotChangeInsideEmployeeAvailability(string role)
+    {
+        using var fixture = new ScheduleFixture([role]);
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(fixture.EmployeeId,
+            NewAvailability(activeDays: 7, start: 12, finish: 1), default));
+
+        Assert.Equal(7, saved.Days.Count(day => day.StartTime is not null));
+        Assert.Null(saved.MaximumAvailabilityHoursPerDay);
+        Assert.Null(saved.MaximumAvailabilityDaysPerWeek);
+    }
+
+    [Fact]
+    public async Task ManagerRoleDoesNotGrantADriverTheAdminOverride()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver, RoleNames.Manager]);
+        var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId,
+            NewAvailability(activeDays: 7, start: 12, finish: 1), default);
+
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Contains("Days", problem.Errors.Keys);
+        Assert.Contains("Days[0].FinishTime", problem.Errors.Keys);
+        Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Admin)]
+    [InlineData(RoleNames.Driver)]
+    public async Task AvailabilityLimitsPreserveOrdinaryTimeValidation(string role)
+    {
+        using var fixture = new ScheduleFixture([role]);
+        var request = NewAvailability();
+        request.Days[0].StartTime = new TimeOnly(14, 30);
+        var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId, request, default);
+
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Contains(problem.Errors["Days[0].StartTime"], message => message.Contains("whole hours"));
+        Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+    }
+
     [Fact]
     public async Task AdministratorsCanReadSchedulesOutsideTheThreeWeekEditHorizon()
     {
@@ -194,14 +311,14 @@ public sealed class EmployeeAvailabilityAccessTests
     private static WeeklyScheduleResponse ReadSchedule(IActionResult result) =>
         Assert.IsType<WeeklyScheduleResponse>(Assert.IsType<OkObjectResult>(result).Value);
 
-    private static WeeklyScheduleRequest NewAvailability(int weekOffset = 1) => new()
+    private static WeeklyScheduleRequest NewAvailability(int weekOffset = 1, int activeDays = 1, int start = 14, int finish = 20) => new()
     {
         WeekOffset = weekOffset,
         Days = Enumerable.Range(0, 7).Select(day => new ScheduleDayRequest
         {
             Date = WeeklyScheduleService.GetWeekMonday(weekOffset).AddDays(day),
-            StartTime = day == 0 ? new TimeOnly(14, 0) : null,
-            FinishTime = day == 0 ? new TimeOnly(20, 0) : null
+            StartTime = day < activeDays ? new TimeOnly(start, 0) : null,
+            FinishTime = day < activeDays ? new TimeOnly(finish, 0) : null
         }).ToList()
     };
 

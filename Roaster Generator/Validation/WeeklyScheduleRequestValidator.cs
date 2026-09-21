@@ -9,6 +9,9 @@ namespace Roaster_Generator.Validation;
 
 public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklyScheduleRequest>
 {
+    public const string DriverLimitsRuleSet = "DriverAvailabilityLimits";
+    public const int MaximumDriverHoursPerDay = 10;
+    public const int MaximumDriverDaysPerWeek = 6;
     private readonly ShopHoursOptions shopHours;
 
     public WeeklyScheduleRequestValidator(IOptions<ShopHoursOptions> shopHoursOptions)
@@ -62,6 +65,31 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
                     ValidateShopHours(days[index], index, context);
                 }
             });
+
+        // The controller selects this rule set from the authenticated user's roles.
+        // Admins still receive all ordinary date, time and shop-hours validation.
+        RuleSet(DriverLimitsRuleSet, () =>
+            RuleFor(request => request).Custom(ValidateDriverLimits));
+    }
+
+    private static void ValidateDriverLimits(WeeklyScheduleRequest request,
+        ValidationContext<WeeklyScheduleRequest> context)
+    {
+        if (request.Days is null) return;
+        if (request.Days.Count(day => day.StartTime is not null || day.FinishTime is not null) > MaximumDriverDaysPerWeek)
+            context.AddFailure(nameof(request.Days),
+                $"Drivers can enter availability for at most {MaximumDriverDaysPerWeek} days per week. An administrator can make exceptions.");
+
+        for (var index = 0; index < request.Days.Count; index++)
+        {
+            var day = request.Days[index];
+            if (day.StartTime is not { } start || day.FinishTime is not { } finish || start == finish) continue;
+            var duration = finish.ToTimeSpan() - start.ToTimeSpan();
+            if (duration < TimeSpan.Zero) duration += TimeSpan.FromDays(1);
+            if (duration > TimeSpan.FromHours(MaximumDriverHoursPerDay))
+                context.AddFailure($"Days[{index}].FinishTime",
+                    $"Driver availability cannot exceed {MaximumDriverHoursPerDay} hours per day, including overnight hours. An administrator can make exceptions.");
+        }
     }
     
     private void ValidateShopHours(
