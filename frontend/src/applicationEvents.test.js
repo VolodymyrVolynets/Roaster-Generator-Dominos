@@ -57,3 +57,13 @@ test('reconnect invalidates every domain to recover missed events', () => {
   const next = reconnectApplicationEvents(initialApplicationEventVersions)
   for (const value of Object.values(next)) assert.equal(value, 1)
 })
+
+test('absent form submissions refresh forms without changing scheduling data', () => {
+  const next = applyApplicationChangedEvent(initialApplicationEventVersions, {
+    type: 'absentChanged', entityId: 'form-one',
+  })
+  assert.equal(next.absent, 1)
+  assert.equal(next.roster, 0)
+  assert.equal(next.availability, 0)
+  assert.equal(next.sickLeave, 0)
+})

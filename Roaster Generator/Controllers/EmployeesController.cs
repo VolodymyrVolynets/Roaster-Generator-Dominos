@@ -21,6 +21,7 @@ public sealed class EmployeesController(
     UserManager<ApplicationUser> userManager,
     IValidator<WeekSelectionRequest> weekValidator,
     AdminWeekSelectionRequestValidator adminWeekValidator,
+    AdminEditableWeekSelectionRequestValidator adminEditableWeekValidator,
     IValidator<WeeklyScheduleRequest> scheduleValidator,
     WeeklyScheduleService schedules,
     AvailabilityEditPolicy availabilityEdits) : ApiControllerBase
@@ -115,6 +116,15 @@ public sealed class EmployeesController(
             return accessResult;
         }
 
+        var weekSelection = new WeekSelectionRequest { WeekOffset = request.WeekOffset };
+        var weekValidation = await (User.IsInRole(RoleNames.Admin)
+            ? adminEditableWeekValidator
+            : weekValidator).ValidateAsync(weekSelection, cancellationToken);
+        if (!weekValidation.IsValid)
+        {
+            return ValidationError(ToErrors(weekValidation), "The selected week is invalid.");
+        }
+
         var validationResult = await scheduleValidator.ValidateAsync(request, options =>
         {
             options.IncludeRulesNotInRuleSet();
@@ -127,9 +137,9 @@ public sealed class EmployeesController(
             return ValidationError(ToErrors(validationResult), "The shift schedule is invalid.");
         }
 
-        var minimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(
-            User.IsInRole(RoleNames.Admin));
-        if (request.WeekOffset < minimumEditableWeekOffset)
+        var isAdmin = User.IsInRole(RoleNames.Admin);
+        var minimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(false);
+        if (!isAdmin && request.WeekOffset < minimumEditableWeekOffset)
         {
             return ValidationError(
                 new Dictionary<string, string[]>
@@ -162,14 +172,19 @@ public sealed class EmployeesController(
 
     private void ApplyEditAccess(WeeklyScheduleResponse schedule, int weekOffset)
     {
+        var isAdmin = User.IsInRole(RoleNames.Admin);
+        var minimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(false);
         schedule.MaximumAvailabilityHoursPerDay = LimitDriverAvailability
             ? WeeklyScheduleRequestValidator.MaximumDriverHoursPerDay : null;
         schedule.MaximumAvailabilityDaysPerWeek = LimitDriverAvailability
             ? WeeklyScheduleRequestValidator.MaximumDriverDaysPerWeek : null;
-        schedule.MinimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(
-            User.IsInRole(RoleNames.Admin));
-        schedule.CanEdit = weekOffset >= schedule.MinimumEditableWeekOffset &&
-            weekOffset <= WeeklyScheduleService.MaxWeekOffset;
+        schedule.MinimumEditableWeekOffset = isAdmin
+            ? null
+            : minimumEditableWeekOffset;
+        schedule.CanEdit = isAdmin
+            ? weekOffset <= WeeklyScheduleService.MaxWeekOffset
+            : weekOffset >= minimumEditableWeekOffset &&
+              weekOffset <= WeeklyScheduleService.MaxWeekOffset;
     }
 
     private bool LimitDriverAvailability => User.IsInRole(RoleNames.Driver) && !User.IsInRole(RoleNames.Admin);

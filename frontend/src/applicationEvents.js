@@ -11,6 +11,7 @@ export const initialApplicationEventVersions = Object.freeze({
   rosterInside: 0,
   sickLeave: 0,
   holiday: 0,
+  absent: 0,
   settings: 0,
 })
 
@@ -32,6 +33,8 @@ export function applyApplicationChangedEvent(current, event, employeeId) {
       return increment(current, 'sickLeave', ...(event.rosterKind ? ['availability'] : []))
     case 'holidayChanged':
       return increment(current, 'holiday')
+    case 'absentChanged':
+      return increment(current, 'absent')
     case 'employeeChanged':
       return increment(current, 'employees', 'availability',
         ...(employeeId && String(event.entityId) === String(employeeId) ? ['auth'] : []))

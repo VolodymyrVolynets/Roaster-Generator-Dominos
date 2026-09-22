@@ -243,6 +243,54 @@ public sealed class EmployeeAvailabilityAccessTests
         Assert.False(schedule.CanEdit);
     }
 
+    [Theory]
+    [InlineData(-12)]
+    [InlineData(-1)]
+    [InlineData(0)]
+    public async Task AdministratorsCanEditEmployeeAvailabilityForPastAndCurrentWeeks(int weekOffset)
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Admin], linkUser: false);
+
+        var schedule = ReadSchedule(await fixture.Controller.GetSchedule(
+            fixture.OtherEmployeeId, weekOffset, default));
+        Assert.True(schedule.CanEdit);
+        Assert.Null(schedule.MinimumEditableWeekOffset);
+
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(
+            fixture.OtherEmployeeId, NewAvailability(weekOffset, start: 15, finish: 21), default));
+        Assert.True(saved.CanEdit);
+        Assert.Null(saved.MinimumEditableWeekOffset);
+        Assert.Equal(WeeklyScheduleService.GetWeekMonday(weekOffset), saved.WeekStart);
+        Assert.Equal("15:00", saved.Days[0].StartTime);
+        Assert.Equal("21:00", saved.Days[0].FinishTime);
+    }
+
+    [Fact]
+    public async Task AdministratorsCannotEditMoreThanThreeWeeksAhead()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Admin], linkUser: false);
+        var schedule = ReadSchedule(await fixture.Controller.GetSchedule(fixture.OtherEmployeeId, 4, default));
+        Assert.False(schedule.CanEdit);
+
+        var result = Assert.IsType<BadRequestObjectResult>(await fixture.Controller.SaveSchedule(
+            fixture.OtherEmployeeId, NewAvailability(4), default));
+        var problem = Assert.IsType<ValidationProblemDetails>(result.Value);
+        Assert.Contains(nameof(WeeklyScheduleRequest.WeekOffset), problem.Errors.Keys);
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Driver)]
+    [InlineData(RoleNames.InStore)]
+    [InlineData(RoleNames.Manager)]
+    public async Task NonAdministratorsStillCannotEditPastAvailability(string role)
+    {
+        using var fixture = new ScheduleFixture([role]);
+        var result = Assert.IsType<BadRequestObjectResult>(await fixture.Controller.SaveSchedule(
+            fixture.EmployeeId, NewAvailability(-1), default));
+        var problem = Assert.IsType<ValidationProblemDetails>(result.Value);
+        Assert.Contains(nameof(WeeklyScheduleRequest.WeekOffset), problem.Errors.Keys);
+    }
+
     [Fact]
     public async Task EmployeesCannotEditNextWeekFromSaturdayButCanEditTheFollowingWeek()
     {
@@ -276,7 +324,7 @@ public sealed class EmployeeAvailabilityAccessTests
 
         var schedule = ReadSchedule(await fixture.Controller.GetSchedule(fixture.OtherEmployeeId, 1, default));
         Assert.True(schedule.CanEdit);
-        Assert.Equal(1, schedule.MinimumEditableWeekOffset);
+        Assert.Null(schedule.MinimumEditableWeekOffset);
 
         var saved = ReadSchedule(await fixture.Controller.SaveSchedule(
             fixture.OtherEmployeeId, NewAvailability(), default));
@@ -356,7 +404,7 @@ public sealed class EmployeeAvailabilityAccessTests
             var claims = roles.Select(role => new Claim(ClaimTypes.Role, role)).ToList();
             claims.Add(new Claim(ClaimTypes.NameIdentifier, User.Id.ToString()));
             Controller = new EmployeesController(Db, userManager, new WeekSelectionRequestValidator(),
-                new AdminWeekSelectionRequestValidator(),
+                new AdminWeekSelectionRequestValidator(), new AdminEditableWeekSelectionRequestValidator(),
                 new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions())), new WeeklyScheduleService(Db, null),
                 new AvailabilityEditPolicy(new FixedTimeProvider(now ?? new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero))))
             {

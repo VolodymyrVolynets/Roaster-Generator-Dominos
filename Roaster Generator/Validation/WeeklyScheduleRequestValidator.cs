@@ -18,12 +18,6 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
     {
         shopHours = shopHoursOptions.Value;
 
-        RuleFor(request => request.WeekOffset)
-            .InclusiveBetween(
-                WeeklyScheduleService.MinWeekOffset,
-                WeeklyScheduleService.MaxWeekOffset)
-            .WithMessage("Only weeks from next week through three weeks ahead can be edited.");
-
         RuleFor(request => request.Days)
             .NotNull()
             .WithMessage("Seven schedule days are required.")
@@ -43,8 +37,7 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
                     return;
                 }
 
-                if (request.WeekOffset is < WeeklyScheduleService.MinWeekOffset
-            or > WeeklyScheduleService.MaxWeekOffset)
+                if (!WeeklyScheduleService.IsValidWeekOffset(request.WeekOffset))
                 {
                     return;
                 }
@@ -161,6 +154,17 @@ public sealed class AdminWeekSelectionRequestValidator : AbstractValidator<WeekS
         RuleFor(request => request.WeekOffset)
             .Must(WeeklyScheduleService.IsValidWeekOffset)
             .WithMessage("Select a valid availability week.");
+    }
+}
+
+public sealed class AdminEditableWeekSelectionRequestValidator : AbstractValidator<WeekSelectionRequest>
+{
+    public AdminEditableWeekSelectionRequestValidator()
+    {
+        RuleFor(request => request.WeekOffset)
+            .Must(offset => offset <= WeeklyScheduleService.MaxWeekOffset &&
+                            WeeklyScheduleService.IsValidWeekOffset(offset))
+            .WithMessage("Administrators can edit past and current weeks through three weeks ahead.");
     }
 }
 

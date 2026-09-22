@@ -31,7 +31,8 @@ public sealed class WeeklyScheduleResponse
 
     public DateOnly WeekEnd { get; init; }
 
-    public int MinimumEditableWeekOffset { get; set; } = 1;
+    // Null means the administrator has no historical lower bound.
+    public int? MinimumEditableWeekOffset { get; set; } = 1;
 
     public bool CanEdit { get; set; } = true;
 

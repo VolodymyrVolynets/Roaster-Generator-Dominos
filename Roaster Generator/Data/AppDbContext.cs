@@ -20,6 +20,8 @@ public sealed class AppDbContext(
 
     public DbSet<SickLeaveRequest> SickLeaveRequests => Set<SickLeaveRequest>();
 
+    public DbSet<AbsentForm> AbsentForms => Set<AbsentForm>();
+
     public DbSet<Shift> Shifts => Set<Shift>();
 
     public DbSet<DemandPlan> DemandPlans => Set<DemandPlan>();

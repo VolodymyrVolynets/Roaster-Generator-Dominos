@@ -13,6 +13,7 @@ public static class ApplicationEventTypes
     public const string RosterChanged = "rosterChanged";
     public const string SickLeaveChanged = "sickLeaveChanged";
     public const string HolidayChanged = "holidayChanged";
+    public const string AbsentChanged = "absentChanged";
     public const string EmployeeChanged = "employeeChanged";
     public const string RosterSettingsChanged = "rosterSettingsChanged";
 }
@@ -93,6 +94,10 @@ public sealed class ApplicationEventPublisher(
         },
         [ApplicationEventGroups.Management, ApplicationEventGroups.Employee(employeeId),
             ApplicationEventGroups.Role(RoleNames.Driver), ApplicationEventGroups.Role(RoleNames.InStore)], ct);
+
+    public Task AbsentChangedAsync(Guid formId, Guid employeeId, CancellationToken ct = default) => PublishAsync(
+        new ApplicationChangedEvent { Type = ApplicationEventTypes.AbsentChanged, EntityId = formId },
+        [ApplicationEventGroups.Role(RoleNames.Admin), ApplicationEventGroups.Employee(employeeId)], ct);
 
     public Task RosterSettingsChangedAsync(CancellationToken ct = default) => PublishAsync(
         new ApplicationChangedEvent { Type = ApplicationEventTypes.RosterSettingsChanged },

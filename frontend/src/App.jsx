@@ -7,6 +7,7 @@ import { AvailabilityHeatmap } from './DriverAvailabilityHeatmap'
 import { AreaSelector, WeekSelector } from './SelectionControls'
 import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
 import { useApplicationEvents } from './useApplicationEvents'
+import { AbsentPanel } from './AbsentPanel'
 import {
   compareEmployees,
   employeeHasRole,
@@ -1587,6 +1588,9 @@ function AdminConsole({
             <button type="button" className={activeTab === 'sick-leave' ? 'admin-tab active' : 'admin-tab'} onClick={() => switchTab('sick-leave')}>
               Sick leave
             </button>
+            {(authState.user.isAdmin || authState.user.roles?.includes('Driver')) && <button type="button" className={activeTab === 'absent' ? 'admin-tab active' : 'admin-tab'} onClick={() => switchTab('absent')}>
+              Absent
+            </button>}
             <button
               type="button"
               className={activeTab === 'roster' ? 'admin-tab active' : 'admin-tab'}
@@ -1922,6 +1926,8 @@ function AdminConsole({
           )}
 
           {activeTab === 'sick-leave' && <AdminSickLeavePanel setErrorPopup={setErrorPopup} includeOwnRequest={!authState.user.isAdmin && Boolean(authState.user.employeeId)} realtimeKey={realtimeVersions.sickLeave} />}
+
+          {activeTab === 'absent' && (authState.user.isAdmin || authState.user.roles?.includes('Driver')) && <AbsentPanel admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
 
           {activeTab === 'roster' && (
             <section className="availability-section admin-tools">
@@ -2572,12 +2578,17 @@ function EmployeeWorkspace({
             <button type="button" className={activeTab === 'sick-leave' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => setActiveTab('sick-leave')}>
               Sick leave
             </button>
+            {variant === 'driver' && <button type="button" className={activeTab === 'absent' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => setActiveTab('absent')}>
+              Absent
+            </button>}
           </nav>
 
           {activeTab === 'holiday' ? (
             <HolidayPanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.holiday} />
           ) : activeTab === 'sick-leave' ? (
             <SickLeavePanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.sickLeave} />
+          ) : activeTab === 'absent' && variant === 'driver' ? (
+            <AbsentPanel fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />
           ) : activeTab === 'roster' && variant === 'driver' ? (
             <PersonalRosterPanel weekOffset={weekOffset} setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.roster} />
           ) : (

@@ -323,6 +323,170 @@ h2 {
   background: rgba(76, 29, 149, 0.14);
 }
 
+.absent-fields,
+.absent-record-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  min-width: 0;
+  margin: 20px 0;
+  padding: 0;
+  border: 0;
+}
+
+.absent-field {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.absent-field label,
+.absent-field-label,
+.absent-record dt {
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.absent-shift-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.absent-shift-mode button {
+  min-height: 44px;
+  border: 1px solid #475569;
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.absent-shift-mode button.active {
+  border-color: #7dd3fc;
+  background: #0c4a6e;
+  color: #e0f2fe;
+}
+
+.absent-field input,
+.absent-field select,
+.absent-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 12px;
+  border: 1px solid #475569;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #f8fafc;
+  font: inherit;
+  color-scheme: dark;
+}
+
+.absent-field textarea {
+  resize: vertical;
+}
+
+.absent-field input[readonly] {
+  color: #cbd5e1;
+  background: #1e293b;
+}
+
+.absent-field small,
+.absent-form-footer {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.absent-wide {
+  grid-column: 1 / -1;
+}
+
+.absent-form-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.absent-history-list {
+  display: grid;
+  gap: 16px;
+}
+
+.absent-record {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: #0f172a;
+}
+
+.absent-record h4 {
+  margin: 0;
+}
+
+.absent-record-actions,
+.absent-edit-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.absent-record-actions button {
+  min-height: 34px;
+  padding: 7px 12px;
+}
+
+.absent-admin-edit {
+  margin-top: 14px;
+  padding-top: 2px;
+  border-top: 1px solid #334155;
+}
+
+.absent-edit-footer {
+  padding-top: 2px;
+}
+
+.absent-record-details {
+  margin-bottom: 0;
+}
+
+.absent-record dd {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .absent-fields,
+  .absent-record-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .absent-record {
+    padding: 14px;
+  }
+
+  .absent-shift-mode {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .absent-form-footer button {
+    width: 100%;
+  }
+
+  .absent-record .section-heading,
+  .absent-record-actions,
+  .absent-edit-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .role-details h2 {
   margin-top: 6px;
 }
