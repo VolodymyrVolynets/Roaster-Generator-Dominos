@@ -9,7 +9,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using PdfSharp.Pdf.AcroForms;
+using PdfSharp.Pdf.IO;
+using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Absent;
+using Roaster_Generator.Contracts.Settings;
 using Roaster_Generator.Controllers;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
@@ -305,6 +309,98 @@ public sealed class AbsentFormTests
     }
 
     [Fact]
+    public async Task ManagementDownloadsPrefilledFillablePdfWithRequestedFileName()
+    {
+        using var fixture = new Fixture();
+        var submitted = await fixture.Submit();
+
+        var file = Assert.IsType<FileContentResult>(
+            await fixture.AdminController.DownloadPdf(submitted.Id, default));
+
+        Assert.Equal("application/pdf", file.ContentType);
+        Assert.Equal("Jamie Driver 2026-09-21 absent.pdf", file.FileDownloadName);
+        using var stream = new MemoryStream(file.FileContents);
+        using var document = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
+        Assert.Equal("22/09/2026", Text(document.AcroForm?.Fields, "notification_date"));
+        Assert.Equal("STORE-101", Text(document.AcroForm?.Fields, "store_id"));
+        Assert.Equal("Test Store", Text(document.AcroForm?.Fields, "store_name"));
+        Assert.Equal("Jamie Driver (Payroll: PAY-001)", Text(document.AcroForm?.Fields, "team_member"));
+        Assert.Equal("Unable to attend", Text(document.AcroForm?.Fields, "reason_for_sickness"));
+        Assert.Equal("12:00", Text(document.AcroForm?.Fields, "notification_time"));
+        Assert.Equal("Phone call", Text(document.AcroForm?.Fields, "notification_method"));
+        Assert.Equal("21/09/2026 18:00 - 22/09/2026 02:00", Text(document.AcroForm?.Fields, "original_shift"));
+        Assert.Equal("Jamie Driver", Text(document.AcroForm?.Fields, "manager_name"));
+        Assert.Equal(string.Empty, Text(document.AcroForm?.Fields, "manager_signature"));
+    }
+
+    [Fact]
+    public async Task SavedStoreSettingsReplaceInitialConfigurationInDownloadedPdf()
+    {
+        using var fixture = new Fixture();
+        await fixture.StoreSettings.SaveAsync(new StoreSettingsRequest
+        {
+            StoreId = "  ROI-204  ", StoreName = "  Dublin Central  "
+        }, default);
+        var submitted = await fixture.Submit();
+
+        var file = Assert.IsType<FileContentResult>(
+            await fixture.AdminController.DownloadPdf(submitted.Id, default));
+        using var stream = new MemoryStream(file.FileContents);
+        using var document = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
+
+        Assert.Equal("ROI-204", Text(document.AcroForm?.Fields, "store_id"));
+        Assert.Equal("Dublin Central", Text(document.AcroForm?.Fields, "store_name"));
+    }
+
+    [Fact]
+    public async Task StoreSettingsAreInitializedFromConfigurationUntilAdminChangesThem()
+    {
+        using var fixture = new Fixture();
+        await fixture.StoreSettings.EnsureInitializedAsync(default);
+        var initial = await fixture.StoreSettings.GetAsync(default);
+        Assert.Equal("STORE-101", initial.StoreId);
+        Assert.Equal("Test Store", initial.StoreName);
+        Assert.Equal("STORE-101", (await fixture.Db.StoreSettings.SingleAsync()).StoreId);
+
+        var saved = await fixture.StoreSettings.SaveAsync(new StoreSettingsRequest
+        {
+            StoreId = " STORE-202 ", StoreName = " Second Store "
+        }, default);
+        Assert.Equal("STORE-202", saved.StoreId);
+        Assert.Equal("Second Store", saved.StoreName);
+        Assert.Equal("STORE-202", (await fixture.Db.StoreSettings.SingleAsync()).StoreId);
+    }
+
+    [Fact]
+    public async Task StoreSettingsEndpointRequiresAdminAndRejectsMissingValues()
+    {
+        using var fixture = new Fixture();
+        var authorization = Assert.Single(typeof(AdminStoreSettingsController)
+            .GetCustomAttributes(true).OfType<AuthorizeAttribute>());
+        Assert.Equal(AuthorizationPolicies.Admin, authorization.Policy);
+
+        var controller = new AdminStoreSettingsController(
+            fixture.StoreSettings, new StoreSettingsRequestValidator());
+        Assert.IsType<BadRequestObjectResult>(await controller.Update(new StoreSettingsRequest(), default));
+        Assert.Empty(await fixture.Db.StoreSettings.ToListAsync());
+    }
+
+    [Fact]
+    public async Task StandaloneAdminDownloadUsesTheAdminUsername()
+    {
+        using var fixture = new Fixture();
+        var submitted = await fixture.Submit();
+        fixture.User.EmployeeId = null;
+        await fixture.Db.SaveChangesAsync();
+
+        var file = Assert.IsType<FileContentResult>(
+            await fixture.AdminController.DownloadPdf(submitted.Id, default));
+        using var stream = new MemoryStream(file.FileContents);
+        using var document = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
+        Assert.Equal("absent-test", Text(document.AcroForm?.Fields, "manager_name"));
+    }
+
+    [Fact]
     public async Task EarlyMorningShiftWrappingMidnightPreservesBothCalendarDayOffsets()
     {
         using var fixture = new Fixture();
@@ -395,15 +491,25 @@ public sealed class AbsentFormTests
     }
 
     [Fact]
-    public void PersonalEndpointsRequireDriverAndAllFormsEndpointRequiresAdmin()
+    public void PersonalEndpointsRequireDriverWhileManagementReadsAndDownloadsAllowManagers()
     {
         var driver = Assert.Single(typeof(AbsentController).GetCustomAttributes(true).OfType<AuthorizeAttribute>());
         Assert.Equal(RoleNames.Driver, driver.Roles);
+        Assert.Null(typeof(AbsentController).GetMethod("DownloadPdf"));
         var admin = Assert.Single(typeof(AdminAbsentController).GetCustomAttributes(true).OfType<AuthorizeAttribute>());
-        Assert.Equal(AuthorizationPolicies.Admin, admin.Policy);
+        Assert.Equal(AuthorizationPolicies.Manager, admin.Policy);
+        Assert.Equal(AuthorizationPolicies.Admin,
+            Assert.Single(typeof(AdminAbsentController).GetMethod(nameof(AdminAbsentController.Update))!
+                .GetCustomAttributes(true).OfType<AuthorizeAttribute>()).Policy);
+        Assert.Equal(AuthorizationPolicies.Admin,
+            Assert.Single(typeof(AdminAbsentController).GetMethod(nameof(AdminAbsentController.Delete))!
+                .GetCustomAttributes(true).OfType<AuthorizeAttribute>()).Policy);
     }
 
     private static T Read<T>(IActionResult result) => Assert.IsAssignableFrom<T>(Assert.IsType<OkObjectResult>(result).Value);
+
+    private static string Text(PdfAcroField.PdfAcroFieldCollection? fields, string name) =>
+        Assert.IsType<PdfTextField>(fields?[name]).Text;
 
     private sealed class TestClock : TimeProvider
     {
@@ -432,6 +538,8 @@ public sealed class AbsentFormTests
         public RosterShift InsideShift { get; }
         public RosterShift FutureShift { get; }
         public AbsentFormService Service { get; }
+        public StoreSettingsService StoreSettings { get; }
+        public AbsentPdfService PdfService { get; }
         public AbsentController Controller { get; }
         public AdminAbsentController AdminController { get; }
 
@@ -460,7 +568,24 @@ public sealed class AbsentFormTests
                 new UpperInvariantLookupNormalizer(), new IdentityErrorDescriber(), services,
                 NullLogger<UserManager<ApplicationUser>>.Instance);
             Service = new AbsentFormService(Db, Clock);
-            AdminController = new AdminAbsentController(Service, new AbsentFormUpdateRequestValidator());
+            StoreSettings = new StoreSettingsService(Db, Options.Create(new AbsencePdfOptions
+            {
+                StoreId = "STORE-101", StoreName = "Test Store"
+            }));
+            PdfService = new AbsentPdfService(StoreSettings);
+            AdminController = new AdminAbsentController(
+                Service, PdfService, Db, userManager, new AbsentFormUpdateRequestValidator())
+            {
+                ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
+                    {
+                        User = new ClaimsPrincipal(new ClaimsIdentity([
+                            new Claim(ClaimTypes.NameIdentifier, User.Id.ToString())
+                        ], "TestAuthentication"))
+                    }
+                }
+            };
             Controller = new AbsentController(Db, userManager, Service, new AbsentFormRequestValidator())
             {
                 ControllerContext = new ControllerContext

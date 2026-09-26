@@ -97,7 +97,7 @@ public sealed class ApplicationEventPublisher(
 
     public Task AbsentChangedAsync(Guid formId, Guid employeeId, CancellationToken ct = default) => PublishAsync(
         new ApplicationChangedEvent { Type = ApplicationEventTypes.AbsentChanged, EntityId = formId },
-        [ApplicationEventGroups.Role(RoleNames.Admin), ApplicationEventGroups.Employee(employeeId)], ct);
+        [ApplicationEventGroups.Management, ApplicationEventGroups.Employee(employeeId)], ct);
 
     public Task RosterSettingsChangedAsync(CancellationToken ct = default) => PublishAsync(
         new ApplicationChangedEvent { Type = ApplicationEventTypes.RosterSettingsChanged },

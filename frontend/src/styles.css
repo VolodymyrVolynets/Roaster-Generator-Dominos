@@ -436,7 +436,8 @@ h2 {
   gap: 8px;
 }
 
-.absent-record-actions button {
+.absent-record-actions button,
+.absent-record-actions .secondary-button {
   min-height: 34px;
   padding: 7px 12px;
 }
@@ -459,6 +460,15 @@ h2 {
   margin: 6px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.store-settings-form {
+  display: grid;
+  gap: 18px;
+}
+
+.store-settings-fields {
+  margin: 4px 0 0;
 }
 
 @media (max-width: 600px) {

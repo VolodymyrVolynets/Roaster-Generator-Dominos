@@ -69,6 +69,8 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ABSENCE_PDF_STORE_ID: ${{ secrets.ABSENCE_PDF_STORE_ID }}
+          ABSENCE_PDF_STORE_NAME: ${{ secrets.ABSENCE_PDF_STORE_NAME }}
         run: |
           set -euo pipefail
 
@@ -107,6 +109,8 @@ jobs:
           printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD" > "$env_file"
           printf 'ADMIN_USERNAME=%s\n' "$ADMIN_USERNAME" >> "$env_file"
           printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD" >> "$env_file"
+          printf 'ABSENCE_PDF_STORE_ID=%s\n' "$ABSENCE_PDF_STORE_ID" >> "$env_file"
+          printf 'ABSENCE_PDF_STORE_NAME=%s\n' "$ABSENCE_PDF_STORE_NAME" >> "$env_file"
           chmod 600 "$env_file"
 
           scp \

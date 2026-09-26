@@ -8,6 +8,7 @@ import { AreaSelector, WeekSelector } from './SelectionControls'
 import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
 import { useApplicationEvents } from './useApplicationEvents'
 import { AbsentPanel } from './AbsentPanel'
+import { StoreSettingsPanel } from './StoreSettingsPanel'
 import {
   compareEmployees,
   employeeHasRole,
@@ -1588,9 +1589,14 @@ function AdminConsole({
             <button type="button" className={activeTab === 'sick-leave' ? 'admin-tab active' : 'admin-tab'} onClick={() => switchTab('sick-leave')}>
               Sick leave
             </button>
-            {(authState.user.isAdmin || authState.user.roles?.includes('Driver')) && <button type="button" className={activeTab === 'absent' ? 'admin-tab active' : 'admin-tab'} onClick={() => switchTab('absent')}>
+            <button type="button" className={activeTab === 'absent' ? 'admin-tab active' : 'admin-tab'} onClick={() => switchTab('absent')}>
               Absent
-            </button>}
+            </button>
+            {authState.user.isAdmin && (
+              <button type="button" className={activeTab === 'store-settings' ? 'admin-tab active' : 'admin-tab'} onClick={() => switchTab('store-settings')}>
+                Store settings
+              </button>
+            )}
             <button
               type="button"
               className={activeTab === 'roster' ? 'admin-tab active' : 'admin-tab'}
@@ -1927,7 +1933,9 @@ function AdminConsole({
 
           {activeTab === 'sick-leave' && <AdminSickLeavePanel setErrorPopup={setErrorPopup} includeOwnRequest={!authState.user.isAdmin && Boolean(authState.user.employeeId)} realtimeKey={realtimeVersions.sickLeave} />}
 
-          {activeTab === 'absent' && (authState.user.isAdmin || authState.user.roles?.includes('Driver')) && <AbsentPanel admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
+          {activeTab === 'absent' && <AbsentPanel management admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
+
+          {activeTab === 'store-settings' && authState.user.isAdmin && <StoreSettingsPanel fetchJson={fetchJson} />}
 
           {activeTab === 'roster' && (
             <section className="availability-section admin-tools">

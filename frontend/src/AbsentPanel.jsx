@@ -34,7 +34,8 @@ function HourSelect({ id, value, onChange, required = true, disabled = false }) 
 
 function FormHistory({
   forms,
-  admin = false,
+  management = false,
+  canEdit = false,
   shifts = [],
   editingForm,
   busyId,
@@ -50,7 +51,10 @@ function FormHistory({
         <h4>{shiftLabel(form.shift)}</h4>
         <div className="absent-record-actions">
           <span className="role-badge">Submitted</span>
-          {admin && editingForm?.id !== form.id && <>
+          {management && <a className="secondary-button" href={`/api/admin/absent/${form.id}/pdf`} download>
+            Download PDF
+          </a>}
+          {canEdit && editingForm?.id !== form.id && <>
             <button type="button" className="secondary-button" onClick={() => onBeginEdit(form)} disabled={Boolean(busyId)}>Edit</button>
             <button type="button" className="danger-button" onClick={() => onDelete(form)} disabled={Boolean(busyId)}>Remove</button>
           </>}
@@ -116,7 +120,7 @@ function FormHistory({
   </div>
 }
 
-export function AbsentPanel({ admin = false, fetchJson, realtimeKey = 0 }) {
+export function AbsentPanel({ admin = false, management = admin, fetchJson, realtimeKey = 0 }) {
   const [data, setData] = useState(null)
   const [loadState, setLoadState] = useState({ status: 'loading', message: '' })
   const [form, setForm] = useState(emptyForm)
@@ -128,21 +132,21 @@ export function AbsentPanel({ admin = false, fetchJson, realtimeKey = 0 }) {
   const loadVersion = useRef(0)
 
   useEffect(() => {
-    if (admin) return undefined
+    if (management) return undefined
     // Refresh the server-provided date if the form stays open across Dublin midnight.
     const timer = window.setInterval(() => setToday(shopDateFormatter.format(new Date())), 30000)
     return () => window.clearInterval(timer)
-  }, [admin])
+  }, [management])
 
   useEffect(() => {
     let cancelled = false
     const version = ++loadVersion.current
     setLoadState({ status: 'loading', message: '' })
-    fetchJson(admin ? '/api/admin/absent' : '/api/absent')
+    fetchJson(management ? '/api/admin/absent' : '/api/absent')
       .then((payload) => {
         if (cancelled || version !== loadVersion.current) return
         setData(payload)
-        if (!admin) {
+        if (!management) {
           setForm((current) => current.notificationDate
             ? current
             : { ...current, notificationDate: payload.notificationDate })
@@ -154,7 +158,7 @@ export function AbsentPanel({ admin = false, fetchJson, realtimeKey = 0 }) {
         setLoadState({ status: 'error', message: error.message })
       })
     return () => { cancelled = true }
-  }, [admin, fetchJson, realtimeKey, refresh, today])
+  }, [fetchJson, management, realtimeKey, refresh, today])
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -267,24 +271,24 @@ export function AbsentPanel({ admin = false, fetchJson, realtimeKey = 0 }) {
     }
   }
 
-  const shifts = admin ? [] : data?.shifts || []
+  const shifts = management ? [] : data?.shifts || []
   const selectedShiftMissing = form.savedRosterShiftId && !shifts.some((shift) => shift.id === form.savedRosterShiftId)
   const manualShiftComplete = form.shiftDate && form.shiftStartTime && form.shiftFinishTime && form.shiftStartTime !== form.shiftFinishTime
   const shiftComplete = form.shiftEntryMode === 'manual' ? manualShiftComplete : form.savedRosterShiftId && !selectedShiftMissing
 
   return <section className="holiday-panel role-details absent-panel">
     <div className="section-heading">
-      <div><span className="eyebrow">Absent</span><h2>{admin ? 'Driver absent forms' : 'Submit an absent form'}</h2></div>
+      <div><span className="eyebrow">Absent</span><h2>{management ? 'Driver absent forms' : 'Submit an absent form'}</h2></div>
       <button type="button" className="secondary-button" onClick={() => setRefresh((current) => current + 1)} disabled={loadState.status === 'loading' || Boolean(action.busyId)}>Refresh</button>
     </div>
-    <p className="holiday-help">{admin
-      ? 'Forms are grouped by driver, with the newest notification dates first. No approval is required.'
+    <p className="holiday-help">{management
+      ? 'Forms are grouped by driver, with the newest notification dates first. Downloaded PDFs include the signed-in admin or manager name. No approval is required.'
       : 'Record a shift cancellation by choosing a saved roster shift or entering the shift yourself. Forms are saved immediately, and you can submit more than one.'}</p>
     {loadState.status === 'loading' && <p className="message info-message" role="status">Loading absent forms…</p>}
     {loadState.status === 'error' && <p className="message error-message" role="alert">{loadState.message}</p>}
     {admin && action.message && <p className={`save-message ${action.status}`} role={action.status === 'error' ? 'alert' : 'status'}>{action.message}</p>}
 
-    {!admin && data && <>
+    {!management && data && <>
       <form onSubmit={submit}>
         <fieldset className="absent-fields" disabled={action.status === 'saving'}>
           <div className="absent-field">
@@ -358,11 +362,12 @@ export function AbsentPanel({ admin = false, fetchJson, realtimeKey = 0 }) {
       </section>
     </>}
 
-    {admin && data && (data.length ? data.map((group) => <section className="holiday-history" key={group.employeeId}>
+    {management && data && (data.length ? data.map((group) => <section className="holiday-history" key={group.employeeId}>
       <div className="section-heading"><h3>{group.driverFullName}</h3><span>{group.forms.length} {group.forms.length === 1 ? 'form' : 'forms'}</span></div>
       <FormHistory
         forms={group.forms}
-        admin
+        management
+        canEdit={admin}
         shifts={group.shifts || []}
         editingForm={editingForm}
         busyId={action.busyId}

@@ -29,7 +29,7 @@ public sealed class AbsentFormService(AppDbContext db, TimeProvider timeProvider
         };
     }
 
-    public async Task<IReadOnlyList<DriverAbsentGroupResponse>> GetForAdminAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<DriverAbsentGroupResponse>> GetForManagementAsync(CancellationToken ct)
     {
         var forms = await OrderedForms().ToListAsync(ct);
         var employeeIds = forms.Select(form => form.EmployeeId).Distinct().ToList();
@@ -49,6 +49,12 @@ public sealed class AbsentFormService(AppDbContext db, TimeProvider timeProvider
             })
             .OrderBy(group => group.DriverFullName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(group => group.EmployeeId).ToList();
+    }
+
+    public async Task<AbsentFormResponse?> GetForManagementAsync(Guid formId, CancellationToken ct)
+    {
+        var form = await OrderedForms().SingleOrDefaultAsync(item => item.Id == formId, ct);
+        return form is null ? null : ToResponse(form);
     }
 
     public async Task<AbsentFormResponse?> SubmitAsync(Employee employee, AbsentFormCreateRequest request,

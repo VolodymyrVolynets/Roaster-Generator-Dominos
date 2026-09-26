@@ -38,6 +38,8 @@ public sealed class AppDbContext(
 
     public DbSet<RosterGenerationSettings> RosterGenerationSettings => Set<RosterGenerationSettings>();
 
+    public DbSet<StoreSettings> StoreSettings => Set<StoreSettings>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

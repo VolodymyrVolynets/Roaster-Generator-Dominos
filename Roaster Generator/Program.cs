@@ -13,6 +13,7 @@ using Roaster_Generator.Contracts.Employees;
 using Roaster_Generator.Contracts.Holidays;
 using Roaster_Generator.Contracts.Roster;
 using Roaster_Generator.Contracts.Schedules;
+using Roaster_Generator.Contracts.Settings;
 using Roaster_Generator.Contracts.SickLeave;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
@@ -46,6 +47,8 @@ builder.Services.AddOptions<AuthOptions>()
 builder.Services.AddOptions<ShopHoursOptions>()
     .Bind(builder.Configuration.GetSection(ShopHoursOptions.SectionName))
     .ValidateOnStart();
+builder.Services.AddOptions<AbsencePdfOptions>()
+    .Bind(builder.Configuration.GetSection(AbsencePdfOptions.SectionName));
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
         options.User.RequireUniqueEmail = false;
@@ -89,6 +92,9 @@ builder.Services.AddScoped<IValidator<SickLeaveCreateRequest>, SickLeaveRequestV
 builder.Services.AddScoped<IValidator<AbsentFormCreateRequest>, AbsentFormRequestValidator>();
 builder.Services.AddScoped<IValidator<AbsentFormUpdateRequest>, AbsentFormUpdateRequestValidator>();
 builder.Services.AddScoped<AbsentFormService>();
+builder.Services.AddScoped<AbsentPdfService>();
+builder.Services.AddScoped<StoreSettingsService>();
+builder.Services.AddScoped<IValidator<StoreSettingsRequest>, StoreSettingsRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandImportRequest>, DemandImportRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandPlanUpdateRequest>, DemandPlanUpdateRequestValidator>();
 builder.Services.AddScoped<DemandService>();
@@ -121,6 +127,8 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
+    await scope.ServiceProvider.GetRequiredService<StoreSettingsService>()
+        .EnsureInitializedAsync(CancellationToken.None);
     await IdentitySeeder.SeedAsync(scope.ServiceProvider);
 }
 
