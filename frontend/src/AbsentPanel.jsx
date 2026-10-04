@@ -11,6 +11,7 @@ const emptyForm = {
   notificationMethod: '',
   cancellationReason: '',
 }
+const emptyFilters = { shiftStartDate: '', shiftFinishDate: '', employeeName: '' }
 const wholeHours = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`)
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 const shopDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin', dateStyle: 'short' })
@@ -126,6 +127,8 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
   const [form, setForm] = useState(emptyForm)
   const [action, setAction] = useState({ status: 'idle', message: '' })
   const [editingForm, setEditingForm] = useState(null)
+  const [filters, setFilters] = useState(emptyFilters)
+  const [appliedFilters, setAppliedFilters] = useState(emptyFilters)
   const [refresh, setRefresh] = useState(0)
   const [today, setToday] = useState(() => shopDateFormatter.format(new Date()))
   const submitting = useRef(false)
@@ -142,7 +145,14 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
     let cancelled = false
     const version = ++loadVersion.current
     setLoadState({ status: 'loading', message: '' })
-    fetchJson(management ? '/api/admin/absent' : '/api/absent')
+    const query = new URLSearchParams()
+    if (management) {
+      if (appliedFilters.shiftStartDate) query.set('shiftStartDate', appliedFilters.shiftStartDate)
+      if (appliedFilters.shiftFinishDate) query.set('shiftFinishDate', appliedFilters.shiftFinishDate)
+      if (appliedFilters.employeeName.trim()) query.set('employeeName', appliedFilters.employeeName.trim())
+    }
+    const endpoint = management ? '/api/admin/absent' : '/api/absent'
+    fetchJson(query.size ? `${endpoint}?${query}` : endpoint)
       .then((payload) => {
         if (cancelled || version !== loadVersion.current) return
         setData(payload)
@@ -158,11 +168,29 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
         setLoadState({ status: 'error', message: error.message })
       })
     return () => { cancelled = true }
-  }, [fetchJson, management, realtimeKey, refresh, today])
+  }, [appliedFilters, fetchJson, management, realtimeKey, refresh, today])
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
     setAction({ status: 'idle', message: '' })
+  }
+
+  function updateFilter(field, value) {
+    setFilters((current) => ({ ...current, [field]: value }))
+  }
+
+  function applyFilters(event) {
+    event.preventDefault()
+    setAppliedFilters({
+      shiftStartDate: filters.shiftStartDate,
+      shiftFinishDate: filters.shiftFinishDate,
+      employeeName: filters.employeeName.trim(),
+    })
+  }
+
+  function clearFilters() {
+    setFilters(emptyFilters)
+    setAppliedFilters(emptyFilters)
   }
 
   async function submit(event) {
@@ -275,6 +303,8 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
   const selectedShiftMissing = form.savedRosterShiftId && !shifts.some((shift) => shift.id === form.savedRosterShiftId)
   const manualShiftComplete = form.shiftDate && form.shiftStartTime && form.shiftFinishTime && form.shiftStartTime !== form.shiftFinishTime
   const shiftComplete = form.shiftEntryMode === 'manual' ? manualShiftComplete : form.savedRosterShiftId && !selectedShiftMissing
+  const hasActiveFilters = Object.values(appliedFilters).some((value) => value)
+  const visibleFormCount = data?.reduce((count, group) => count + group.forms.length, 0) ?? 0
 
   return <section className="holiday-panel role-details absent-panel">
     <div className="section-heading">
@@ -287,6 +317,28 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
     {loadState.status === 'loading' && <p className="message info-message" role="status">Loading absent forms…</p>}
     {loadState.status === 'error' && <p className="message error-message" role="alert">{loadState.message}</p>}
     {admin && action.message && <p className={`save-message ${action.status}`} role={action.status === 'error' ? 'alert' : 'status'}>{action.message}</p>}
+
+    {management && <form className="absent-filter-form" onSubmit={applyFilters}>
+      <div className="absent-filter-fields">
+        <div className="absent-filter-field">
+          <label htmlFor="absent-filter-start-date">Shift start date</label>
+          <input id="absent-filter-start-date" type="date" value={filters.shiftStartDate} max={filters.shiftFinishDate || undefined} onChange={(event) => updateFilter('shiftStartDate', event.target.value)} />
+        </div>
+        <div className="absent-filter-field">
+          <label htmlFor="absent-filter-finish-date">Shift finish date</label>
+          <input id="absent-filter-finish-date" type="date" value={filters.shiftFinishDate} min={filters.shiftStartDate || undefined} onChange={(event) => updateFilter('shiftFinishDate', event.target.value)} />
+        </div>
+        <div className="absent-filter-field absent-filter-name">
+          <label htmlFor="absent-filter-employee">Employee name</label>
+          <input id="absent-filter-employee" value={filters.employeeName} onChange={(event) => updateFilter('employeeName', event.target.value)} placeholder="Search by name" maxLength={201} />
+        </div>
+      </div>
+      <div className="absent-filter-actions">
+        <button type="submit" disabled={loadState.status === 'loading'}>Apply filters</button>
+        <button type="button" className="secondary-button" onClick={clearFilters} disabled={!hasActiveFilters && !Object.values(filters).some((value) => value)}>Clear</button>
+        {hasActiveFilters && data && <span className="absent-filter-count" role="status">{visibleFormCount} {visibleFormCount === 1 ? 'form' : 'forms'} shown</span>}
+      </div>
+    </form>}
 
     {!management && data && <>
       <form onSubmit={submit}>
@@ -377,6 +429,6 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
         onSaveEdit={saveEdit}
         onDelete={removeForm}
       />
-    </section>) : <p className="message info-message">No absent forms have been submitted yet.</p>)}
+    </section>) : <p className="message info-message">{hasActiveFilters ? 'No absent forms match these filters.' : 'No absent forms have been submitted yet.'}</p>)}
   </section>
 }

@@ -184,6 +184,56 @@ public sealed class AbsentFormTests
     }
 
     [Fact]
+    public async Task ManagementFiltersUseShiftCalendarDatesAndEmployeeName()
+    {
+        using var fixture = new Fixture();
+        var currentWeek = await fixture.Submit();
+        var futureWeek = Read<AbsentFormResponse>(await fixture.Controller.Create(
+            fixture.Request(fixture.FutureShift.Id), default));
+        var otherDriverId = (await fixture.Service.SubmitAsync(
+            fixture.OtherEmployee, fixture.Request(fixture.OtherShift.Id), default))!.Id;
+
+        var byStartDate = Read<IReadOnlyList<DriverAbsentGroupResponse>>(
+            await fixture.AdminController.Get(new AbsentManagementFilter
+            {
+                ShiftStartDate = fixture.FutureShift.Date
+            }, default));
+        Assert.Single(byStartDate);
+        Assert.Equal(futureWeek.Id, Assert.Single(byStartDate[0].Forms).Id);
+
+        var byFinishDate = Read<IReadOnlyList<DriverAbsentGroupResponse>>(
+            await fixture.AdminController.Get(new AbsentManagementFilter
+            {
+                ShiftFinishDate = fixture.OwnShift.Date.AddDays(1)
+            }, default));
+        Assert.Equal(2, byFinishDate.Sum(group => group.Forms.Count));
+        Assert.Contains(byFinishDate, group => group.DriverFullName == "Alex Driver");
+        Assert.Contains(byFinishDate, group => group.Forms.Any(form => form.Id == currentWeek.Id));
+
+        var byName = Read<IReadOnlyList<DriverAbsentGroupResponse>>(
+            await fixture.AdminController.Get(new AbsentManagementFilter
+            {
+                EmployeeName = "alex"
+            }, default));
+        var matchingGroup = Assert.Single(byName);
+        var matchingForm = matchingGroup.Forms.Single();
+        Assert.Equal(otherDriverId, matchingForm.Id);
+    }
+
+    [Fact]
+    public async Task ManagementFiltersRejectFinishDateBeforeStartDate()
+    {
+        using var fixture = new Fixture();
+        var result = await fixture.AdminController.Get(new AbsentManagementFilter
+        {
+            ShiftStartDate = new DateOnly(2026, 9, 23),
+            ShiftFinishDate = new DateOnly(2026, 9, 22)
+        }, default);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
     public async Task AdminCanEditFormAndChooseAnotherSavedShiftForTheSameDriver()
     {
         using var fixture = new Fixture();

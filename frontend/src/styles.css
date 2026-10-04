@@ -399,6 +399,58 @@ h2 {
   font-size: 0.85rem;
 }
 
+.absent-filter-form {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 4px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.absent-filter-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.absent-filter-field {
+  display: grid;
+  gap: 7px;
+}
+
+.absent-filter-field label {
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.absent-filter-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #475569;
+  border-radius: 9px;
+  background: #0f172a;
+  color: #f8fafc;
+  font: inherit;
+  color-scheme: dark;
+}
+
+.absent-filter-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.absent-filter-count {
+  color: #94a3b8;
+  font-size: 0.86rem;
+}
+
 .absent-wide {
   grid-column: 1 / -1;
 }
@@ -473,7 +525,8 @@ h2 {
 
 @media (max-width: 600px) {
   .absent-fields,
-  .absent-record-details {
+  .absent-record-details,
+  .absent-filter-fields {
     grid-template-columns: minmax(0, 1fr);
   }
 

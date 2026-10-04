@@ -60,6 +60,15 @@ public sealed class DriverAbsentOverviewResponse
     public IReadOnlyList<AbsentFormResponse> Forms { get; init; } = [];
 }
 
+public sealed class AbsentManagementFilter
+{
+    public DateOnly? ShiftStartDate { get; set; }
+
+    public DateOnly? ShiftFinishDate { get; set; }
+
+    public string? EmployeeName { get; set; }
+}
+
 public sealed class DriverAbsentGroupResponse
 {
     public Guid EmployeeId { get; init; }

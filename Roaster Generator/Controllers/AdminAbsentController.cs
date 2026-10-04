@@ -23,10 +23,22 @@ public sealed class AdminAbsentController(
     ApplicationEventPublisher? events = null) : ApiControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> Get(CancellationToken ct)
+    public async Task<IActionResult> Get(
+        [FromQuery] AbsentManagementFilter? filter = null,
+        CancellationToken ct = default)
     {
         if (await GetCurrentManagementNameAsync(ct) is null) return Forbid();
-        return Ok(await forms.GetForManagementAsync(ct));
+        filter ??= new AbsentManagementFilter();
+        if (filter.ShiftStartDate is DateOnly start &&
+            filter.ShiftFinishDate is DateOnly finish && finish < start)
+        {
+            return ValidationError(new Dictionary<string, string[]>
+            {
+                [nameof(AbsentManagementFilter.ShiftFinishDate)] = ["Finish date must be on or after the start date."]
+            }, "The absent form filters are invalid.");
+        }
+
+        return Ok(await forms.GetForManagementAsync(filter, ct));
     }
 
     [HttpGet("{formId:guid}/pdf")]

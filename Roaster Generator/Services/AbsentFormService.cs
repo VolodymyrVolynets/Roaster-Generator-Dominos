@@ -29,9 +29,19 @@ public sealed class AbsentFormService(AppDbContext db, TimeProvider timeProvider
         };
     }
 
-    public async Task<IReadOnlyList<DriverAbsentGroupResponse>> GetForManagementAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<DriverAbsentGroupResponse>> GetForManagementAsync(
+        AbsentManagementFilter filter, CancellationToken ct)
     {
         var forms = await OrderedForms().ToListAsync(ct);
+        var employeeName = filter.EmployeeName?.Trim();
+        forms = forms
+            .Where(form => string.IsNullOrWhiteSpace(employeeName) ||
+                           form.DriverFullName.Contains(employeeName, StringComparison.OrdinalIgnoreCase))
+            .Where(form => !filter.ShiftStartDate.HasValue ||
+                           GetShiftStartDate(form) >= filter.ShiftStartDate.Value)
+            .Where(form => !filter.ShiftFinishDate.HasValue ||
+                           GetShiftFinishDate(form) <= filter.ShiftFinishDate.Value)
+            .ToList();
         var employeeIds = forms.Select(form => form.EmployeeId).Distinct().ToList();
         var shifts = await db.RosterShifts.AsNoTracking()
             .Where(shift => employeeIds.Contains(shift.EmployeeId) &&
@@ -141,6 +151,13 @@ public sealed class AbsentFormService(AppDbContext db, TimeProvider timeProvider
 
     private static DateOnly GetShopDate(DateTimeOffset now) =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, ShopTimeZone).DateTime);
+
+    private static DateOnly GetShiftStartDate(AbsentForm form) =>
+        form.ShiftDate.AddDays(form.ShiftStartTime.Hour < 6 ? 1 : 0);
+
+    private static DateOnly GetShiftFinishDate(AbsentForm form) =>
+        form.ShiftDate.AddDays((form.ShiftStartTime.Hour < 6 ? 1 : 0) +
+                               (form.ShiftFinishTime <= form.ShiftStartTime ? 1 : 0));
 
     private static string FullName(Employee employee) => $"{employee.FirstName} {employee.LastName}".Trim();
 
