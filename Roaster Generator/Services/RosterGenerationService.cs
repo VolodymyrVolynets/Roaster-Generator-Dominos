@@ -171,11 +171,20 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
 
                 IReadOnlyList<string> feedback = [];
                 IReadOnlyList<RosterSolverShift>? proposed = null;
+                string? aiResponseFailure = null;
                 for (var attempt = 1; attempt <= 2; attempt++)
                 {
                     Publish(job, "running", "ai-planning", attempt == 1 ? 12 : 48,
                         $"Requesting an AI roster proposal from {aiGenerator.Model} (attempt {attempt} of 2). The server supplies current demand, approximate target hours, availability, fairness history and constraints through read-only functions.");
-                    proposed = await aiGenerator.ProposeAsync(loaded, feedback, ct);
+                    try
+                    {
+                        proposed = await aiGenerator.ProposeAsync(loaded, feedback, ct);
+                    }
+                    catch (AiRosterResponseException exception)
+                    {
+                        aiResponseFailure = exception.Message;
+                        break;
+                    }
                     feedback = RosterSolver.ValidatePartialDriverRoster(loaded.Input, proposed);
                     if (feedback.Count == 0) break;
                     if (attempt == 1)
@@ -183,10 +192,13 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                             "The AI draft did not satisfy all hard scheduling rules. Asking it to correct the reported issues before considering the deterministic fallback.", "warning", feedback);
                 }
 
-                if (proposed is null || feedback.Count > 0)
+                if (aiResponseFailure is not null || proposed is null || feedback.Count > 0)
                 {
                     Publish(job, "running", "solver-fallback", 50,
-                        "The AI proposal remained invalid after correction. Falling back to the deterministic scheduler; no AI draft will be saved.", "warning", feedback);
+                        aiResponseFailure is not null
+                            ? $"{aiResponseFailure} Falling back to the deterministic scheduler; no AI draft will be used."
+                            : "The AI proposal remained invalid after correction. Falling back to the deterministic scheduler; no AI draft will be saved.",
+                        "warning", aiResponseFailure is not null ? [aiResponseFailure] : feedback);
                     result = await Task.Run(() => new RosterSolver().Solve(loaded.Input,
                         p => Publish(job, "running", p.Stage, Math.Clamp(p.Progress, 51, 89), p.Message), ct), ct);
                 }

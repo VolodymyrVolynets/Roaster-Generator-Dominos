@@ -8,6 +8,8 @@ using Roaster_Generator.Entities;
 
 namespace Roaster_Generator.Services;
 
+public sealed class AiRosterResponseException(string message) : Exception(message);
+
 /// <summary>
 /// Uses OpenAI function calling to retrieve the generation inputs and propose a driver roster.
 /// Every proposed roster is still checked by the deterministic roster validator before persistence.
@@ -81,11 +83,22 @@ public sealed class AiRosterGenerator(HttpClient httpClient, IConfiguration conf
         var proposalCall = GetOutput(proposalResponse.RootElement).FirstOrDefault(item =>
             IsFunctionCall(item) && item.GetProperty("name").GetString() == "propose_roster");
         if (proposalCall.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
-            throw new RosterInputException("The AI did not return a structured roster proposal. No roster was saved.");
+            throw new AiRosterResponseException($"OpenAI response {ResponseId(proposalResponse.RootElement)} completed without a structured roster proposal.");
 
-        var proposal = JsonSerializer.Deserialize<AiRosterProposal>(
-            proposalCall.GetProperty("arguments").GetString() ?? "{}", WebJson)
-            ?? throw new RosterInputException("The AI returned an unreadable roster proposal. No roster was saved.");
+        EnsureFunctionCallCompleted(proposalCall, proposalResponse.RootElement);
+        if (!proposalCall.TryGetProperty("arguments", out var arguments) || arguments.ValueKind != JsonValueKind.String)
+            throw new AiRosterResponseException($"OpenAI response {ResponseId(proposalResponse.RootElement)} did not contain complete roster arguments.");
+
+        AiRosterProposal proposal;
+        try
+        {
+            proposal = JsonSerializer.Deserialize<AiRosterProposal>(arguments.GetString() ?? "{}", WebJson)
+                ?? throw new AiRosterResponseException($"OpenAI response {ResponseId(proposalResponse.RootElement)} returned an empty roster proposal.");
+        }
+        catch (JsonException)
+        {
+            throw new AiRosterResponseException($"OpenAI response {ResponseId(proposalResponse.RootElement)} contained incomplete or malformed roster JSON.");
+        }
 
         var shifts = new List<RosterSolverShift>(proposal.Shifts.Count);
         foreach (var shift in proposal.Shifts)
@@ -128,13 +141,46 @@ public sealed class AiRosterGenerator(HttpClient httpClient, IConfiguration conf
         var body = await response.Content.ReadAsStringAsync(ct);
         try
         {
-            return JsonDocument.Parse(body);
+            var document = JsonDocument.Parse(body);
+            try
+            {
+                EnsureResponseCompleted(document.RootElement);
+                return document;
+            }
+            catch
+            {
+                document.Dispose();
+                throw;
+            }
         }
         catch (JsonException)
         {
-            throw new RosterInputException("OpenAI returned an unreadable response. No roster was saved.");
+            throw new AiRosterResponseException("OpenAI returned an incomplete or malformed response body.");
         }
     }
+
+    private static void EnsureResponseCompleted(JsonElement response)
+    {
+        var status = response.TryGetProperty("status", out var statusElement) ? statusElement.GetString() : null;
+        if (status == "completed") return;
+
+        var reason = response.TryGetProperty("incomplete_details", out var details) && details.ValueKind == JsonValueKind.Object &&
+                     details.TryGetProperty("reason", out var reasonElement)
+            ? reasonElement.GetString()
+            : null;
+        throw new AiRosterResponseException(
+            $"OpenAI response {ResponseId(response)} did not complete (status: {status ?? "missing"}, reason: {reason ?? "unspecified"}).");
+    }
+
+    private static void EnsureFunctionCallCompleted(JsonElement functionCall, JsonElement response)
+    {
+        if (!functionCall.TryGetProperty("status", out var statusElement) || statusElement.GetString() == "completed") return;
+        throw new AiRosterResponseException(
+            $"OpenAI response {ResponseId(response)} returned a roster function call that did not complete (status: {statusElement.GetString() ?? "missing"}).");
+    }
+
+    private static string ResponseId(JsonElement response) =>
+        response.TryGetProperty("id", out var id) ? id.GetString() ?? "unknown" : "unknown";
 
     private static object[] DataTools() =>
     [
