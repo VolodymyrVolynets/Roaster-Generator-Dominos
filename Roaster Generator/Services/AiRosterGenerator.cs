@@ -17,6 +17,7 @@ public sealed class AiRosterResponseException(string message) : Exception(messag
 public sealed class AiRosterGenerator(HttpClient httpClient, IConfiguration configuration)
 {
     private const string DefaultModel = "gpt-6-astra";
+    private static readonly TimeSpan BackgroundPollInterval = TimeSpan.FromSeconds(2);
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
     private static readonly string[] RequiredDataTools =
     [
@@ -130,32 +131,80 @@ public sealed class AiRosterGenerator(HttpClient httpClient, IConfiguration conf
             tools,
             tool_choice = toolChoice,
             parallel_tool_calls = true,
+            background = true,
             store = false,
             max_output_tokens = 9000
         }), Encoding.UTF8, "application/json");
 
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        JsonDocument? current = null;
+        string? responseId = null;
+        try
+        {
+            using (var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct))
+            {
+                current = await ReadResponseDocumentAsync(response, ct);
+            }
+
+            responseId = ResponseId(current.RootElement);
+            while (IsBackgroundResponseInProgress(current.RootElement))
+            {
+                await Task.Delay(BackgroundPollInterval, ct);
+                using var pollRequest = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"https://api.openai.com/v1/responses/{Uri.EscapeDataString(responseId)}");
+                pollRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                using var pollResponse = await httpClient.SendAsync(pollRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                var next = await ReadResponseDocumentAsync(pollResponse, ct);
+                current.Dispose();
+                current = next;
+            }
+
+            EnsureResponseCompleted(current.RootElement);
+            var completed = current;
+            current = null;
+            return completed;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            if (responseId is not null)
+                await TryCancelBackgroundResponseAsync(responseId, apiKey);
+            throw;
+        }
+        finally { current?.Dispose(); }
+    }
+
+    private async Task<JsonDocument> ReadResponseDocumentAsync(HttpResponseMessage response, CancellationToken ct)
+    {
         if (!response.IsSuccessStatusCode)
             throw new RosterInputException($"OpenAI roster generation failed with HTTP {(int)response.StatusCode}. Check the server API-key configuration and model access; no roster was saved.");
 
         var body = await response.Content.ReadAsStringAsync(ct);
-        try
-        {
-            var document = JsonDocument.Parse(body);
-            try
-            {
-                EnsureResponseCompleted(document.RootElement);
-                return document;
-            }
-            catch
-            {
-                document.Dispose();
-                throw;
-            }
-        }
+        try { return JsonDocument.Parse(body); }
         catch (JsonException)
         {
             throw new AiRosterResponseException("OpenAI returned an incomplete or malformed response body.");
+        }
+    }
+
+    private static bool IsBackgroundResponseInProgress(JsonElement response) =>
+        response.TryGetProperty("status", out var status) &&
+        status.GetString() is "queued" or "in_progress";
+
+    private async Task TryCancelBackgroundResponseAsync(string responseId, string apiKey)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"https://api.openai.com/v1/responses/{Uri.EscapeDataString(responseId)}/cancel");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        try
+        {
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
+        {
+            // Cancellation is best-effort; preserve the original local cancellation either way.
         }
     }
 

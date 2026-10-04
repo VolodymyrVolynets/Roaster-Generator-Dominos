@@ -185,6 +185,15 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                         aiResponseFailure = exception.Message;
                         break;
                     }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        // HttpClient uses OperationCanceledException/TaskCanceledException for its
+                        // own timeout too. Only treat that as an AI failure when the roster job
+                        // itself was not cancelled, so an explicit manager cancellation still
+                        // reaches the outer cancellation handler and never starts a fallback.
+                        aiResponseFailure = "The OpenAI roster request timed out before completing.";
+                        break;
+                    }
                     feedback = RosterSolver.ValidatePartialDriverRoster(loaded.Input, proposed);
                     if (feedback.Count == 0) break;
                     if (attempt == 1)
