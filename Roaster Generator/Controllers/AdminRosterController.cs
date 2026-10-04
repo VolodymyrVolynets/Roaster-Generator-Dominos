@@ -20,8 +20,13 @@ public sealed class AdminRosterController(
     RosterPlanService rosterPlans,
     RosterLabourService rosterLabour,
     RosterSettingsService settings,
+    AiRosterGenerator? aiRosterGenerator = null,
     ApplicationEventPublisher? events = null) : ApiControllerBase
 {
+    [HttpGet("ai-status")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
+    public IActionResult GetAiStatus() => Ok(new { configured = aiRosterGenerator?.IsConfigured ?? false, model = aiRosterGenerator?.Model });
+
     [HttpGet("labour")]
     public async Task<IActionResult> GetLabour([FromQuery] RosterLabourRequest request, CancellationToken ct)
     {
@@ -146,6 +151,30 @@ public sealed class AdminRosterController(
         try
         {
             return Accepted(rosterTimer.Start(request.WeekOffset, rosterKind));
+        }
+        catch (RosterTimerAlreadyRunningException exception)
+        {
+            return Conflict(new { message = exception.Message });
+        }
+    }
+
+    [HttpPost("generate/ai")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
+    public async Task<IActionResult> StartAiGeneration(
+        [FromBody] WeekSelectionRequest request,
+        CancellationToken cancellationToken,
+        [FromQuery] string rosterKind = RosterKinds.Drivers)
+    {
+        if (!RosterKinds.IsGenerationEnabled(rosterKind)) return BadRequest(new { message = RosterKinds.GenerationDisabledMessage });
+        var validationResult = await weekValidator.ValidateAsync(request, cancellationToken);
+        if (!validationResult.IsValid)
+            return ValidationError(ToErrors(validationResult), "The selected week is invalid.");
+        if (aiRosterGenerator?.IsConfigured != true)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "AI roster generation is unavailable because OPENAI_API_KEY is not configured on the server." });
+
+        try
+        {
+            return Accepted(rosterTimer.Start(request.WeekOffset, rosterKind, useAi: true));
         }
         catch (RosterTimerAlreadyRunningException exception)
         {

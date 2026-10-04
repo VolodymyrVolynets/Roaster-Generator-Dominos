@@ -40,23 +40,25 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             await hub.Clients.Client(connectionId).SendAsync("rosterGenerationProgress", log);
     }
 
-    public RosterTimerStartResponse Start(int weekOffset, string rosterKind = RosterKinds.Drivers)
+    public RosterTimerStartResponse Start(int weekOffset, string rosterKind = RosterKinds.Drivers, bool useAi = false)
     {
         RosterKinds.EnsureGenerationEnabled(rosterKind);
         ActiveJob job;
         lock (gate)
         {
             if (active is not null) throw new RosterTimerAlreadyRunningException();
-            job = new ActiveJob(Guid.NewGuid(), weekOffset, WeeklyScheduleService.GetWeekMonday(weekOffset), rosterKind);
+            job = new ActiveJob(Guid.NewGuid(), weekOffset, WeeklyScheduleService.GetWeekMonday(weekOffset), rosterKind, useAi);
             active = job;
             latestJobs[(job.WeekStart, job.RosterKind)] = job;
             if (latestJobs.Count > 32)
                 latestJobs.Remove(latestJobs.Where(p => p.Value != job).MinBy(p => p.Value.StartedAt).Key);
-            Publish(job, "started", "queued", 0, $"{rosterKind} roster generation queued. Exact coverage will be attempted first; if it is impossible, the best legal under-covered driver roster may be saved. No hour will be overstaffed.");
+            Publish(job, "started", "queued", 0, useAi
+                ? $"AI-assisted {rosterKind} roster generation queued. Every proposal is validated; demand will not be overstaffed, and any shortage must be confirmed by the scheduling solver."
+                : $"{rosterKind} roster generation queued. Exact coverage will be attempted first; if it is impossible, the best legal under-covered driver roster may be saved. No hour will be overstaffed.");
             jobs.Writer.TryWrite(job);
         }
         return new RosterTimerStartResponse { JobId = job.JobId, WeekOffset = weekOffset, WeekStart = job.WeekStart, RosterKind = job.RosterKind,
-            Status = "started", Stage = "queued", Progress = 0, Message = "Roster generation queued.", TimestampUtc = job.StartedAt, Sequence = 1 };
+            Status = "started", Stage = "queued", Progress = 0, Message = useAi ? "AI-assisted roster generation queued." : "Roster generation queued.", TimestampUtc = job.StartedAt, Sequence = 1 };
     }
 
     public bool Cancel(int weekOffset, Guid? jobId = null, string rosterKind = RosterKinds.Drivers)
@@ -115,6 +117,7 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var inputs = scope.ServiceProvider.GetRequiredService<RosterInputService>();
             var plans = scope.ServiceProvider.GetRequiredService<RosterPlanService>();
+            var aiGenerator = job.UseAi ? scope.ServiceProvider.GetRequiredService<AiRosterGenerator>() : null;
             // Transaction advisory lock also prevents concurrent roster writes across API replicas.
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
             var ownsLock = await db.Database.SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock(724863910) AS \"Value\"").SingleAsync(ct);
@@ -155,8 +158,59 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
                 }
             }
             stage = "solving";
-            var result = await Task.Run(() => new RosterSolver().Solve(loaded.Input,
-                p => Publish(job, "running", p.Stage, Math.Clamp(p.Progress, 9, 89), p.Message), ct), ct);
+            RosterSolverResult result;
+            if (aiGenerator is null)
+            {
+                result = await Task.Run(() => new RosterSolver().Solve(loaded.Input,
+                    p => Publish(job, "running", p.Stage, Math.Clamp(p.Progress, 9, 89), p.Message), ct), ct);
+            }
+            else
+            {
+                if (!aiGenerator.IsConfigured)
+                    throw new RosterInputException("AI roster generation is unavailable because OPENAI_API_KEY is not configured on the server.");
+
+                IReadOnlyList<string> feedback = [];
+                IReadOnlyList<RosterSolverShift>? proposed = null;
+                for (var attempt = 1; attempt <= 2; attempt++)
+                {
+                    Publish(job, "running", "ai-planning", attempt == 1 ? 12 : 48,
+                        $"Requesting an AI roster proposal from {aiGenerator.Model} (attempt {attempt} of 2). The server supplies current demand, approximate target hours, availability, fairness history and constraints through read-only functions.");
+                    proposed = await aiGenerator.ProposeAsync(loaded, feedback, ct);
+                    feedback = RosterSolver.ValidatePartialDriverRoster(loaded.Input, proposed);
+                    if (feedback.Count == 0) break;
+                    if (attempt == 1)
+                        Publish(job, "running", "ai-validation", 42,
+                            "The AI draft did not satisfy all hard scheduling rules. Asking it to correct the reported issues before considering the deterministic fallback.", "warning", feedback);
+                }
+
+                if (proposed is null || feedback.Count > 0)
+                {
+                    Publish(job, "running", "solver-fallback", 50,
+                        "The AI proposal remained invalid after correction. Falling back to the deterministic scheduler; no AI draft will be saved.", "warning", feedback);
+                    result = await Task.Run(() => new RosterSolver().Solve(loaded.Input,
+                        p => Publish(job, "running", p.Stage, Math.Clamp(p.Progress, 51, 89), p.Message), ct), ct);
+                }
+                else if (HasUncoveredDemand(loaded.Input, proposed))
+                {
+                    Publish(job, "running", "ai-coverage-check", 50,
+                        "The AI proposal leaves demand uncovered. Checking whether the existing solver can prove those shortages unavoidable; an avoidable shortage will not be saved.");
+                    result = await Task.Run(() => new RosterSolver().Solve(loaded.Input,
+                        p => Publish(job, "running", p.Stage, Math.Clamp(p.Progress, 51, 89), p.Message), ct), ct);
+                }
+                else
+                {
+                    var demandHours = loaded.Input.Demand.Sum(slot => slot.RequiredDrivers);
+                    result = new RosterSolverResult
+                    {
+                        Status = "feasible",
+                        Message = "AI proposal passed all hard roster checks and exactly covers hourly demand.",
+                        Shifts = proposed,
+                        TotalDemandHours = demandHours,
+                        TotalScheduledHours = proposed.Sum(shift => shift.DurationHours),
+                        Diagnostics = []
+                    };
+                }
+            }
             ct.ThrowIfCancellationRequested();
             if (!result.Success)
             {
@@ -212,6 +266,10 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
         }
     }
 
+    private static bool HasUncoveredDemand(RosterSolverInput input, IReadOnlyList<RosterSolverShift> shifts) =>
+        input.Demand.Any(slot => shifts.Count(shift => shift.Date == slot.Date &&
+            shift.StartHour <= slot.Hour && slot.Hour < shift.FinishHour) < slot.RequiredDrivers);
+
     private void Publish(ActiveJob job, string status, string stage, int progress, string message,
         string severity = "info", IReadOnlyList<string>? diagnostics = null, Guid? rosterPlanId = null, int? totalScheduledHours = null)
     {
@@ -229,9 +287,10 @@ public sealed class RosterTimerService(IServiceScopeFactory scopes, IHubContext<
         }
     }
 
-    private sealed class ActiveJob(Guid jobId, int weekOffset, DateOnly weekStart, string rosterKind)
+    private sealed class ActiveJob(Guid jobId, int weekOffset, DateOnly weekStart, string rosterKind, bool useAi)
     {
         public string RosterKind { get; } = rosterKind;
+        public bool UseAi { get; } = useAi;
         public Guid JobId { get; } = jobId;
         public int WeekOffset { get; } = weekOffset;
         public DateOnly WeekStart { get; } = weekStart;

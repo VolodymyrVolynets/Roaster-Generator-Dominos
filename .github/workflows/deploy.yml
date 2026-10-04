@@ -71,6 +71,8 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           ABSENCE_PDF_STORE_ID: ${{ secrets.ABSENCE_PDF_STORE_ID }}
           ABSENCE_PDF_STORE_NAME: ${{ secrets.ABSENCE_PDF_STORE_NAME }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         run: |
           set -euo pipefail
 
@@ -111,6 +113,8 @@ jobs:
           printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD" >> "$env_file"
           printf 'ABSENCE_PDF_STORE_ID=%s\n' "$ABSENCE_PDF_STORE_ID" >> "$env_file"
           printf 'ABSENCE_PDF_STORE_NAME=%s\n' "$ABSENCE_PDF_STORE_NAME" >> "$env_file"
+          printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> "$env_file"
+          printf 'OPENAI_MODEL=%s\n' "${OPENAI_MODEL:-gpt-6-astra}" >> "$env_file"
           chmod 600 "$env_file"
 
           scp \

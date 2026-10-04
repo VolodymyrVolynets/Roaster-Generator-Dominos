@@ -104,6 +104,7 @@ builder.Services.AddSingleton<AvailabilityEditPolicy>();
 builder.Services.AddScoped<RosterPlanService>();
 builder.Services.AddScoped<RosterLabourService>();
 builder.Services.AddScoped<RosterSettingsService>();
+builder.Services.AddHttpClient<AiRosterGenerator>(client => client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddScoped<IFairDriverHoursCalculator, FairDriverHoursCalculator>();
 builder.Services.AddScoped<RosterInputService>();
 builder.Services.AddSingleton<RosterTimerService>();

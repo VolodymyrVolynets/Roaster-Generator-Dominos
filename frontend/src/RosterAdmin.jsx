@@ -134,6 +134,8 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
   const [settingsError, setSettingsError] = useState('')
   const [settingsRefreshKey, setSettingsRefreshKey] = useState(0)
   const [starting, setStarting] = useState(false)
+  const [generationMode, setGenerationMode] = useState(null)
+  const [aiStatus, setAiStatus] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [replayError, setReplayError] = useState('')
   const logRef = useRef(null)
@@ -159,6 +161,15 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
   }, [fetchJson, setErrorPopup, settingsRefreshKey, isVisible, dirtySettings, realtimeKey])
 
   useEffect(() => {
+    if (!isVisible) return
+    let active = true
+    fetchJson('/api/admin/roster/ai-status', { cache: 'no-store' })
+      .then((payload) => { if (active) setAiStatus(payload) })
+      .catch(() => { if (active) setAiStatus({ configured: false }) })
+    return () => { active = false }
+  }, [fetchJson, isVisible, realtimeKey])
+
+  useEffect(() => {
     if (!isVisible || !selectedWeekCanGenerate) {
       setSummary(null)
       return
@@ -180,6 +191,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
       setGeneration(null)
       setLogs([])
       setReplayError('')
+      setGenerationMode(null)
       setHubStatus('paused')
       currentJobRef.current = null
       return undefined
@@ -192,6 +204,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
     setGeneration(null)
     setLogs([])
     setReplayError('')
+    setGenerationMode(null)
     setHubStatus('connecting')
     currentJobRef.current = null
 
@@ -199,6 +212,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
       if (!active) return
       eventState = mergeRosterEvents(eventState, events, weekOffset, rosterKind)
       const currentJob = eventState.generation
+      if (currentJob && !runningStatuses.has(currentJob.status)) setGenerationMode(null)
       if (currentJob?.status === 'failed' && !notifiedFailures.has(currentJob.jobId)) {
         notifiedFailures.add(currentJob.jobId)
         const details = currentJob.diagnostics || []
@@ -279,14 +293,16 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
     finally { setSavingSettings(false) }
   }
 
-  async function generate() {
+  async function generate(useAi = false) {
     setStarting(true)
+    setGenerationMode(useAi ? 'ai' : 'standard')
     try {
-      const payload = await fetchJson(`/api/admin/roster/generate?rosterKind=${rosterKind}`, {
+      const endpoint = useAi ? 'generate/ai' : 'generate'
+      const payload = await fetchJson(`/api/admin/roster/${endpoint}?rosterKind=${rosterKind}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ weekOffset }),
       })
       controllerRef.current?.ingest([payload])
-    } catch (error) { setErrorPopup(error.message) }
+    } catch (error) { setGenerationMode(null); setErrorPopup(error.message) }
     finally { await controllerRef.current?.replay(); setStarting(false) }
   }
 
@@ -348,14 +364,18 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
         saveSettings={saveSettings} saving={savingSettings} running={running} error={settingsError}
         onRetry={() => setSettingsRefreshKey((value) => value + 1)} />
       <div className="roster-generation-actions">
-        <button type="button" onClick={generate} disabled={!selectedWeekCanGenerate || running || savingSettings || !settings || dirtySettings || summary?.demandPlanExists === false}>
-          {starting ? 'Starting…' : running ? 'Generating roster…' : 'Generate driver roster'}
+        <button type="button" onClick={() => generate(false)} disabled={!selectedWeekCanGenerate || running || savingSettings || !settings || dirtySettings || summary?.demandPlanExists === false}>
+          {starting && generationMode === 'standard' ? 'Starting…' : running && generationMode === 'standard' ? 'Generating roster…' : 'Generate driver roster'}
+        </button>
+        <button type="button" onClick={() => generate(true)} disabled={!selectedWeekCanGenerate || running || savingSettings || !settings || dirtySettings || summary?.demandPlanExists === false || !aiStatus?.configured}>
+          {starting && generationMode === 'ai' ? 'Starting AI…' : running && generationMode === 'ai' ? 'Generating with AI…' : `Generate with AI${aiStatus?.model ? ` · ${aiStatus.model}` : ''}`}
         </button>
         {running && <button type="button" className="danger-button" onClick={cancel} disabled={!generation?.jobId || starting || cancelling}>
           {cancelling ? 'Cancelling…' : 'Cancel generation'}
         </button>}
         <span className={`hub-status ${hubStatus}`}>Live updates: {hubStatus}</span>
       </div>
+      {!aiStatus?.configured && <p className="roster-footnote">AI generation is unavailable until an administrator configures OPENAI_API_KEY on the server.</p>}
       <p className="roster-footnote">Generation continues if you change tabs or close this page. Regenerating replaces only the selected roster type for this week, once a valid result is ready.</p>
       {hubStatus !== 'connected' && <p className="save-message">Reconnecting to live updates. The latest job status is also recovered automatically.</p>}
       {replayError && <p className="message error-message" role="alert">{replayError}</p>}

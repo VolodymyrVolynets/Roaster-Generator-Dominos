@@ -31,6 +31,8 @@ services:
       Auth__ResetEmployeePasswordsOnStartup: ${RESET_EMPLOYEE_PASSWORDS_ON_STARTUP:-false}
       AbsencePdf__StoreId: ${ABSENCE_PDF_STORE_ID:-}
       AbsencePdf__StoreName: ${ABSENCE_PDF_STORE_NAME:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-astra}
       DataProtection__KeysPath: /home/app/.aspnet/DataProtection-Keys
     volumes:
       - data_protection_keys:/home/app/.aspnet/DataProtection-Keys
