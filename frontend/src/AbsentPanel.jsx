@@ -304,7 +304,9 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
   const manualShiftComplete = form.shiftDate && form.shiftStartTime && form.shiftFinishTime && form.shiftStartTime !== form.shiftFinishTime
   const shiftComplete = form.shiftEntryMode === 'manual' ? manualShiftComplete : form.savedRosterShiftId && !selectedShiftMissing
   const hasActiveFilters = Object.values(appliedFilters).some((value) => value)
-  const visibleFormCount = data?.reduce((count, group) => count + group.forms.length, 0) ?? 0
+  const visibleFormCount = management
+    ? data?.reduce((count, group) => count + group.forms.length, 0) ?? 0
+    : data?.forms.length ?? 0
 
   return <section className="holiday-panel role-details absent-panel">
     <div className="section-heading">
