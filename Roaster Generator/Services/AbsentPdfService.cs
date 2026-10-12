@@ -59,7 +59,7 @@ public sealed class AbsentPdfService(StoreSettingsService storeSettings)
     {
         var startDate = shift.Date.AddDays(shift.StartDayOffset);
         var finishDate = shift.Date.AddDays(shift.FinishDayOffset);
-        return $"{startDate:dd/MM/yyyy} {shift.StartTime} - {finishDate:dd/MM/yyyy} {shift.FinishTime}";
+        return $"{startDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} {shift.StartTime} - {finishDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} {shift.FinishTime}";
     }
 
     private static string FileName(AbsentFormResponse form)

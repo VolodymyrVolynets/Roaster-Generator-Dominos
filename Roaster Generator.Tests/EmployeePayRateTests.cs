@@ -21,6 +21,121 @@ namespace Roaster_Generator.Tests;
 
 public sealed class EmployeePayRateTests
 {
+    [Fact]
+    public async Task ManagerCannotCreateAnAdmin()
+    {
+        using var fixture = new EmployeeFixture();
+        fixture.Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, RoleNames.Manager)], "TestAuthentication"));
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        Assert.IsType<ForbidResult>(await fixture.Controller.Create(request, default));
+        Assert.Empty(await fixture.Db.Employees.ToListAsync());
+    }
+
+    [Fact]
+    public async Task AnInactiveAdminDoesNotPermitRemovalOfTheLastActiveAdmin()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var first = ReadEmployee(await fixture.Controller.Create(request, default));
+        var second = Request();
+        second.EmployeeNumber = "inactive-admin";
+        second.Roles.Add(RoleNames.Admin);
+        var other = ReadEmployee(await fixture.Controller.Create(second, default));
+        Assert.IsType<OkObjectResult>(await fixture.Controller.Deactivate(other.Id, default));
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.Delete(first.Id, default));
+    }
+
+    [Theory]
+    [InlineData("delete")]
+    [InlineData("deactivate")]
+    [InlineData("demote")]
+    public async Task ManagersCannotRemoveAdministratorAccess(string operation)
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        fixture.Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, RoleNames.Manager)], "TestAuthentication"));
+        request.Roles.Remove(RoleNames.Admin);
+        var result = operation switch
+        {
+            "delete" => await fixture.Controller.Delete(created.Id, default),
+            "deactivate" => await fixture.Controller.Deactivate(created.Id, default),
+            _ => await fixture.Controller.Update(created.Id, request, default)
+        };
+        Assert.IsType<ForbidResult>(result);
+        Assert.True((await fixture.Db.Employees.SingleAsync()).IsActive);
+    }
+
+    [Theory]
+    [InlineData("delete", false)]
+    [InlineData("deactivate", false)]
+    [InlineData("demote", false)]
+    [InlineData("delete", true)]
+    [InlineData("deactivate", true)]
+    [InlineData("demote", true)]
+    public async Task LastAdminAndOwnAdminAccessCannotBeRemoved(string operation, bool isSelf)
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        var user = await fixture.Db.Users.SingleAsync();
+        if (isSelf)
+        {
+            var second = Request();
+            second.EmployeeNumber = "another-admin";
+            second.Roles.Add(RoleNames.Admin);
+            ReadEmployee(await fixture.Controller.Create(second, default));
+            fixture.Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, RoleNames.Admin), new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())], "TestAuthentication"));
+        }
+        request.Roles.Remove(RoleNames.Admin);
+        var result = operation switch
+        {
+            "delete" => await fixture.Controller.Delete(created.Id, default),
+            "deactivate" => await fixture.Controller.Deactivate(created.Id, default),
+            _ => await fixture.Controller.Update(created.Id, request, default)
+        };
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.True((await fixture.Db.Employees.SingleAsync(employee => employee.Id == created.Id)).IsActive);
+    }
+
+    [Fact]
+    public async Task AnotherAdminCanBeDemotedWhenAnActiveAdminRemains()
+    {
+        using var fixture = new EmployeeFixture();
+        var first = Request();
+        first.Roles.Add(RoleNames.Admin);
+        var created = ReadEmployee(await fixture.Controller.Create(first, default));
+        var second = Request();
+        second.EmployeeNumber = "another-admin";
+        second.Roles.Add(RoleNames.Admin);
+        ReadEmployee(await fixture.Controller.Create(second, default));
+        first.Roles.Remove(RoleNames.Admin);
+        Assert.DoesNotContain(RoleNames.Admin, ReadEmployee(await fixture.Controller.Update(created.Id, first, default)).Roles);
+    }
+
+    [Fact]
+    public async Task CreatingAnEmployeeAdminPermanentlyDisablesBootstrapAdmin()
+    {
+        using var fixture = new EmployeeFixture();
+        var bootstrap = new ApplicationUser { Id = Guid.NewGuid(), UserName = "bootstrap", LockoutEnabled = false };
+        fixture.Db.Users.Add(bootstrap);
+        fixture.Db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = bootstrap.Id,
+            RoleId = (await fixture.Db.Roles.SingleAsync(role => role.Name == RoleNames.Admin)).Id });
+        await fixture.Db.SaveChangesAsync();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.True(bootstrap.LockoutEnabled);
+        Assert.Equal(DateTimeOffset.MaxValue, bootstrap.LockoutEnd);
+    }
+
     [Theory]
     [InlineData("-0.01", false)]
     [InlineData("10000.01", false)]
@@ -249,7 +364,7 @@ public sealed class EmployeePayRateTests
 
         public EmployeeFixture()
         {
-            foreach (var role in new[] { RoleNames.Driver, RoleNames.InStore, RoleNames.Manager })
+            foreach (var role in new[] { RoleNames.Driver, RoleNames.InStore, RoleNames.Manager, RoleNames.Admin })
                 Db.Roles.Add(new IdentityRole<Guid> { Id = Guid.NewGuid(), Name = role, NormalizedName = role.ToUpperInvariant() });
             Db.SaveChanges();
             userManager = new UserManager<ApplicationUser>(

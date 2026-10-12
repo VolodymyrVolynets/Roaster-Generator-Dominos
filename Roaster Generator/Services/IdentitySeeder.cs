@@ -48,6 +48,7 @@ public static class IdentitySeeder
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await new AdminAccountProtection(db).DisableBootstrapAdminsAsync(cancellationToken);
     }
 
     private static async Task EnsureRoleAsync(
@@ -232,5 +233,7 @@ public static class IdentitySeeder
 
         var addResult = await userManager.AddPasswordAsync(user, password);
         EnsureSucceeded(addResult, operation);
+        user.HasChangedPassword = false;
+        EnsureSucceeded(await userManager.UpdateAsync(user), operation);
     }
 }

@@ -7,8 +7,10 @@ public static class EmployeeResponseMapper
 {
     public static EmployeeResponse ToResponse(
         Employee employee,
-        IEnumerable<string> roles) => new()
+        IEnumerable<string> roles,
+        bool? hasChangedPassword = null) => new()
     {
+        HasChangedPassword = hasChangedPassword,
         Id = employee.Id,
         EmployeeNumber = employee.EmployeeNumber,
         FirstName = employee.FirstName,

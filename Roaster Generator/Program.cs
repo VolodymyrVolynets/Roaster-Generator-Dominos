@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Absent;
+using Roaster_Generator.Contracts.Auth;
 using Roaster_Generator.Contracts.Demand;
 using Roaster_Generator.Contracts.Employees;
 using Roaster_Generator.Contracts.Holidays;
@@ -60,6 +61,7 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     })
     .AddRoles<IdentityRole<Guid>>()
     .AddEntityFrameworkStores<AppDbContext>()
+    .AddDefaultTokenProviders()
     .AddSignInManager();
 builder.Services
     .AddAuthentication(IdentityConstants.ApplicationScheme)
@@ -71,6 +73,25 @@ builder.Services.Configure<CookieAuthenticationOptions>(
         options.Cookie.Name = "roaster-generator-auth";
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            await SecurityStampValidator.ValidatePrincipalAsync(context);
+            if (context.Principal is null) return;
+            var users = context.HttpContext.RequestServices.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await users.GetUserAsync(context.Principal);
+            var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+            if (user is null || await users.IsLockedOutAsync(user) ||
+                context.Principal.FindFirst(users.Options.ClaimsIdentity.SecurityStampClaimType)?.Value != user.SecurityStamp ||
+                (user.EmployeeId is Guid employeeId && !await db.Employees.AnyAsync(
+                    employee => employee.Id == employeeId && employee.IsActive, context.HttpContext.RequestAborted)))
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.RequestServices.GetRequiredService<SignInManager<ApplicationUser>>().SignOutAsync();
+                return;
+            }
+            context.ReplacePrincipal(await context.HttpContext.RequestServices
+                .GetRequiredService<SignInManager<ApplicationUser>>().CreateUserPrincipalAsync(user));
+        };
     });
 builder.Services.AddAuthorization(options =>
 {
@@ -87,6 +108,7 @@ builder.Services.AddControllers()
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<ApplicationEventPublisher>();
 builder.Services.AddScoped<IValidator<EmployeeRequest>, EmployeeRequestValidator>();
+builder.Services.AddScoped<IValidator<ChangeInitialPasswordRequest>, ChangeInitialPasswordRequestValidator>();
 builder.Services.AddScoped<IValidator<HolidayHoursRequest>, HolidayRequestValidator>();
 builder.Services.AddScoped<IValidator<SickLeaveCreateRequest>, SickLeaveRequestValidator>();
 builder.Services.AddScoped<IValidator<AbsentFormCreateRequest>, AbsentFormRequestValidator>();

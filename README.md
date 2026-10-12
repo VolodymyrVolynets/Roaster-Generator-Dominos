@@ -12,6 +12,8 @@ The API is available at `http://localhost:5029/` and `http://localhost:5029/api/
 
 ## Run the full stack locally with Docker
 
+In Rider, select **Local Docker stack** to run `compose.yaml`. This starts the API, PostgreSQL and frontend together and supplies the backend environment settings. Running the backend Dockerfile alone does not supply `ConnectionStrings__Postgres` or the bootstrap authentication configuration. The root `.env` provides values to Compose; it is not automatically passed into a standalone Dockerfile container.
+
 ```bash
 docker compose up --build
 ```

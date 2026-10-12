@@ -263,6 +263,9 @@ namespace Roaster_Generator.Data.Migrations
                     b.Property<string>("PasswordHash")
                         .HasColumnType("text");
 
+                    b.Property<bool>("HasChangedPassword")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("PhoneNumber")
                         .HasColumnType("text");
 
