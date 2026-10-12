@@ -22,6 +22,11 @@ public sealed class AdminAccountProtection(AppDbContext db)
          where membership.UserId == user.Id && role.Name == RoleNames.Admin
          select membership).AnyAsync(ct);
 
+    public Task<bool> HasCompletedBootstrapHandoverAsync(CancellationToken ct) =>
+        db.Users.AnyAsync(account => account.EmployeeId == null && account.LockoutEnabled &&
+            account.LockoutEnd == DateTimeOffset.MaxValue &&
+            account.UserName != null && account.UserName.StartsWith("retired-bootstrap-"), ct);
+
     public async Task<string?> RemovalErrorAsync(ApplicationUser user, ClaimsPrincipal caller, CancellationToken ct)
     {
         if (caller.FindFirstValue(ClaimTypes.NameIdentifier) == user.Id.ToString())
@@ -62,6 +67,10 @@ public sealed class AdminAccountProtection(AppDbContext db)
         {
             account.LockoutEnabled = true;
             account.LockoutEnd = DateTimeOffset.MaxValue;
+            // Keep the disabled account as a permanent handover marker, but release
+            // its original login name for an employee. Never rename employee users.
+            account.UserName = $"retired-bootstrap-{account.Id:N}";
+            account.NormalizedUserName = account.UserName.ToUpperInvariant();
         }
         await db.SaveChangesAsync(ct);
     }

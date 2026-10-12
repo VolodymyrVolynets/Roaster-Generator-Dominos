@@ -97,6 +97,8 @@ public sealed class AdminEmployeesController(
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
+        await adminProtection.LockAsync(cancellationToken);
+
         var employee = new Employee
         {
             EmployeeNumber = employeeNumber,

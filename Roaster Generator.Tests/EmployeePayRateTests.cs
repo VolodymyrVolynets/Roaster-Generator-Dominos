@@ -134,6 +134,11 @@ public sealed class EmployeePayRateTests
         ReadEmployee(await fixture.Controller.Create(request, default));
         Assert.True(bootstrap.LockoutEnabled);
         Assert.Equal(DateTimeOffset.MaxValue, bootstrap.LockoutEnd);
+        Assert.NotEqual("bootstrap", bootstrap.UserName);
+        Assert.Equal(bootstrap.UserName!.ToUpperInvariant(), bootstrap.NormalizedUserName);
+        var reused = Request();
+        reused.EmployeeNumber = "bootstrap";
+        Assert.DoesNotContain(RoleNames.Admin, ReadEmployee(await fixture.Controller.Create(reused, default)).Roles);
     }
 
     [Theory]

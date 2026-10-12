@@ -20,18 +20,20 @@ public static class IdentitySeeder
         var db = services.GetRequiredService<AppDbContext>();
         var authOptions = services.GetRequiredService<IOptions<AuthOptions>>().Value;
 
-        if (string.IsNullOrWhiteSpace(authOptions.AdminUsername) ||
-            string.IsNullOrWhiteSpace(authOptions.AdminPassword))
-        {
-            throw new InvalidOperationException(
-                "Auth:AdminUsername and Auth:AdminPassword must be configured through environment variables.");
-        }
-
         await EnsureRoleAsync(roleManager, RoleNames.Admin);
         await EnsureRoleAsync(roleManager, RoleNames.Driver);
         await EnsureRoleAsync(roleManager, RoleNames.InStore);
         await EnsureRoleAsync(roleManager, RoleNames.Manager);
-        await EnsureAdminAsync(userManager, authOptions);
+        var adminProtection = new AdminAccountProtection(db);
+        await adminProtection.DisableBootstrapAdminsAsync(cancellationToken);
+        if (!await adminProtection.HasCompletedBootstrapHandoverAsync(cancellationToken))
+        {
+            if (string.IsNullOrWhiteSpace(authOptions.AdminUsername) ||
+                string.IsNullOrWhiteSpace(authOptions.AdminPassword))
+                throw new InvalidOperationException(
+                    "Auth:AdminUsername and Auth:AdminPassword must be configured through environment variables.");
+            await EnsureAdminAsync(userManager, authOptions);
+        }
 
         var employees = await db.Employees
             .OrderBy(employee => employee.EmployeeNumber)
@@ -48,7 +50,7 @@ public static class IdentitySeeder
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        await new AdminAccountProtection(db).DisableBootstrapAdminsAsync(cancellationToken);
+        await adminProtection.DisableBootstrapAdminsAsync(cancellationToken);
     }
 
     private static async Task EnsureRoleAsync(
