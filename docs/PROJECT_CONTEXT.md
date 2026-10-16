@@ -40,6 +40,14 @@ Do not remove the `postgres_data` or `data_protection_keys` volumes in productio
 
 Roles:
 
+Retired bootstrap accounts keep a permanently disabled database record under `retired-bootstrap-<user ID>`, releasing their original username for an employee. Startup detects this handover marker and never recreates the configured bootstrap login or grants its Admin role to an employee reusing that username, even if the configured bootstrap username changes later.
+
+Managers cannot grant Admin, edit administrator accounts, delete them or change their active status. Administrators cannot delete/deactivate their own account or remove their own Admin role. Deletion, deactivation and demotion of the last usable administrator are rejected; PostgreSQL transaction-scoped locking serializes those operations. Counts exclude inactive employees and locked-out accounts. Once an active employee administrator exists, standalone bootstrap administrators are permanently locked out using Identity's existing lockout fields. Startup preserves that lockout, and existing cookies are rejected on every subsequent request. Configured credentials remain bootstrap configuration only and do not restore access.
+
+Administrators can reset an employee login through `POST /api/admin/employees/{employeeId}/reset-password` and the employee editor's **Reset password** button. The reset atomically restores `AuthOptions.DefaultEmployeePassword`, clears `HasChangedPassword` and changes the security stamp so existing sessions are rejected. Roles, active status and profile data are preserved; a self-reset signs the administrator out. Managers and other employee roles cannot invoke the endpoint. Standalone bootstrap accounts are outside this employee endpoint and remain permanently disabled after administrator handover.
+
+Every account has a persisted `HasChangedPassword` flag. Existing accounts start with `false` on migration; their passwords are preserved. Until an authenticated user changes their initial password, React shows a password-change dialog after every login. `POST /api/auth/change-initial-password` validates new/confirmation values, rejects reuse of the initial password, changes the password and flag transactionally, and renews the current session. Other existing sessions fail security-stamp validation. The management employee directory shows the flag, without revealing passwords. An explicit employee startup password reset clears the flag again.
+
 - `Admin`: system administrator. Can manage employee accounts, grant/remove roles, administer holidays, and use the management console.
 - `Manager`: employee work role with management-console access through `ManagerAccess` (`Admin` or `Manager`).
 - `Driver`: employee work role included in the driver roster.

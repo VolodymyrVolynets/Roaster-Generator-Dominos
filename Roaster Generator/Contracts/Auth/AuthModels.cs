@@ -1,6 +1,7 @@
 namespace Roaster_Generator.Contracts.Auth;
 
 public sealed record LoginRequest(string Username, string Password);
+public sealed record ChangeInitialPasswordRequest(string NewPassword, string ConfirmPassword);
 
 public sealed class CurrentUserResponse
 {
@@ -9,6 +10,7 @@ public sealed class CurrentUserResponse
     public IReadOnlyList<string> Roles { get; init; } = [];
 
     public bool IsAdmin { get; init; }
+    public bool HasChangedPassword { get; init; }
 
     public Guid? EmployeeId { get; init; }
 

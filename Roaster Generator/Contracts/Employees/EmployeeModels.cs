@@ -30,6 +30,7 @@ public sealed class EmployeeRequest
 
 public sealed class EmployeeResponse
 {
+    public bool? HasChangedPassword { get; init; }
     public Guid Id { get; init; }
 
     public string EmployeeNumber { get; init; } = string.Empty;

@@ -8,6 +8,7 @@ import { AreaSelector, WeekSelector } from './SelectionControls'
 import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
 import { useApplicationEvents } from './useApplicationEvents'
 import { AbsentPanel } from './AbsentPanel'
+import { PasswordChangePrompt } from './PasswordChangePrompt'
 import { StoreSettingsPanel } from './StoreSettingsPanel'
 import {
   compareEmployees,
@@ -1427,6 +1428,7 @@ function AdminConsole({
   employeeSaveState,
   saveEmployee,
   changeEmployeeStatus,
+  resetEmployeePassword,
   removeEmployee,
   availability,
   setErrorPopup,
@@ -1527,6 +1529,9 @@ function AdminConsole({
   const editableRoles = authState.user.isAdmin
     ? ['Driver', 'InStore', 'Manager', 'Admin']
     : ['Driver', 'InStore', 'Manager']
+  const selectedIsAdmin = selectedEmployee?.roles?.includes('Admin')
+  const selectedIsOwnAdmin = selectedIsAdmin && selectedEmployee.id === authState.user.employeeId
+  const protectedAdminActions = selectedIsAdmin && (!authState.user.isAdmin || selectedIsOwnAdmin)
   const employeeNumberErrors = getEmployeeFieldErrors(employeeSaveState, 'employeeNumber')
   const firstNameErrors = getEmployeeFieldErrors(employeeSaveState, 'firstName')
   const lastNameErrors = getEmployeeFieldErrors(employeeSaveState, 'lastName')
@@ -1696,6 +1701,7 @@ function AdminConsole({
                           <span>Maximum weekly hours: {employee.maximumWeeklyHours ?? 45}h</span>
                           <span>Phone: {employee.phoneNumber || 'Not set'}</span>
                           <span>Roles: {(employee.roles || []).join(', ') || 'Not set'}</span>
+                          <span>Password changed: {employee.hasChangedPassword == null ? 'No account' : employee.hasChangedPassword ? 'Yes' : 'No'}</span>
                           {employeeHasRole(employee, 'Driver') && (
                             <>
                               <span>Driver type: {employee.driverType || 'Car'}</span>
@@ -1848,6 +1854,7 @@ function AdminConsole({
                             id={`admin-employee-role-${role}`}
                             type="checkbox"
                             checked={employeeForm.roles?.includes(role) || false}
+                            disabled={(role === 'Admin' && selectedIsOwnAdmin) || (selectedIsAdmin && !authState.user.isAdmin)}
                             onChange={(event) => {
                               const currentRoles = employeeForm.roles || []
                               const nextRoles = event.target.checked
@@ -1893,7 +1900,11 @@ function AdminConsole({
                     )}
 
                     <div className="employee-form-actions">
-                      <button type="submit" disabled={employeeSaveState.status === 'saving'}>
+                      {!isCreatingEmployee && selectedEmployee && authState.user.isAdmin && (
+                        <button type="button" className="secondary-button" onClick={resetEmployeePassword}
+                          disabled={employeeSaveState.status === 'saving'}>Reset password</button>
+                      )}
+                      <button type="submit" disabled={employeeSaveState.status === 'saving' || (selectedIsAdmin && !authState.user.isAdmin)}>
                         {employeeSaveState.status === 'saving' ? 'Saving…' : 'Save employee'}
                       </button>
                       {!isCreatingEmployee && selectedEmployee && (
@@ -1901,12 +1912,13 @@ function AdminConsole({
                           type="button"
                           className="secondary-button"
                           onClick={() => changeEmployeeStatus(selectedEmployee.isActive ? 'deactivate' : 'reactivate')}
+                          disabled={protectedAdminActions}
                         >
                           {selectedEmployee.isActive ? 'Deactivate' : 'Reactivate'}
                         </button>
                       )}
                       {!isCreatingEmployee && selectedEmployee && (
-                        <button type="button" className="danger-button" onClick={removeEmployee}>
+                        <button type="button" className="danger-button" onClick={removeEmployee} disabled={protectedAdminActions}>
                           Remove completely
                         </button>
                       )}
@@ -2937,6 +2949,21 @@ function App() {
     }
   }
 
+  async function resetEmployeePassword() {
+    if (!isSystemAdmin || !selectedEmployeeId || employeeSaveState.status === 'saving' ||
+        !window.confirm('Reset this employee’s password to the initial password? Their existing sessions will end and they must change it after signing in.')) return
+    setEmployeeSaveState({ status: 'saving', message: '' })
+    try {
+      const employee = await fetchJson(`/api/admin/employees/${selectedEmployeeId}/reset-password`, { method: 'POST' })
+      setEmployees((current) => current.map((item) => item.id === employee.id ? employee : item))
+      setEmployeeSaveState({ status: 'success', message: 'Password reset. The employee must change their initial password after signing in.' })
+      if (employee.id === authState.user.employeeId) await logout()
+    } catch (error) {
+      setEmployeeSaveState({ status: 'error', message: error.message })
+      setErrorPopup(error.message)
+    }
+  }
+
   async function saveSchedule(event) {
     event.preventDefault()
     if (!availabilityEmployeeId || schedule?.employeeId !== availabilityEmployeeId ||
@@ -2995,6 +3022,12 @@ function App() {
     )
   }
 
+  if (!authState.user.hasChangedPassword) {
+    return <PasswordChangePrompt fetchJson={fetchJson} onSignOut={logout} onChanged={() =>
+      setAuthState((current) => ({ ...current, user: { ...current.user, hasChangedPassword: true } }))
+    } />
+  }
+
   if (isAdmin) {
     return (
       <AdminConsole
@@ -3021,6 +3054,7 @@ function App() {
         employeeSaveState={employeeSaveState}
         saveEmployee={saveEmployee}
         changeEmployeeStatus={changeEmployeeStatus}
+        resetEmployeePassword={resetEmployeePassword}
         removeEmployee={removeEmployee}
         availability={availability}
         setErrorPopup={setErrorPopup}
