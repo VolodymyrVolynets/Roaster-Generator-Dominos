@@ -34,3 +34,17 @@ export function getAvailabilityLimitErrors(schedule) {
   }
   return errors
 }
+
+export function getAvailabilityDemandError(schedule) {
+  if (schedule?.availabilitySaveBlockedReason) return schedule.availabilitySaveBlockedReason
+  const { requiredBusyDates = [], days = [] } = schedule || {}
+  if (requiredBusyDates.length === 0 || days.some((day) =>
+    requiredBusyDates.includes(day.date) && day.startTime && day.finishTime &&
+    durationHours(day.startTime, day.finishTime) > 0)) return ''
+
+  const names = requiredBusyDates.map((date) => {
+    const day = days.find((item) => item.date === date)
+    return day?.dayOfWeek ? `${day.dayOfWeek} (${date})` : date
+  }).join(' or ')
+  return `Include availability on at least one of this week's busiest days: ${names}. An administrator can make exceptions.`
+}

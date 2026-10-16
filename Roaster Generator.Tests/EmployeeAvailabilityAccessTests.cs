@@ -13,6 +13,7 @@ using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Controllers;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Security;
 using Roaster_Generator.Services;
 using Roaster_Generator.Validation;
@@ -29,6 +30,7 @@ public sealed class EmployeeAvailabilityAccessTests
     public async Task ActiveEmployeesCanReadAndReplaceTheirOwnAvailability(params string[] roles)
     {
         using var fixture = new ScheduleFixture(roles);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 0));
         var controller = fixture.Controller;
 
         var original = ReadSchedule(await controller.GetSchedule(fixture.EmployeeId, 1, default));
@@ -117,6 +119,7 @@ public sealed class EmployeeAvailabilityAccessTests
     public async Task DriverDailyLimitCountsOvernightHours(int start, int finish, bool allowed)
     {
         using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 0));
         var current = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
         Assert.Equal(10, current.MaximumAvailabilityHoursPerDay);
         Assert.Equal(6, current.MaximumAvailabilityDaysPerWeek);
@@ -147,6 +150,7 @@ public sealed class EmployeeAvailabilityAccessTests
     public async Task DriversCanSubmitSixDaysButNotSeven(int days, bool allowed)
     {
         using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 0));
         var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId,
             NewAvailability(activeDays: days, start: 15, finish: 1), default);
 
@@ -208,6 +212,207 @@ public sealed class EmployeeAvailabilityAccessTests
         Assert.Contains("Days", problem.Errors.Keys);
         Assert.Contains("Days[0].FinishTime", problem.Errors.Keys);
         Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+    }
+
+    [Fact]
+    public async Task BusyDaysUseTotalDriverDemandForTheSelectedWeekAndIgnoreInsideDemand()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 6), (1, 12, 4), (1, 13, 4), (4, 12, 7));
+        await fixture.AddDemandAsync(1, DemandKinds.Inside, (0, 12, 100), (6, 12, 200));
+        await fixture.AddDemandAsync(2, DemandKinds.Outside, (5, 12, 100), (6, 12, 200));
+
+        var first = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.Equal(new[] { first.WeekStart.AddDays(1), first.WeekStart.AddDays(4) }, first.RequiredBusyDates);
+        var second = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 2, default));
+        Assert.Equal(new[] { second.WeekStart.AddDays(6), second.WeekStart.AddDays(5) }, second.RequiredBusyDates);
+    }
+
+    [Fact]
+    public async Task BusyDayTiesUseWeekdayOrderAndKeepOvernightDemandOnItsBusinessDay()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (3, 0, 10), (4, 12, 10), (5, 12, 10));
+        var schedule = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.Equal(new[] { schedule.WeekStart.AddDays(3), schedule.WeekStart.AddDays(4) }, schedule.RequiredBusyDates);
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Driver)]
+    [InlineData(RoleNames.Driver, RoleNames.Manager)]
+    public async Task DriversCannotSubmitWithoutEitherBusyDay(params string[] roles)
+    {
+        using var fixture = new ScheduleFixture(roles);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (4, 12, 10), (5, 12, 9));
+        foreach (var activeDays in new[] { 0, 1 })
+        {
+            var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(activeDays: activeDays), default);
+            var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+            Assert.Contains(problem.Errors["Days"], message => message.Contains("Friday") && message.Contains("Saturday"));
+        }
+        Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+        Assert.All(await fixture.Db.Shifts.ToListAsync(), shift => Assert.Equal(new TimeOnly(12, 0), shift.StartTime));
+    }
+
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task DriversCanChooseEitherBusyDay(int day)
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (4, 12, 10), (5, 12, 9));
+        var request = NewAvailability(activeDays: 0);
+        request.Days[day].StartTime = new TimeOnly(15, 0);
+        request.Days[day].FinishTime = new TimeOnly(1, 0);
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(fixture.EmployeeId, request, default));
+        Assert.Single(saved.Days, item => item.StartTime is not null);
+        Assert.Equal("15:00", saved.Days[day].StartTime);
+    }
+
+    [Fact]
+    public async Task LaterEditsCannotRemoveTheLastBusyDayAndLeaveSavedAvailabilityIntact()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (4, 12, 10), (5, 12, 9));
+        var request = NewAvailability(activeDays: 0);
+        foreach (var day in new[] { 4, 5 })
+        {
+            request.Days[day].StartTime = new TimeOnly(14, 0);
+            request.Days[day].FinishTime = new TimeOnly(20, 0);
+        }
+        ReadSchedule(await fixture.Controller.SaveSchedule(fixture.EmployeeId, request, default));
+        request.Days[5].StartTime = request.Days[5].FinishTime = null;
+        ReadSchedule(await fixture.Controller.SaveSchedule(fixture.EmployeeId, request, default));
+        request.Days[4].StartTime = request.Days[4].FinishTime = null;
+        request.Days[0].StartTime = new TimeOnly(14, 0);
+        request.Days[0].FinishTime = new TimeOnly(20, 0);
+
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.SaveSchedule(fixture.EmployeeId, request, default));
+        var kept = await fixture.Db.Shifts.SingleAsync(shift => shift.EmployeeId == fixture.EmployeeId);
+        Assert.Equal(request.Days[4].Date, kept.Date);
+    }
+
+    [Fact]
+    public async Task SaveRechecksCurrentDemandEvenIfTheClientLoadedOlderBusyDays()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        var plan = await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 1), (4, 12, 10), (5, 12, 9));
+        var original = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.Contains(original.WeekStart.AddDays(4), original.RequiredBusyDates);
+        var friday = plan.Columns.Single(column => column.Position == 4).Id;
+        plan.Rows.Single().Values.Single(value => value.DemandColumnId == friday).Demand = 0;
+        await fixture.Db.SaveChangesAsync();
+        var request = NewAvailability(activeDays: 0);
+        request.Days[4].StartTime = new TimeOnly(14, 0);
+        request.Days[4].FinishTime = new TimeOnly(20, 0);
+
+        var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId, request, default);
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Contains(problem.Errors["Days"], message => message.Contains("Monday") && message.Contains("Saturday"));
+        Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Admin)]
+    [InlineData(RoleNames.Admin, RoleNames.Driver)]
+    [InlineData(RoleNames.Manager)]
+    [InlineData(RoleNames.InStore)]
+    public async Task BusyDayRequirementDoesNotApplyToAdminOrInsideRoles(params string[] roles)
+    {
+        using var fixture = new ScheduleFixture(roles);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (4, 12, 10), (5, 12, 9));
+        var employeeId = roles.Contains(RoleNames.Admin) ? fixture.OtherEmployeeId : fixture.EmployeeId;
+        var current = ReadSchedule(await fixture.Controller.GetSchedule(employeeId, 1, default));
+        Assert.Empty(current.RequiredBusyDates);
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(employeeId, NewAvailability(), default));
+        Assert.Empty(saved.RequiredBusyDates);
+    }
+
+    [Fact]
+    public async Task ExplicitlyEnteredZeroDemandDoesNotRequireArbitraryBusyDays()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 0), (1, 12, 0));
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(activeDays: 0), default));
+        Assert.Empty(saved.RequiredBusyDates);
+        Assert.Null(saved.AvailabilitySaveBlockedReason);
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Driver)]
+    [InlineData(RoleNames.Driver, RoleNames.Manager)]
+    public async Task DriversCannotSaveUntilOutsideDemandIsEnteredForTheSelectedWeek(params string[] roles)
+    {
+        using var fixture = new ScheduleFixture(roles);
+        await fixture.AddDemandAsync(1, DemandKinds.Inside, (0, 12, 5));
+        await fixture.AddDemandAsync(2, DemandKinds.Outside, (0, 12, 5));
+        var pending = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.Equal(WeeklyScheduleRequestValidator.DriverDemandRequiredMessage, pending.AvailabilitySaveBlockedReason);
+
+        var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(), default);
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Contains(WeeklyScheduleRequestValidator.DriverDemandRequiredMessage, problem.Errors["Days"]);
+        Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 5));
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(), default));
+        Assert.Null(saved.AvailabilitySaveBlockedReason);
+        Assert.Equal("14:00", saved.Days[0].StartTime);
+    }
+
+    [Fact]
+    public async Task APlanWithoutEnteredDriverCountsDoesNotUnlockAvailability()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        var plan = await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 0));
+        plan.Rows.Single().Values.Single().Demand = null;
+        await fixture.Db.SaveChangesAsync();
+        var pending = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.NotNull(pending.AvailabilitySaveBlockedReason);
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(), default));
+        Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+    }
+
+    [Fact]
+    public async Task RemovingDemandAfterLoadingAvailabilityStillPreventsDriverSaving()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        var plan = await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 5));
+        var loaded = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.Null(loaded.AvailabilitySaveBlockedReason);
+        fixture.Db.DemandPlans.Remove(plan);
+        await fixture.Db.SaveChangesAsync();
+
+        var result = await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(), default);
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Contains(WeeklyScheduleRequestValidator.DriverDemandRequiredMessage, problem.Errors["Days"]);
+        Assert.Equal(3, await fixture.Db.Shifts.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(RoleNames.Admin)]
+    [InlineData(RoleNames.Admin, RoleNames.Driver)]
+    [InlineData(RoleNames.Manager)]
+    [InlineData(RoleNames.InStore)]
+    public async Task MissingDemandDoesNotBlockAdminOrInsideAvailability(params string[] roles)
+    {
+        using var fixture = new ScheduleFixture(roles);
+        var employeeId = roles.Contains(RoleNames.Admin) ? fixture.OtherEmployeeId : fixture.EmployeeId;
+        var current = ReadSchedule(await fixture.Controller.GetSchedule(employeeId, 1, default));
+        Assert.Null(current.AvailabilitySaveBlockedReason);
+        var saved = ReadSchedule(await fixture.Controller.SaveSchedule(employeeId, NewAvailability(), default));
+        Assert.Null(saved.AvailabilitySaveBlockedReason);
+        Assert.Equal("14:00", saved.Days[0].StartTime);
+    }
+
+    [Fact]
+    public async Task AWeekWithOnePositiveDemandDayRequiresThatDay()
+    {
+        using var fixture = new ScheduleFixture([RoleNames.Driver]);
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (4, 12, 1));
+        var schedule = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
+        Assert.Equal(new[] { schedule.WeekStart.AddDays(4) }, schedule.RequiredBusyDates);
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.SaveSchedule(fixture.EmployeeId, NewAvailability(), default));
     }
 
     [Theory]
@@ -297,6 +502,8 @@ public sealed class EmployeeAvailabilityAccessTests
         // 23:30 UTC on Friday is 00:30 Saturday in Dublin during daylight saving time.
         using var fixture = new ScheduleFixture([RoleNames.Driver],
             now: new DateTimeOffset(2026, 9, 11, 23, 30, 0, TimeSpan.Zero));
+        await fixture.AddDemandAsync(1, DemandKinds.Outside, (0, 12, 0));
+        await fixture.AddDemandAsync(2, DemandKinds.Outside, (0, 12, 0));
 
         var lockedWeek = ReadSchedule(await fixture.Controller.GetSchedule(fixture.EmployeeId, 1, default));
         Assert.False(lockedWeek.CanEdit);
@@ -403,9 +610,10 @@ public sealed class EmployeeAvailabilityAccessTests
                 NullLogger<UserManager<ApplicationUser>>.Instance);
             var claims = roles.Select(role => new Claim(ClaimTypes.Role, role)).ToList();
             claims.Add(new Claim(ClaimTypes.NameIdentifier, User.Id.ToString()));
+            var schedules = new WeeklyScheduleService(Db, null);
             Controller = new EmployeesController(Db, userManager, new WeekSelectionRequestValidator(),
                 new AdminWeekSelectionRequestValidator(), new AdminEditableWeekSelectionRequestValidator(),
-                new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions())), new WeeklyScheduleService(Db, null),
+                new WeeklyScheduleRequestValidator(Options.Create(new ShopHoursOptions()), schedules), schedules,
                 new AvailabilityEditPolicy(new FixedTimeProvider(now ?? new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero))))
             {
                 ControllerContext = new ControllerContext
@@ -416,6 +624,25 @@ public sealed class EmployeeAvailabilityAccessTests
                     }
                 }
             };
+        }
+
+        public async Task<DemandPlan> AddDemandAsync(int weekOffset, string kind, params (int Day, int Hour, int Demand)[] entries)
+        {
+            var plan = new DemandPlan { Id = Guid.NewGuid(), WeekStart = WeeklyScheduleService.GetWeekMonday(weekOffset), DemandKind = kind };
+            plan.Columns = Enumerable.Range(0, 7).Select(day => new DemandColumn { Id = Guid.NewGuid(), Position = day }).ToList();
+            plan.Rows = entries.GroupBy(entry => entry.Hour).Select(group => new DemandRow
+            {
+                Id = Guid.NewGuid(), Hour = group.Key,
+                Values = group.Select(entry => new DemandValue
+                {
+                    Id = Guid.NewGuid(), DemandColumnId = plan.Columns.Single(column => column.Position == entry.Day).Id,
+                    Demand = kind == DemandKinds.Outside ? entry.Demand : null,
+                    InsideDemand = kind == DemandKinds.Inside ? entry.Demand : null
+                }).ToList()
+            }).ToList();
+            Db.DemandPlans.Add(plan);
+            await Db.SaveChangesAsync();
+            return plan;
         }
 
         public void Dispose()

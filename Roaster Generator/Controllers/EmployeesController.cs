@@ -99,7 +99,7 @@ public sealed class EmployeesController(
 
         if (schedule is null) return NotFound(new { message = "Employee not found." });
 
-        ApplyEditAccess(schedule, selection.WeekOffset);
+        await ApplyEditAccessAsync(schedule, selection.WeekOffset, cancellationToken);
         return Ok(schedule);
     }
 
@@ -166,11 +166,11 @@ public sealed class EmployeesController(
 
         if (schedule is null) return NotFound(new { message = "Employee not found." });
 
-        ApplyEditAccess(schedule, request.WeekOffset);
+        await ApplyEditAccessAsync(schedule, request.WeekOffset, cancellationToken);
         return Ok(schedule);
     }
 
-    private void ApplyEditAccess(WeeklyScheduleResponse schedule, int weekOffset)
+    private async Task ApplyEditAccessAsync(WeeklyScheduleResponse schedule, int weekOffset, CancellationToken cancellationToken)
     {
         var isAdmin = User.IsInRole(RoleNames.Admin);
         var minimumEditableWeekOffset = availabilityEdits.GetMinimumEditableWeekOffset(false);
@@ -178,6 +178,13 @@ public sealed class EmployeesController(
             ? WeeklyScheduleRequestValidator.MaximumDriverHoursPerDay : null;
         schedule.MaximumAvailabilityDaysPerWeek = LimitDriverAvailability
             ? WeeklyScheduleRequestValidator.MaximumDriverDaysPerWeek : null;
+        schedule.AvailabilitySaveBlockedReason = LimitDriverAvailability &&
+            !await schedules.HasEnteredDriverDemandAsync(schedule.WeekStart, cancellationToken)
+                ? WeeklyScheduleRequestValidator.DriverDemandRequiredMessage
+                : null;
+        schedule.RequiredBusyDates = LimitDriverAvailability
+            ? await schedules.GetBusiestDemandDatesAsync(schedule.WeekStart, cancellationToken)
+            : [];
         schedule.MinimumEditableWeekOffset = isAdmin
             ? null
             : minimumEditableWeekOffset;

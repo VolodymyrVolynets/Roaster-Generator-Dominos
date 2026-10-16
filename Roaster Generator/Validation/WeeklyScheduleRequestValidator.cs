@@ -12,9 +12,11 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
     public const string DriverLimitsRuleSet = "DriverAvailabilityLimits";
     public const int MaximumDriverHoursPerDay = 10;
     public const int MaximumDriverDaysPerWeek = 6;
+    public const string DriverDemandRequiredMessage =
+        "Outside driver demand has not been entered for this week. You can save availability after an administrator enters the demand.";
     private readonly ShopHoursOptions shopHours;
 
-    public WeeklyScheduleRequestValidator(IOptions<ShopHoursOptions> shopHoursOptions)
+    public WeeklyScheduleRequestValidator(IOptions<ShopHoursOptions> shopHoursOptions, WeeklyScheduleService schedules)
     {
         shopHours = shopHoursOptions.Value;
 
@@ -62,7 +64,30 @@ public sealed class WeeklyScheduleRequestValidator : AbstractValidator<WeeklySch
         // The controller selects this rule set from the authenticated user's roles.
         // Admins still receive all ordinary date, time and shop-hours validation.
         RuleSet(DriverLimitsRuleSet, () =>
-            RuleFor(request => request).Custom(ValidateDriverLimits));
+        {
+            RuleFor(request => request).Custom(ValidateDriverLimits);
+            RuleFor(request => request).CustomAsync(async (request, context, cancellationToken) =>
+            {
+                if (request.Days is null || request.Days.Count != 7 ||
+                    !WeeklyScheduleService.IsValidWeekOffset(request.WeekOffset)) return;
+
+                var weekStart = WeeklyScheduleService.GetWeekMonday(request.WeekOffset);
+                if (!await schedules.HasEnteredDriverDemandAsync(weekStart, cancellationToken))
+                {
+                    context.AddFailure(nameof(request.Days), DriverDemandRequiredMessage);
+                    return;
+                }
+
+                var busyDates = await schedules.GetBusiestDemandDatesAsync(weekStart, cancellationToken);
+                if (busyDates.Count == 0 || request.Days.Any(day => busyDates.Contains(day.Date) &&
+                    day.StartTime is not null && day.FinishTime is not null && day.StartTime != day.FinishTime)) return;
+
+                var names = string.Join(" or ", busyDates.Select(date =>
+                    date.ToString("dddd (yyyy-MM-dd)", CultureInfo.InvariantCulture)));
+                context.AddFailure(nameof(request.Days),
+                    $"Include availability on at least one of this week's busiest days: {names}. An administrator can make exceptions.");
+            });
+        });
     }
 
     private static void ValidateDriverLimits(WeeklyScheduleRequest request,

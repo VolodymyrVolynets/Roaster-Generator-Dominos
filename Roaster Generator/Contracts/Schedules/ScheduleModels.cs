@@ -42,6 +42,12 @@ public sealed class WeeklyScheduleResponse
 
     public int? MaximumAvailabilityDaysPerWeek { get; set; }
 
+    public string? AvailabilitySaveBlockedReason { get; set; }
+
+    // The caller must enter availability on at least one of these business dates.
+    // Empty for administrators, non-drivers, or weeks without positive outside demand.
+    public IReadOnlyList<DateOnly> RequiredBusyDates { get; set; } = [];
+
     public double? ApproximateHours { get; init; }
 
     public double? ApproximateCapacityHours { get; init; }

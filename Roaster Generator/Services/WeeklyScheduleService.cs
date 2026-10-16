@@ -15,6 +15,34 @@ public sealed class WeeklyScheduleService(
     public const int MinWeekOffset = 1;
     public const int MaxWeekOffset = 3;
 
+    public Task<bool> HasEnteredDriverDemandAsync(DateOnly weekStart, CancellationToken cancellationToken) =>
+        db.DemandPlans.AsNoTracking().AnyAsync(plan => plan.WeekStart == weekStart &&
+            plan.DemandKind == DemandKinds.Outside &&
+            plan.Rows.Any(row => row.Values.Any(value => value.Demand.HasValue)), cancellationToken);
+
+    public async Task<IReadOnlyList<DateOnly>> GetBusiestDemandDatesAsync(
+        DateOnly weekStart,
+        CancellationToken cancellationToken)
+    {
+        var dailyDemand = await db.DemandColumns.AsNoTracking()
+            .Where(column => column.DemandPlan.WeekStart == weekStart &&
+                column.DemandPlan.DemandKind == DemandKinds.Outside && column.Position >= 0 && column.Position < 7)
+            .Select(column => new
+            {
+                column.Position,
+                Total = column.Values.Where(value => value.Demand > 0)
+                    .Sum(value => (long)(value.Demand ?? 0))
+            })
+            .ToListAsync(cancellationToken);
+
+        return dailyDemand.Where(day => day.Total > 0)
+            .OrderByDescending(day => day.Total)
+            .ThenBy(day => day.Position)
+            .Take(2)
+            .Select(day => weekStart.AddDays(day.Position))
+            .ToArray();
+    }
+
     public async Task<WeeklyScheduleResponse?> GetWeekAsync(
         Guid employeeId,
         int weekOffset,

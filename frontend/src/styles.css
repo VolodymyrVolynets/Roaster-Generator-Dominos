@@ -3584,6 +3584,27 @@ input:focus {
   font-weight: 700;
 }
 
+.busy-day-message {
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(180, 83, 9, 0.15);
+}
+
+.schedule-row.busy-day-row {
+  background: rgba(180, 83, 9, 0.13);
+  box-shadow: inset 4px 0 #fbbf24;
+}
+
+.day-cell .busy-day-badge {
+  width: fit-content;
+  padding: 3px 7px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 6px;
+  color: #fde68a;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .form-footer {
   display: flex;
   align-items: center;

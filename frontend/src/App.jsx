@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { RosterGenerationPanel, SavedRosterPanel } from './RosterAdmin'
 import { calculateDemandLabour, recalculateDemandPlan, recalculateDemandValue } from './demandPlanning'
 import { getAvailabilityEmployeeId } from './availabilityAccess'
-import { countAvailabilityDays, getAvailabilityLimitErrors, isAvailabilityTimeAllowed } from './availabilityLimits'
+import { countAvailabilityDays, getAvailabilityLimitErrors, getAvailabilityDemandError, isAvailabilityTimeAllowed } from './availabilityLimits'
 import { AvailabilityHeatmap } from './DriverAvailabilityHeatmap'
 import { AreaSelector, WeekSelector } from './SelectionControls'
 import { getWeekOffsetFromDate, getWeekStartValue } from './weekSelection'
@@ -2275,7 +2275,7 @@ function ScheduleEditor({
   updateDay,
   resetDay,
 }) {
-  const canEdit = schedule?.canEdit !== false
+  const canEdit = schedule?.canEdit !== false && !schedule?.availabilitySaveBlockedReason
 
   if (!schedule) {
     return null
@@ -2283,6 +2283,7 @@ function ScheduleEditor({
   const enteredDayCount = countAvailabilityDays(schedule.days)
   const maximumDays = schedule.maximumAvailabilityDaysPerWeek
   const maximumHours = schedule.maximumAvailabilityHoursPerDay
+  const requiredBusyDates = schedule.requiredBusyDates || []
   const limitErrors = getAvailabilityLimitErrors(schedule)
 
   return (
@@ -2294,10 +2295,14 @@ function ScheduleEditor({
         </div>
       </div>
 
-      {!canEdit && (
+      {schedule.canEdit === false && (
         <p className="message info-message" role="status">
           Availability for next week is locked from Saturday. Select the week after next to make changes.
         </p>
+      )}
+
+      {schedule.availabilitySaveBlockedReason && (
+        <p className="message info-message" role="status">{schedule.availabilitySaveBlockedReason}</p>
       )}
 
       {maximumDays != null && maximumHours != null && (
@@ -2308,6 +2313,14 @@ function ScheduleEditor({
       )}
       {limitErrors.length > 0 && (
         <p className="message error-message" role="alert">{limitErrors.join(' ')}</p>
+      )}
+      {requiredBusyDates.length > 0 && (
+        <p className="message busy-day-message">
+          Include availability on at least one highlighted busy day:{' '}
+          <strong>{requiredBusyDates.map((date) => schedule.days.find((day) => day.date === date)?.dayOfWeek || date).join(' or ')}</strong>.
+          {' '}These days have the highest total driver demand for this week. This also applies when changing saved availability.
+          {' '}An administrator can make exceptions.
+        </p>
       )}
 
       {schedule.heatmap && (
@@ -2334,10 +2347,11 @@ function ScheduleEditor({
         </div>
 
         {schedule.days.map((day) => (
-          <div className="schedule-row" role="row" key={day.date}>
+          <div className={`schedule-row${requiredBusyDates.includes(day.date) ? ' busy-day-row' : ''}`} role="row" key={day.date}>
             <div className="day-cell" role="cell">
               <strong>{day.dayOfWeek}</strong>
               <span>{dateFormatter.format(parseDate(day.date))}</span>
+              {requiredBusyDates.includes(day.date) && <span className="busy-day-badge">Busy day · choose at least one</span>}
               {getShiftDuration(day.startTime, day.finishTime) && (
                 <span className="shift-duration">
                   {getShiftDuration(day.startTime, day.finishTime)}
@@ -2929,7 +2943,8 @@ function App() {
         scheduleState.status !== 'success' || schedule?.canEdit === false || saveState.status === 'saving') {
       return
     }
-    const limitMessage = getAvailabilityLimitErrors(schedule).join(' ')
+    const limitMessage = [getAvailabilityDemandError(schedule), ...getAvailabilityLimitErrors(schedule)]
+      .filter(Boolean).join(' ')
     if (limitMessage) {
       setSaveState({ status: 'error', message: limitMessage })
       setErrorPopup(limitMessage)
