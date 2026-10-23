@@ -246,6 +246,9 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("employee_id");
 
+                    b.Property<bool>("HasChangedPassword")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("boolean");
 
@@ -262,9 +265,6 @@ namespace Roaster_Generator.Data.Migrations
 
                     b.Property<string>("PasswordHash")
                         .HasColumnType("text");
-
-                    b.Property<bool>("HasChangedPassword")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("PhoneNumber")
                         .HasColumnType("text");
@@ -519,6 +519,12 @@ namespace Roaster_Generator.Data.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -544,11 +550,12 @@ namespace Roaster_Generator.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("EmployeeNumber")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("is_deleted = false");
 
                     b.HasIndex("PayrollNumber")
                         .IsUnique()
-                        .HasFilter("payroll_number IS NOT NULL");
+                        .HasFilter("payroll_number IS NOT NULL AND is_deleted = false");
 
                     b.ToTable("employees", (string)null);
 
@@ -560,6 +567,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Marcin",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Galkowski",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0858340019"
@@ -571,6 +579,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Arshad B",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "omarkhel",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0899427870"
@@ -582,6 +591,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Tony",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Lukose",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0894466116"
@@ -593,6 +603,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Pavishkumar B",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Kumararamalingam",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0892597229"
@@ -604,6 +615,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Shahram B",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Sajawal",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0858402075"
@@ -615,6 +627,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Mustafa B",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Kanchwala",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0894915385"
@@ -626,6 +639,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Subhan",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Aqeel",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0831243953"
@@ -637,6 +651,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Nanthu",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Njaneswaran",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0872462138"
@@ -648,6 +663,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Pradeep",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Sreekumari",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0894133889"
@@ -659,6 +675,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "ANDREWS",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "ABRAHAM CHACKO",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0831431840"
@@ -670,6 +687,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Bibin",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Baby",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0892403512"
@@ -681,6 +699,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "SunilValliparampil",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Alex",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0892097179"
@@ -692,6 +711,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Jomon",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Thottiparambil Johny",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0874520403"
@@ -703,6 +723,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Rajendran",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Pandiarajan",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0892315512"
@@ -714,6 +735,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "WEI",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "WANG",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0870570907"
@@ -725,6 +747,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Alban",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Keane",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0858388944"
@@ -736,6 +759,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Joveski",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Jovche",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0894262021"
@@ -747,6 +771,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Ronan",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "O'Dwyer",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0852860741"
@@ -758,6 +783,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Shajahan",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Shajahan",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0894045062"
@@ -769,6 +795,7 @@ namespace Roaster_Generator.Data.Migrations
                             FirstName = "Chowdhury",
                             HourlyRate = 14.5m,
                             IsActive = true,
+                            IsDeleted = false,
                             LastName = "Belal",
                             MaximumWeeklyHours = 45,
                             PhoneNumber = "0894582680"

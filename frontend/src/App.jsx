@@ -1919,7 +1919,7 @@ function AdminConsole({
                       )}
                       {!isCreatingEmployee && selectedEmployee && (
                         <button type="button" className="danger-button" onClick={removeEmployee} disabled={protectedAdminActions}>
-                          Remove completely
+                          Remove employee
                         </button>
                       )}
                     </div>
@@ -2931,7 +2931,7 @@ function App() {
   }
 
   async function removeEmployee() {
-    if (!selectedEmployeeId || !window.confirm('Remove this employee and their login completely?')) {
+    if (!selectedEmployeeId || !window.confirm('Remove this employee and delete their login? Roster, availability, sick leave, holiday requests and absent forms will be kept.')) {
       return
     }
 
@@ -2942,7 +2942,7 @@ function App() {
       setEmployeeForm(emptyEmployeeForm)
       setIsCreatingEmployee(false)
       setEmployeeEditorOpen(false)
-      setEmployeeSaveState({ status: 'success', message: 'Employee removed completely.' })
+      setEmployeeSaveState({ status: 'success', message: 'Employee removed. Their login was deleted and history was kept.' })
     } catch (error) {
       setEmployeeSaveState({ status: 'error', message: error.message })
       setErrorPopup(error.message)

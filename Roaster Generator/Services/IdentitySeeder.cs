@@ -36,6 +36,7 @@ public static class IdentitySeeder
         }
 
         var employees = await db.Employees
+            .Where(employee => !employee.IsDeleted)
             .OrderBy(employee => employee.EmployeeNumber)
             .ToListAsync(cancellationToken);
 

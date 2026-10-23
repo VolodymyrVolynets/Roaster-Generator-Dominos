@@ -79,5 +79,12 @@ public sealed class BootstrapHandoverTests
         db.ChangeTracker.Clear();
         await IdentitySeeder.SeedAsync(scope.ServiceProvider);
         Assert.Null(await users.FindByNameAsync(config.AdminUsername));
+
+        var removedEmployeeId = employeeUser.EmployeeId!.Value;
+        Assert.IsType<NoContentResult>(await controller.Delete(removedEmployeeId, default));
+        db.ChangeTracker.Clear();
+        await IdentitySeeder.SeedAsync(scope.ServiceProvider);
+        Assert.Null(await users.FindByNameAsync("bootstrap-login"));
+        Assert.True((await db.Employees.SingleAsync(employee => employee.Id == removedEmployeeId)).IsDeleted);
     }
 }

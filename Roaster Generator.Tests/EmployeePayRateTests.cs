@@ -16,11 +16,80 @@ using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
 using Roaster_Generator.Security;
 using Roaster_Generator.Validation;
+using Roaster_Generator.Services;
+using Roaster_Generator.Enums;
+using Roaster_Generator.Contracts.Holidays;
+using Roaster_Generator.Contracts.SickLeave;
+using Roaster_Generator.Contracts.Absent;
 
 namespace Roaster_Generator.Tests;
 
 public sealed class EmployeePayRateTests
 {
+    [Fact]
+    public async Task RemovingEmployeeKeepsHistoryReadableAndPreventsReactivation()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.PayrollNumber = "history-payroll";
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        var db = fixture.Db;
+        var week = WeeklyScheduleService.GetWeekMonday(-4);
+        var plan = new RosterPlan { Id = Guid.NewGuid(), WeekStart = week };
+        db.RosterPlans.Add(plan);
+        db.RosterShifts.Add(new RosterShift { EmployeeId = created.Id, RosterPlan = plan,
+            Date = week, StartTime = new TimeOnly(12, 0), FinishTime = new TimeOnly(18, 0) });
+        db.Shifts.Add(new Shift { EmployeeId = created.Id, Date = week,
+            StartTime = new TimeOnly(12, 0), FinishTime = new TimeOnly(20, 0) });
+        db.HolidayRequests.Add(new HolidayRequest { EmployeeId = created.Id, Hours = 16 });
+        db.SickLeaveRequests.Add(new SickLeaveRequest { EmployeeId = created.Id,
+            StartDate = week, FinishDate = week, Status = SickLeaveStatus.Approved });
+        db.AbsentForms.Add(new AbsentForm { EmployeeId = created.Id,
+            DriverFullName = $"{request.FirstName} {request.LastName}", ShiftDate = week,
+            NotificationDate = week, NotificationMethod = "Phone", CancellationReason = "Illness" });
+        await db.SaveChangesAsync();
+
+        Assert.IsType<NoContentResult>(await fixture.Controller.Delete(created.Id, default));
+        db.ChangeTracker.Clear();
+        var archived = await db.Employees.SingleAsync(employee => employee.Id == created.Id);
+        Assert.True(archived.IsDeleted);
+        Assert.False(archived.IsActive);
+        Assert.Empty(await db.Users.ToListAsync());
+        Assert.Single(await db.RosterShifts.ToListAsync());
+        Assert.Single(await db.Shifts.ToListAsync());
+        Assert.Single(await db.HolidayRequests.ToListAsync());
+        Assert.Single(await db.SickLeaveRequests.ToListAsync());
+        Assert.Single(await db.AbsentForms.ToListAsync());
+        var directory = Assert.IsType<List<EmployeeResponse>>(
+            Assert.IsType<OkObjectResult>(await fixture.Controller.GetEmployees(default)).Value);
+        Assert.Empty(directory);
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.Reactivate(created.Id, default));
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.Update(created.Id, request, default));
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.Delete(created.Id, default));
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.ResetPassword(created.Id, default));
+
+        var schedules = new WeeklyScheduleService(db, null);
+        var history = Assert.Single((await schedules.GetWeekForAllAsync(-4, default)).Employees);
+        Assert.Equal(created.Id, history.EmployeeId);
+        Assert.Equal("12:00", history.Days[0].StartTime);
+        Assert.False(history.CanEdit);
+        Assert.Empty((await schedules.GetWeekForAllAsync(-3, default)).Employees);
+        Assert.Null(await schedules.ReplaceWeekAsync(created.Id,
+            new Roaster_Generator.Contracts.Schedules.WeeklyScheduleRequest { WeekOffset = -4 }, default));
+        var holidays = Assert.IsType<AdminHolidayResponse>(Assert.IsType<OkObjectResult>(
+            await new AdminHolidaysController(db).Get(default)).Value);
+        Assert.Equal(created.Id, Assert.Single(holidays.Requested).EmployeeId);
+        var sickness = Assert.IsType<SickLeaveOverviewResponse>(Assert.IsType<OkObjectResult>(
+            await new AdminSickLeaveController(db, null!).Get(default)).Value);
+        Assert.Equal(created.Id, Assert.Single(sickness.Reviewed).EmployeeId);
+        Assert.Single(await new AbsentFormService(db, TimeProvider.System)
+            .GetForManagementAsync(new AbsentManagementFilter(), default));
+
+        var replacement = ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.NotEqual(created.Id, replacement.Id);
+        Assert.Equal(created.Id, (await db.HolidayRequests.SingleAsync()).EmployeeId);
+    }
+
     [Fact]
     public async Task ManagerCannotCreateAnAdmin()
     {

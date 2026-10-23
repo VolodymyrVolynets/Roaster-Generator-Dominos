@@ -27,6 +27,7 @@ public sealed class AdminEmployeesController(
     {
         var employees = await db.Employees
             .AsNoTracking()
+            .Where(employee => !employee.IsDeleted)
             .Include(employee => employee.DriverProfile)
             .Include(employee => employee.InStoreProfile)
             .Include(employee => employee.ManagerProfile)
@@ -73,7 +74,7 @@ public sealed class AdminEmployeesController(
         var phoneNumber = request.PhoneNumber.Trim();
         var payrollNumber = NormalizeOptional(request.PayrollNumber);
 
-        if (await db.Employees.AnyAsync(employee => employee.EmployeeNumber == employeeNumber, cancellationToken) ||
+        if (await db.Employees.AnyAsync(employee => !employee.IsDeleted && employee.EmployeeNumber == employeeNumber, cancellationToken) ||
             await userManager.FindByNameAsync(employeeNumber) is not null)
         {
             return ValidationError(
@@ -85,7 +86,7 @@ public sealed class AdminEmployeesController(
         }
 
         if (payrollNumber is not null &&
-            await db.Employees.AnyAsync(employee => employee.PayrollNumber == payrollNumber, cancellationToken))
+            await db.Employees.AnyAsync(employee => !employee.IsDeleted && employee.PayrollNumber == payrollNumber, cancellationToken))
         {
             return ValidationError(
                 new Dictionary<string, string[]>
@@ -156,7 +157,7 @@ public sealed class AdminEmployeesController(
             .Include(item => item.DriverProfile)
             .Include(item => item.InStoreProfile)
             .Include(item => item.ManagerProfile)
-            .SingleOrDefaultAsync(item => item.Id == employeeId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
 
         if (employee is null)
         {
@@ -182,7 +183,7 @@ public sealed class AdminEmployeesController(
         var payrollNumber = NormalizeOptional(request.PayrollNumber);
 
         if (await db.Employees.AnyAsync(
-                item => item.Id != employeeId && item.EmployeeNumber == employeeNumber,
+                item => !item.IsDeleted && item.Id != employeeId && item.EmployeeNumber == employeeNumber,
                 cancellationToken))
         {
             return ValidationError(
@@ -195,7 +196,7 @@ public sealed class AdminEmployeesController(
 
         if (payrollNumber is not null &&
             await db.Employees.AnyAsync(
-                item => item.Id != employeeId && item.PayrollNumber == payrollNumber,
+                item => !item.IsDeleted && item.Id != employeeId && item.PayrollNumber == payrollNumber,
                 cancellationToken))
         {
             return ValidationError(
@@ -295,7 +296,7 @@ public sealed class AdminEmployeesController(
         CancellationToken cancellationToken)
     {
         var employee = await db.Employees.SingleOrDefaultAsync(
-            item => item.Id == employeeId,
+            item => item.Id == employeeId && !item.IsDeleted,
             cancellationToken);
 
         if (employee is null)
@@ -325,7 +326,9 @@ public sealed class AdminEmployeesController(
             }
         }
 
-        db.Employees.Remove(employee);
+        // Keep the employee as the owner of historical availability, rosters and forms.
+        employee.IsActive = false;
+        employee.IsDeleted = true;
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -347,7 +350,7 @@ public sealed class AdminEmployeesController(
         await adminProtection.LockAsync(cancellationToken);
         var employee = await db.Employees
             .Include(item => item.DriverProfile).Include(item => item.InStoreProfile).Include(item => item.ManagerProfile)
-            .SingleOrDefaultAsync(item => item.Id == employeeId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
         if (employee is null) return NotFound(new { message = "Employee not found." });
         var user = await userManager.Users.SingleOrDefaultAsync(item => item.EmployeeId == employeeId, cancellationToken);
         if (user is null) return NotFound(new { message = "This employee has no login account." });
@@ -376,7 +379,7 @@ public sealed class AdminEmployeesController(
             .Include(item => item.DriverProfile)
             .Include(item => item.InStoreProfile)
             .Include(item => item.ManagerProfile)
-            .SingleOrDefaultAsync(item => item.Id == employeeId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
 
         if (employee is null)
         {

@@ -86,6 +86,9 @@ public sealed class WeeklyScheduleService(
         var weekEnd = weekStart.AddDays(7);
 
         var employees = await DriverRosterEmployees.Query(db)
+            .Union(db.Employees.Where(employee => employee.IsDeleted &&
+                db.Shifts.Any(shift => shift.EmployeeId == employee.Id &&
+                    shift.Date >= weekStart && shift.Date < weekEnd)))
             .AsNoTracking()
             .OrderBy(employee => employee.LastName)
             .ThenBy(employee => employee.FirstName)
@@ -129,7 +132,7 @@ public sealed class WeeklyScheduleService(
         CancellationToken cancellationToken)
     {
         var employee = await db.Employees
-            .SingleOrDefaultAsync(item => item.Id == employeeId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
 
         if (employee is null)
         {
@@ -243,6 +246,7 @@ public sealed class WeeklyScheduleService(
         {
             EmployeeId = employee.Id,
             EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
+            CanEdit = !employee.IsDeleted,
             WeekStart = weekStart,
             WeekEnd = weekStart.AddDays(6),
             ApproximateHours = approximateHours?.ExpectedHours,
