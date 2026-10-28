@@ -2084,51 +2084,113 @@
   box-shadow: 0 0 0 3px var(--danger-border);
 }
 
+/* Roles: a plain labelled group of selectable tiles (each is a real checkbox). */
 .employee-role-fieldset {
-  display: flex;
+  display: grid;
   grid-column: 1 / -1;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 18px;
+  gap: 8px;
   min-width: 0;
   margin: 0;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-md);
-  background: var(--accent-tint);
-}
-
-.employee-role-fieldset[aria-invalid="true"] {
-  border-color: var(--danger-border-strong);
-  background: var(--danger-tint);
-}
-
-.employee-role-fieldset .employee-field-error {
-  flex-basis: 100%;
+  padding: 0;
+  border: 0;
 }
 
 .employee-role-fieldset legend {
-  padding: 0 7px;
-  color: var(--accent-text);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.employee-form .checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  margin-bottom: 2px;
+  padding: 0;
   color: var(--text-secondary);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
-.employee-form .checkbox-label input {
-  width: 18px;
-  min-height: 18px;
-  accent-color: var(--accent-text);
+.employee-role-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.employee-role-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.employee-form .employee-role-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid var(--separator-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .employee-form .employee-role-option:hover {
+    border-color: var(--accent-border-strong);
+  }
+}
+
+.employee-form .employee-role-option.is-checked {
+  border-color: var(--accent-solid);
+  background: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px var(--accent-solid);
+}
+
+.employee-form .employee-role-option:has(input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+
+.employee-form .employee-role-option:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.employee-form .employee-role-option input {
+  flex: 0 0 auto;
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--accent-solid);
+}
+
+.employee-role-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.employee-form .employee-role-copy strong {
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.employee-form .employee-role-copy small {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.employee-role-fieldset[aria-invalid="true"] .employee-role-option:not(.is-checked) {
+  border-color: var(--danger-border-strong);
+}
+
+@media (max-width: 420px) {
+  .employee-role-options {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-form .employee-role-option {
+    min-height: 0;
+  }
 }
 
 .employee-form-actions,

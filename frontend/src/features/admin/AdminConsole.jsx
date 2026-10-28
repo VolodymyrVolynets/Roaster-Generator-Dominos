@@ -169,6 +169,12 @@ export function AdminConsole({
   const totalApproximateCapacityHours = employeesWithApproximateHours.length > 0
     ? employeesWithApproximateHours.reduce((total, employeeSchedule) => total + Number(employeeSchedule.approximateCapacityHours ?? 0), 0)
     : null
+  const roleDetails = {
+    Driver: { label: 'Driver', description: 'Delivers orders and is included in driver rosters.' },
+    InStore: { label: 'In-store', description: 'Works inside the store and is rostered on the inside roster.' },
+    Manager: { label: 'Manager', description: 'Opens the admin console to manage staff, demand and rosters.' },
+    Admin: { label: 'Administrator', description: 'Full access, including store settings and roster generation.' },
+  }
   const editableRoles = authState.user.isAdmin
     ? ['Driver', 'InStore', 'Manager', 'Admin']
     : ['Driver', 'InStore', 'Manager']
@@ -510,24 +516,39 @@ export function AdminConsole({
                     aria-describedby={roleErrors.length > 0 ? 'admin-employee-roles-error' : undefined}
                   >
                     <legend>Roles</legend>
-                    {editableRoles.map((role) => (
-                      <label className="checkbox-label" htmlFor={`admin-employee-role-${role}`} key={role}>
-                        <input
-                          id={`admin-employee-role-${role}`}
-                          type="checkbox"
-                          checked={employeeForm.roles?.includes(role) || false}
-                          disabled={(role === 'Admin' && selectedIsOwnAdmin) || (selectedIsAdmin && !authState.user.isAdmin)}
-                          onChange={(event) => {
-                            const currentRoles = employeeForm.roles || []
-                            const nextRoles = event.target.checked
-                              ? [...new Set([...currentRoles, role])]
-                              : currentRoles.filter((item) => item !== role)
-                            updateEmployeeForm('roles', nextRoles)
-                          }}
-                        />
-                        {role}
-                      </label>
-                    ))}
+                    <p className="employee-role-hint">Choose at least one. An employee can have several.</p>
+                    <div className="employee-role-options">
+                      {editableRoles.map((role) => {
+                        const details = roleDetails[role] || { label: role, description: '' }
+                        const checked = employeeForm.roles?.includes(role) || false
+                        return (
+                          <label
+                            className={`employee-role-option${checked ? ' is-checked' : ''}`}
+                            htmlFor={`admin-employee-role-${role}`}
+                            key={role}
+                          >
+                            <input
+                              id={`admin-employee-role-${role}`}
+                              type="checkbox"
+                              checked={checked}
+                              disabled={(role === 'Admin' && selectedIsOwnAdmin) || (selectedIsAdmin && !authState.user.isAdmin)}
+                              aria-describedby={`admin-employee-role-${role}-description`}
+                              onChange={(event) => {
+                                const currentRoles = employeeForm.roles || []
+                                const nextRoles = event.target.checked
+                                  ? [...new Set([...currentRoles, role])]
+                                  : currentRoles.filter((item) => item !== role)
+                                updateEmployeeForm('roles', nextRoles)
+                              }}
+                            />
+                            <span className="employee-role-copy">
+                              <strong>{details.label}</strong>
+                              <small id={`admin-employee-role-${role}-description`}>{details.description}</small>
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
                     <EmployeeFieldError field="roles" messages={roleErrors} />
                   </fieldset>
 
