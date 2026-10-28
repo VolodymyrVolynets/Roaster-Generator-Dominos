@@ -8,7 +8,8 @@ import {
   getWeekOffsetFromDate,
   getWeekStartValue,
   parseDateInput,
-} from './weekSelection'
+} from '../lib/weekSelection'
+import { Icon } from './Icon'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',
@@ -98,7 +99,7 @@ export function WeekSelector({
             <strong>{getRelativeWeekLabel(weekOffset)}</strong>
             <small>{dateFormatter.format(selectedWeekStart)}</small>
           </span>
-          <span className="week-picker-calendar-icon" aria-hidden="true">▦</span>
+          <span className="week-picker-calendar-icon" aria-hidden="true"><Icon name="calendar" size={18} /></span>
         </button>
       </div>
 

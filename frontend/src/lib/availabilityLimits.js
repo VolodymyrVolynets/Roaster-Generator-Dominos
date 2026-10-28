@@ -10,7 +10,31 @@ function durationHours(startTime, finishTime) {
   return ((minutes(finishTime) - minutes(startTime) + 1440) % 1440) / 60
 }
 
+function toMinutes(time) {
+  const [hour, minute] = time.split(':').map(Number)
+  return hour * 60 + minute
+}
+
+// Mirrors the server rule: start no earlier than opening, finish no later than closing (closing may be after midnight).
+function isWithinShopHours(day, field, value) {
+  if (!day.openingTime || !day.closingTime || !value) return true
+  const opening = toMinutes(day.openingTime)
+  const closing = toMinutes(day.closingTime)
+  const closingOnTimeline = closing <= opening ? closing + 1440 : closing
+  const startTime = field === 'startTime' ? value : day.startTime
+  const finishTime = field === 'finishTime' ? value : day.finishTime
+
+  if (startTime && toMinutes(startTime) < opening) return field !== 'startTime'
+  if (!finishTime) return true
+
+  const anchor = startTime ? toMinutes(startTime) : opening
+  let finish = toMinutes(finishTime)
+  if (finish <= anchor) finish += 1440
+  return finish <= closingOnTimeline
+}
+
 export function isAvailabilityTimeAllowed(day, field, value, maximumHours) {
+  if (!isWithinShopHours(day, field, value)) return false
   if (maximumHours == null) return true
   const updated = { ...day, [field]: value }
   if (!updated.startTime || !updated.finishTime) return true

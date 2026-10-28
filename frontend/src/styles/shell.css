@@ -1,0 +1,583 @@
+/* App shell: sidebar, top bar, mobile drawer and tab bar, plus sign-in screens. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 80;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  color: var(--on-accent);
+  background: var(--accent-solid);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.shell-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 18px 12px 12px;
+  border-right: 1px solid var(--separator);
+  background: var(--sidebar);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+.shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 8px 18px;
+}
+
+.shell-brand-mark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  color: #ffffff;
+  background: linear-gradient(145deg, #3a8dff, #0058d6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 6px rgba(0, 88, 214, 0.3);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.shell-brand-copy {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.shell-brand-copy strong {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shell-brand-copy span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.shell-nav-group + .shell-nav-group {
+  margin-top: 18px;
+}
+
+.shell-nav-label {
+  display: block;
+  padding: 0 10px 6px;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.shell-nav ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell-nav-item {
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: transparent;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.shell-nav-item .icon {
+  flex: 0 0 auto;
+  color: var(--accent-text);
+}
+
+.shell-nav-item:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.shell-nav-item:active:not(:disabled) {
+  transform: none;
+}
+
+.shell-nav-item.active,
+.shell-nav-item.active:hover:not(:disabled) {
+  color: var(--on-accent);
+  background: var(--accent-solid);
+}
+
+.shell-nav-item.active .icon {
+  color: inherit;
+}
+
+.shell-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 6px 0;
+  border-top: 1px solid var(--separator);
+}
+
+.shell-account-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.shell-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: var(--fill-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.shell-account-copy {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.shell-account-copy strong,
+.shell-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-account-copy strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.shell-account-copy span {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.shell-account-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.shell-icon-button {
+  flex: 0 0 auto;
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.shell-icon-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--fill);
+}
+
+/* ---------- Main column ---------- */
+.shell-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shell-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--topbar-height);
+  padding: 8px clamp(16px, 3vw, 36px);
+  border-bottom: 1px solid var(--separator);
+  background: var(--surface);
+}
+
+.shell-menu-button {
+  display: none;
+}
+
+.shell-topbar-title {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.shell-topbar-context {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.shell-topbar-title strong {
+  overflow: hidden;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.shell-content {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 36px) clamp(16px, 3vw, 36px) 64px;
+  outline: none;
+  animation: content-in 0.28s var(--ease-out);
+}
+
+.shell-content > :first-child,
+.shell-content > [hidden]:first-child + * {
+  margin-top: 0;
+  border-top: 0;
+}
+
+/* The week picker sits in the top bar; its visible label would make the bar too tall. */
+.shell-topbar-tools .week-selector {
+  display: block;
+  margin: 0;
+}
+
+.shell-topbar-tools .week-selector > span:first-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.shell-topbar-tools .week-picker-trigger {
+  min-height: 44px;
+  padding: 4px 6px 4px 14px;
+  border-radius: var(--radius-md);
+}
+
+.shell-content > section,
+.shell-content > form {
+  padding: clamp(18px, 2.4vw, 28px);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.shell-content > section + section,
+.shell-content > section + form,
+.shell-content > form + section {
+  margin-top: 20px;
+}
+
+@keyframes content-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---------- Drawer (narrow screens) ---------- */
+.shell-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--backdrop);
+  animation: fade-in 0.2s ease;
+}
+
+.shell-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(86vw, 320px);
+  padding: 18px 12px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+  animation: drawer-in 0.32s var(--ease-out);
+}
+
+.shell-drawer-close {
+  position: absolute;
+  top: 16px;
+  right: 10px;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+/* ---------- Tab bar (narrow screens, five sections or fewer) ---------- */
+.shell-tabbar {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell-sidebar {
+    display: none;
+  }
+
+  .shell-menu-button {
+    display: inline-flex;
+    margin-left: -8px;
+  }
+
+  .shell-topbar {
+    flex-wrap: wrap;
+    padding-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  .shell-topbar-tools {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+
+  .shell-has-tabbar .shell-content {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+
+  .shell-tabbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--separator);
+    background: var(--surface);
+  }
+
+  .shell-tab {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 50px;
+    padding: 4px 2px;
+    color: var(--text-tertiary);
+    background: transparent;
+    font-size: 0.6875rem;
+    font-weight: 500;
+  }
+
+  .shell-tab:hover:not(:disabled) {
+    color: var(--text-secondary);
+    background: transparent;
+  }
+
+  .shell-tab.active,
+  .shell-tab.active:hover:not(:disabled) {
+    color: var(--accent-text);
+  }
+}
+
+@media (max-width: 640px) {
+  .shell-topbar-tools {
+    flex-basis: 100%;
+    justify-content: stretch;
+  }
+
+  .shell-topbar-tools > * {
+    flex: 1;
+  }
+
+  .shell-content > section,
+  .shell-content > form {
+    margin-right: -4px;
+    margin-left: -4px;
+    padding: 18px 14px;
+    border-radius: var(--radius-lg);
+  }
+}
+
+/* ---------- Sign-in and splash ---------- */
+.page-shell {
+  min-height: 100vh;
+  padding: 32px 16px;
+}
+
+.centered-page {
+  display: grid;
+  place-items: center;
+}
+
+.splash {
+  align-content: center;
+  gap: 14px;
+  color: var(--text-tertiary);
+}
+
+.splash .shell-brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  font-size: 1.125rem;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.login-page {
+  background:
+    radial-gradient(1200px 600px at 50% -10%, var(--accent-tint-strong), transparent 60%),
+    var(--page);
+}
+
+.login-card {
+  width: min(100%, 400px);
+  padding: 32px 28px 24px;
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  text-align: center;
+}
+
+.login-mark {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 18px;
+  border-radius: 15px;
+  font-size: 1.125rem;
+}
+
+.login-header h1 {
+  font-size: 1.625rem;
+}
+
+.login-header .lead {
+  margin: 0 auto 24px;
+  font-size: 0.9375rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+  text-align: left;
+}
+
+.login-fieldset {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.login-form .message {
+  margin: 0;
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 64px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--accent-text);
+  background: transparent;
+  font-size: 0.8125rem;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.password-toggle:active:not(:disabled) {
+  transform: translateY(-50%);
+}
+
+.login-submit {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.login-secondary {
+  width: 100%;
+}
+
+.login-footnote {
+  margin: 20px 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}

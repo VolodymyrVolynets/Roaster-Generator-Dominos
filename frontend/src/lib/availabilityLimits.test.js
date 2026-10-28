@@ -17,6 +17,19 @@ test('ten hours is allowed during the day and across midnight; eleven is blocked
   }
 })
 
+test('hours outside shop opening times are blocked, including after-midnight closing', () => {
+  const shopDay = (startTime, finishTime, closingTime = '01:00') =>
+    ({ ...day(startTime, finishTime), openingTime: '12:00', closingTime })
+  assert.equal(isAvailabilityTimeAllowed(shopDay(null, null), 'startTime', '11:00', 10), false)
+  assert.equal(isAvailabilityTimeAllowed(shopDay(null, null), 'startTime', '12:00', 10), true)
+  assert.equal(isAvailabilityTimeAllowed(shopDay(null, null), 'startTime', '00:00', 10), false)
+  assert.equal(isAvailabilityTimeAllowed(shopDay('16:00', null), 'finishTime', '01:00', 10), true)
+  assert.equal(isAvailabilityTimeAllowed(shopDay('16:00', null), 'finishTime', '02:00', 10), false)
+  assert.equal(isAvailabilityTimeAllowed(shopDay('18:00', null, '04:00'), 'finishTime', '04:00', 10), true)
+  assert.equal(isAvailabilityTimeAllowed(shopDay(null, null), 'finishTime', '02:00', 10), false)
+  assert.equal(isAvailabilityTimeAllowed(day(null, null), 'startTime', '11:00', 10), true)
+})
+
 test('partial entries reserve one day and resetting frees that day', () => {
   const days = [day('12:00', null), day(null, '01:00'), day('15:00', '01:00'), day(null, null)]
   assert.equal(countAvailabilityDays(days), 3)

@@ -1,0 +1,1399 @@
+/* Screen-level refinements layered over features.css: directory, sheets, availability editor, help text, phone layouts. */
+
+/* Page panels are often grids; without this, a wide table grows its grid item and the whole page scrolls sideways. */
+.shell-content > section > *,
+.shell-content > section > section > *,
+.shell-content > form > * {
+  min-width: 0;
+}
+
+/* ---------- Calmer status messages and empty states ---------- */
+.info-message {
+  color: var(--text-secondary);
+  background: var(--fill);
+}
+
+.info-message strong {
+  color: var(--text);
+}
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 16px 0;
+  padding: 32px 16px;
+  border: 1px dashed var(--separator-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.empty-state strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.empty-state button {
+  margin-top: 8px;
+}
+
+/* ---------- Search field and segmented control ---------- */
+.directory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 4px;
+}
+
+.search-field {
+  position: relative;
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
+.search-field::before {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  width: 15px;
+  height: 15px;
+  background: var(--text-tertiary);
+  content: "";
+  transform: translateY(-50%);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 20 20'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 20 20'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.search-field input {
+  min-height: 40px;
+  padding-left: 36px;
+  border-color: transparent;
+  background: var(--fill);
+}
+
+.search-field input:focus {
+  background: var(--surface);
+}
+
+.segmented-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--fill);
+}
+
+.segmented-control button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.segmented-control button:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.segmented-control button.active,
+.segmented-control button.active:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px var(--shadow-color), 0 0 0 0.5px var(--separator);
+  font-weight: 600;
+}
+
+/* Two-option choices rendered as a segmented control at every width. */
+.absent-shift-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  max-width: 420px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--fill);
+}
+
+.absent-shift-mode button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.absent-shift-mode button:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.absent-shift-mode button.active,
+.absent-shift-mode button.active:hover:not(:disabled) {
+  border: 0;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px var(--shadow-color), 0 0 0 0.5px var(--separator);
+  font-weight: 600;
+}
+
+/* ---------- Employee directory ---------- */
+.employee-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.employee-group .employee-card,
+.employee-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-weight: 400;
+  text-align: left;
+}
+
+.employee-group .employee-card:hover:not(:disabled),
+.employee-card:hover:not(:disabled) {
+  border-color: var(--accent-border-strong);
+  background: var(--surface);
+  box-shadow: 0 2px 10px var(--shadow-color);
+}
+
+.employee-card.inactive {
+  opacity: 0.72;
+}
+
+.employee-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.employee-avatar {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--employee-accent, var(--accent-text));
+  background: var(--employee-surface, var(--accent-tint));
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.employee-card-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.employee-card .employee-card-name strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.employee-card .employee-card-name span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.employee-card .status-pill.is-active {
+  color: var(--success-text);
+  background: var(--success-tint-strong);
+}
+
+.employee-card .status-pill.is-inactive {
+  color: var(--text-tertiary);
+  background: var(--fill-strong);
+}
+
+.employee-card-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.employee-card .employee-card-facts span {
+  display: grid;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-card-facts small {
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.employee-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--separator);
+}
+
+.employee-card .employee-card-meta span {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.employee-card .employee-card-meta .needs-attention {
+  color: var(--warning-text);
+}
+
+/* ---------- Sheets (modal panels) ---------- */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--backdrop);
+  animation: fade-in 0.2s ease;
+}
+
+.employee-editor-card.sheet,
+.sheet {
+  width: min(560px, 100vw);
+  height: 100%;
+  margin: 0;
+  overflow-y: auto;
+  padding: 24px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+  outline: none;
+  overscroll-behavior: contain;
+  animation: sheet-in-side 0.34s var(--ease-out);
+}
+
+.sheet .section-heading {
+  position: sticky;
+  top: -24px;
+  z-index: 2;
+  margin: -24px -24px 12px;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--separator);
+  background: var(--surface-raised);
+}
+
+.sheet .employee-form {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+
+.employee-editor-card.sheet .employee-form-field label,
+.employee-editor-card.sheet .employee-form > label:not(.checkbox-label) {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.employee-editor-card.sheet small {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.sheet .employee-form-actions {
+  position: sticky;
+  bottom: -24px;
+  flex-wrap: wrap;
+  margin: 8px -24px -24px;
+  padding: 14px 24px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--separator);
+  background: var(--surface-raised);
+}
+
+@keyframes sheet-in-side {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-in-bottom {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+
+/* Secondary destructive actions inside rows and cards: tinted, not solid red. */
+.cell-actions .danger-button,
+.absent-record-actions .danger-button {
+  color: var(--danger-text);
+  background: var(--danger-tint-strong);
+}
+
+.cell-actions .danger-button:hover:not(:disabled),
+.absent-record-actions .danger-button:hover:not(:disabled) {
+  color: var(--on-danger);
+  background: var(--danger-solid);
+  filter: none;
+}
+
+.roster-diagnostics li {
+  color: var(--text-secondary);
+}
+
+.roster-diagnostics li::marker {
+  color: var(--warning-text);
+}
+
+/* ---------- Saved roster grid ---------- */
+/* A demand mismatch is flagged in the day header and the notes list; cells stay readable. */
+.saved-roster-table td.demand-mismatch {
+  border-color: var(--separator);
+  color: inherit;
+  background: transparent;
+}
+
+.saved-roster-table thead th.demand-mismatch {
+  background: var(--danger-tint);
+}
+
+.saved-roster-table td.demand-mismatch .roster-shift,
+.saved-roster-table .roster-shift {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 8px;
+  color: var(--accent-text);
+  background: var(--accent-tint-strong);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.saved-roster-table td.demand-mismatch .roster-day-off,
+.saved-roster-table .roster-day-off {
+  color: var(--text-tertiary);
+}
+
+.saved-roster-table tbody th {
+  text-transform: none;
+}
+
+.saved-roster-table tbody td {
+  background: var(--surface);
+}
+
+/* Phone-only day view of a saved roster. */
+.roster-day-view {
+  display: none;
+}
+
+.roster-day-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.roster-day-tabs button {
+  position: relative;
+  display: grid;
+  gap: 0;
+  min-height: 52px;
+  padding: 4px 0;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  font-weight: 500;
+}
+
+.roster-day-tabs button small {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+}
+
+.roster-day-tabs button strong {
+  font-size: 1.0625rem;
+}
+
+.roster-day-tabs button.has-mismatch::after {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger-solid);
+  content: "";
+}
+
+.roster-day-tabs button.active,
+.roster-day-tabs button.active:hover:not(:disabled) {
+  color: var(--on-accent);
+  background: var(--accent-solid);
+}
+
+.roster-day-mismatch {
+  margin: 0 0 10px;
+  color: var(--danger-text);
+  font-size: 0.8125rem;
+}
+
+.roster-day-list {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  list-style: none;
+}
+
+.roster-day-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--separator);
+}
+
+.roster-day-list li:first-child {
+  border-top: 0;
+}
+
+.roster-day-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-day-time {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: end;
+  color: var(--accent-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-day-time small {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.roster-day-off-count {
+  margin: 10px 2px 0;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .roster-day-view {
+    display: block;
+  }
+
+  .saved-roster-grid:not(.is-editing) {
+    display: none;
+  }
+}
+
+/* ---------- Driver: my week ---------- */
+.personal-roster-summary small {
+  display: block;
+}
+
+.my-week {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.my-week-day {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-subtle);
+}
+
+.my-week-day.is-working {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-tint);
+}
+
+.my-week-date {
+  display: grid;
+  flex: 0 0 40px;
+  justify-items: center;
+  line-height: 1.1;
+}
+
+.my-week-date small {
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.my-week-date strong {
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.my-week-detail {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+}
+
+.my-week-shift {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.my-week-shift strong {
+  color: var(--accent-text);
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.my-week-shift small {
+  color: var(--text-tertiary);
+}
+
+.my-week-off {
+  color: var(--text-tertiary);
+}
+
+.my-week-note {
+  margin: 10px 2px 0;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
+/* ---------- Demand ---------- */
+.demand-jump-links {
+  position: sticky;
+  top: calc(var(--topbar-height) + 4px);
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 4px 0 16px;
+  padding: 6px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: var(--surface);
+  scrollbar-width: none;
+}
+
+.demand-jump-links a {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.demand-jump-links a:hover {
+  color: var(--text);
+  background: var(--fill);
+}
+
+.demand-jump-links a[href="#demand-edit"] {
+  color: var(--accent-text);
+  background: var(--accent-tint);
+}
+
+#demand-summary,
+#demand-daily,
+#demand-hourly-heading,
+#demand-edit {
+  scroll-margin-top: calc(var(--topbar-height) + 70px);
+}
+
+.demand-import {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-lg);
+}
+
+.demand-import > summary {
+  color: var(--accent-text);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.demand-import[open] > summary {
+  margin-bottom: 10px;
+}
+
+.demand-edit-heading {
+  margin: 32px 0 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--separator);
+}
+
+.demand-edit-heading h3 {
+  margin: 4px 0;
+}
+
+.demand-edit-heading p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+
+/* Quiet steppers: tinted only on hover so a full week of cells reads calmly. */
+.demand-stepper-button,
+.demand-stepper-button.demand-stepper-add,
+.demand-stepper-button.demand-stepper-remove {
+  border: 0;
+  color: var(--accent-text);
+  background: var(--fill);
+  font-weight: 500;
+}
+
+.demand-stepper-button:disabled {
+  color: var(--text-tertiary);
+  background: transparent;
+}
+
+.demand-stepper-button.demand-stepper-add:hover:not(:disabled),
+.demand-stepper-button.demand-stepper-add:focus-visible {
+  border: 0;
+  color: var(--on-accent);
+  background: var(--accent-solid);
+  box-shadow: none;
+}
+
+.demand-stepper-button.demand-stepper-remove:hover:not(:disabled),
+.demand-stepper-button.demand-stepper-remove:focus-visible {
+  border: 0;
+  color: var(--on-danger);
+  background: var(--danger-solid);
+  box-shadow: none;
+}
+
+.demand-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  margin: 16px calc(-1 * clamp(18px, 2.4vw, 28px)) calc(-1 * clamp(18px, 2.4vw, 28px));
+  padding: 12px clamp(18px, 2.4vw, 28px);
+  border-top: 1px solid var(--separator);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  background: var(--surface);
+}
+
+.demand-table input[readonly] {
+  border-color: transparent;
+  color: var(--text-tertiary);
+  background: var(--fill);
+}
+
+.demand-save-bar > .secondary-button:last-child {
+  margin-left: auto;
+  color: var(--danger-text);
+}
+
+/* ---------- Absent form records ---------- */
+.absent-record .section-heading h4 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.absent-record .section-heading,
+.absent-record .absent-record-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.absent-record .role-badge {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--success-text);
+  background: var(--success-tint-strong);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.absent-record-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 16px;
+  margin: 12px 0 0;
+}
+
+.absent-record-details dt {
+  margin-bottom: 2px;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.absent-record-details dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.absent-record-details .absent-wide {
+  grid-column: 1 / -1;
+}
+
+/* ---------- Disclosure help ---------- */
+.inline-help {
+  margin: -4px 0 16px;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+
+.inline-help summary {
+  width: fit-content;
+  color: var(--accent-text);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.inline-help p {
+  max-width: 75ch;
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.roster-settings > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.unsaved-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--warning-text);
+  background: var(--warning-tint-strong);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.demand-help {
+  max-width: 75ch;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+/* ---------- Availability editor ---------- */
+.schedule-form {
+  margin-top: 0;
+}
+
+.schedule-heading,
+.schedule-heading > div {
+  align-items: center;
+  flex-direction: row;
+  text-align: left;
+}
+
+.schedule-heading h2 {
+  overflow-wrap: anywhere;
+}
+
+.schedule-progress {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--fill);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-progress strong {
+  color: var(--accent-text);
+}
+
+.schedule-progress.is-full strong {
+  color: var(--warning-text);
+}
+
+.schedule-rules {
+  margin: 0 0 16px;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
+.schedule-rules ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule-rules li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--fill);
+  font-weight: 500;
+}
+
+.schedule-rules p {
+  margin: 0;
+}
+
+.schedule-table {
+  background: var(--surface);
+}
+
+.schedule-row {
+  grid-template-columns: minmax(150px, 1.4fr) minmax(120px, 1fr) minmax(120px, 1fr) 72px;
+}
+
+.schedule-row.has-hours .day-cell-title strong {
+  color: var(--text);
+}
+
+.day-cell {
+  gap: 6px;
+}
+
+.day-cell-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.day-cell-title span {
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
+.day-cell-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.day-cell-badges:empty {
+  display: none;
+}
+
+.day-cell .shift-duration,
+.day-cell .busy-day-badge {
+  width: fit-content;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.day-cell .shift-duration {
+  color: var(--success-text);
+  background: var(--success-tint-strong);
+}
+
+.day-cell .busy-day-badge {
+  color: var(--warning-text);
+  background: var(--warning-tint-strong);
+}
+
+.time-cell-label {
+  display: none;
+}
+
+.reset-cell {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.reset-button,
+.schedule-row:not(.schedule-header) .reset-button {
+  width: auto;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  color: var(--accent-text);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.reset-button:hover:not(:disabled) {
+  border: 0;
+  background: var(--fill);
+}
+
+.reset-button:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.schedule-footer {
+  padding: 14px 0 0;
+}
+
+.schedule-insights {
+  margin-top: 28px;
+}
+
+/* ---------- Tablet and phone ---------- */
+@media (max-width: 760px) {
+  .schedule-header {
+    display: none;
+  }
+
+  .schedule-row,
+  .schedule-row:not(.schedule-header) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px 10px;
+    padding: 14px;
+  }
+
+  .schedule-row .day-cell,
+  .schedule-row:not(.schedule-header) .day-cell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    grid-column: 1 / -1;
+  }
+
+  .reset-cell {
+    position: absolute;
+    right: 8px;
+  }
+
+  .schedule-row {
+    position: relative;
+  }
+
+  .schedule-row .day-cell {
+    padding-right: 64px;
+  }
+
+  .schedule-row .reset-cell {
+    top: 8px;
+  }
+
+  .time-cell {
+    display: grid;
+    gap: 4px;
+  }
+
+  .time-cell-label {
+    display: block;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .schedule-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    flex-direction: row;
+    align-items: center;
+    margin: 16px -14px 0;
+    padding: 12px 14px;
+    border-top: 1px solid var(--separator);
+    background: var(--surface);
+  }
+
+  .shell-has-tabbar .schedule-footer {
+    bottom: calc(63px + env(safe-area-inset-bottom));
+  }
+
+  .schedule-footer .save-message {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.8125rem;
+  }
+
+  .schedule-footer button {
+    flex: 0 0 auto;
+  }
+
+  .sheet-backdrop {
+    align-items: flex-end;
+  }
+
+  .employee-editor-card.sheet,
+  .sheet {
+    width: 100%;
+    height: auto;
+    max-height: calc(100% - 24px - env(safe-area-inset-top));
+    padding: 20px 16px;
+    border-radius: 16px 16px 0 0;
+    animation-name: sheet-in-bottom;
+  }
+
+  .sheet .section-heading {
+    top: -20px;
+    margin: -20px -16px 12px;
+    padding: 16px;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .sheet .employee-form {
+    grid-template-columns: 1fr;
+  }
+
+  .sheet .employee-form-actions {
+    bottom: -20px;
+    margin: 8px -16px -20px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .sheet .employee-form-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .sheet .employee-form-actions > button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .sheet .employee-form-actions > button[type="submit"] {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+
+  .sheet .section-heading {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Let page-level panels use the full width instead of nesting padded boxes. */
+  .shell-content {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .shell-content > section,
+  .shell-content > form {
+    margin-right: -12px;
+    margin-left: -12px;
+    padding: 18px 12px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .shell-content > section + section {
+    border-top: 8px solid var(--page);
+  }
+
+  .schedule-footer {
+    margin-right: -12px;
+    margin-left: -12px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .directory-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search-field {
+    max-width: none;
+    flex-basis: auto;
+  }
+
+  .segmented-control {
+    display: flex;
+  }
+
+  .segmented-control button {
+    flex: 1;
+  }
+
+  .employee-group {
+    padding: 12px;
+  }
+
+  .employee-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+  }
+
+  .holiday-summary {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .holiday-admin-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .holiday-admin-actions > * {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .absent-filter-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .absent-filter-fields .absent-filter-name {
+    grid-column: 1 / -1;
+  }
+
+  .absent-filter-fields .date-picker-trigger {
+    padding: 0 10px;
+    font-size: 0.875rem;
+  }
+
+  .absent-record .absent-record-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+
+  .absent-record .absent-record-actions .role-badge {
+    grid-column: 1 / -1;
+  }
+
+  .absent-record-actions > a,
+  .absent-record-actions > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 38px;
+    padding: 0 6px;
+    font-size: 0.8125rem;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .demand-save-bar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    margin: 16px -12px -18px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    border-radius: 0;
+  }
+
+  .demand-save-bar > button[type="submit"] {
+    grid-column: 1 / -1;
+  }
+
+  .demand-save-bar > button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .demand-mobile-table .demand-stepper {
+    display: grid;
+    grid-template-columns: 32px minmax(30px, 1fr) 32px;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .demand-mobile-table .demand-stepper > * {
+    grid-row: 1;
+  }
+
+  .demand-mobile-table .demand-stepper .demand-stepper-remove {
+    grid-column: 1;
+  }
+
+  .demand-mobile-table .demand-stepper .demand-stepper-input {
+    grid-column: 2;
+  }
+
+  .demand-mobile-table .demand-stepper .demand-stepper-add {
+    grid-column: 3;
+  }
+
+  .demand-mobile-table .demand-stepper-button {
+    width: 32px;
+    min-height: 36px;
+    padding: 0;
+  }
+
+  .demand-mobile-table th:first-child {
+    width: 56px;
+    padding-right: 4px;
+    padding-left: 4px;
+  }
+
+  .demand-mobile-table td {
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .demand-mobile-table .demand-stepper-input {
+    order: 0;
+    width: 100%;
+    min-height: 36px;
+    padding: 0 4px;
+    text-align: center;
+  }
+
+  /* Request tables become one card per row, each value labelled. */
+  .holiday-table-wrapper {
+    overflow: visible;
+    border: 0;
+  }
+
+  .holiday-table,
+  .holiday-table tbody,
+  .holiday-table tr,
+  .holiday-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .holiday-table thead {
+    display: none;
+  }
+
+  .holiday-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 12px;
+    margin-bottom: 10px;
+    padding: 14px;
+    border: 1px solid var(--separator);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+  }
+
+  .holiday-table td,
+  .holiday-table th {
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .holiday-table td[data-label]::before {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-tertiary);
+    content: attr(data-label);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .holiday-table td:empty {
+    display: none;
+  }
+
+  .holiday-table td.cell-primary,
+  .holiday-table td.cell-actions {
+    grid-column: 1 / -1;
+  }
+
+  .holiday-table td.cell-primary::before {
+    display: none;
+  }
+
+  .holiday-table td.cell-primary strong {
+    font-size: 1rem;
+  }
+
+  .holiday-table td.cell-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--separator);
+  }
+
+  .holiday-table td.cell-actions:empty {
+    display: none;
+  }
+
+  .holiday-table td.cell-actions button {
+    flex: 1;
+  }
+
+  /* Keep row labels visible while scrolling wide grids sideways. */
+  .availability-row > :first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    margin: -10px 0 -10px -12px;
+    padding: 10px 8px 10px 12px;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--separator);
+  }
+
+  .availability-row-missing > :first-child {
+    background: linear-gradient(var(--warning-tint), var(--warning-tint)), var(--surface);
+  }
+}

@@ -4,7 +4,7 @@ import {
   applyApplicationChangedEvent,
   initialApplicationEventVersions,
   reconnectApplicationEvents,
-} from './applicationEvents'
+} from '../lib/applicationEvents'
 
 export function useApplicationEvents(authenticated, employeeId) {
   const [versions, setVersions] = useState(initialApplicationEventVersions)

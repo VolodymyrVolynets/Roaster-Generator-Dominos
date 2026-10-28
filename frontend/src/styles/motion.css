@@ -1,0 +1,170 @@
+/*
+  Motion. Loaded last so it owns every entrance/exit animation.
+  Rules: ease-out for enter/exit, the drawer curve for sliding panels, UI motion under 300ms,
+  exits shorter than entrances. Exit durations must match usePresence(…, ms) in the components.
+*/
+
+/* Button press feedback (scale 0.98, 160ms ease-out) is defined with the button styles in base.css. */
+
+/* ---------- Slide-out navigation (phones) ---------- */
+.shell-drawer {
+  animation: drawer-in 280ms var(--ease-drawer);
+}
+
+.shell-drawer-backdrop.is-closing {
+  animation: fade-out 200ms var(--ease-out) forwards;
+}
+
+.shell-drawer-backdrop.is-closing .shell-drawer {
+  animation: drawer-out 200ms var(--ease-out) forwards;
+}
+
+@keyframes drawer-out {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* ---------- Employee editor sheet ---------- */
+.employee-editor-card.sheet,
+.sheet {
+  animation: sheet-in-side 300ms var(--ease-drawer);
+}
+
+.sheet-backdrop.is-closing {
+  animation: fade-out 200ms var(--ease-out) forwards;
+}
+
+.sheet-backdrop.is-closing .sheet {
+  animation: sheet-out-side 200ms var(--ease-out) forwards;
+}
+
+@keyframes sheet-out-side {
+  to {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-out-bottom {
+  to {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+
+/* ---------- Error toast ---------- */
+.error-popup.is-closing {
+  animation: toast-out 160ms var(--ease-out) forwards;
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+/* ---------- Date picker: grows out of its field ---------- */
+.date-picker-popover {
+  transform-origin: top left;
+}
+
+.date-picker.is-closing .date-picker-popover {
+  animation: popover-out 150ms var(--ease-out) forwards;
+}
+
+@keyframes popover-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+/* ---------- Centred dialogs (week picker, roster cell editor) ---------- */
+.week-picker-backdrop,
+.roster-cell-dialog-backdrop {
+  animation: fade-in 200ms var(--ease-out);
+}
+
+.week-picker-dialog,
+.roster-cell-dialog {
+  transform-origin: center;
+  animation: dialog-in 200ms var(--ease-out);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- Phones: sheets slide up from the bottom ---------- */
+@media (max-width: 760px) {
+  .employee-editor-card.sheet,
+  .sheet {
+    animation: sheet-in-bottom 300ms var(--ease-drawer);
+  }
+
+  .sheet-backdrop.is-closing .sheet {
+    animation-name: sheet-out-bottom;
+  }
+}
+
+@media (max-width: 640px) {
+  .date-picker-popover {
+    transform-origin: bottom center;
+    animation: sheet-in-bottom 280ms var(--ease-drawer);
+  }
+
+  .date-picker.is-closing .date-picker-popover {
+    animation: sheet-out-bottom 180ms var(--ease-out) forwards;
+  }
+
+  .date-picker.is-closing::before {
+    animation: fade-out 180ms var(--ease-out) forwards;
+  }
+}
+
+/*
+  Reduced motion: fewer and gentler, not zero. Keep fades and colour changes,
+  drop movement (slides, scaling, press-down).
+*/
+@media (prefers-reduced-motion: reduce) {
+  button,
+  button:active:not(:disabled) {
+    transform: none;
+  }
+
+  .shell-content {
+    animation: none;
+  }
+
+  .shell-drawer,
+  .sheet,
+  .employee-editor-card.sheet,
+  .error-popup,
+  .date-picker-popover,
+  .week-picker-dialog,
+  .roster-cell-dialog {
+    animation: fade-in 160ms ease;
+  }
+
+  .shell-drawer-backdrop.is-closing .shell-drawer,
+  .sheet-backdrop.is-closing .sheet,
+  .error-popup.is-closing,
+  .date-picker.is-closing .date-picker-popover {
+    animation: fade-out 120ms ease forwards;
+  }
+
+  .splash .shell-brand-mark {
+    animation: none;
+  }
+}

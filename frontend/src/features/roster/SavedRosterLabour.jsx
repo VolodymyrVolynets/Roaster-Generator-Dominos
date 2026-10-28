@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { formatLabourMoney, labourDisplay } from './rosterLabour'
+import { formatLabourMoney, labourDisplay } from '../../lib/rosterLabour'
+
+const isoDateFormatter = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+const formatIsoDate = (value) => (value ? isoDateFormatter.format(new Date(`${value}T00:00:00Z`)) : '')
 
 export default function SavedRosterLabour({ fetchJson, query, refreshKey, rosterKind = 'drivers', editing = false }) {
   const [state, setState] = useState({ status: 'loading', data: null, error: '' })
@@ -41,7 +44,7 @@ export default function SavedRosterLabour({ fetchJson, query, refreshKey, roster
         <strong>Labour calculation notes</strong>
         <ul>{data.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
       </div>}
-      <p className="roster-footnote">Week starting {data.weekStart} · Weekly target sales: <strong>{formatLabourMoney(data.targetSales)}</strong></p>
+      <p className="roster-footnote">Week starting {formatIsoDate(data.weekStart)} · Weekly target sales: <strong>{formatLabourMoney(data.targetSales)}</strong></p>
       <div className="roster-labour-cards">
         {groups.map(({ key, label }) => {
           const value = display(data[key], key)
@@ -67,7 +70,7 @@ export default function SavedRosterLabour({ fetchJson, query, refreshKey, roster
             ])}</tr>
           </thead>
           <tbody>{data.days.map((day) => <tr key={day.date}>
-            <th scope="row">{day.label}<small>{day.date}</small></th>
+            <th scope="row">{day.label}<small>{formatIsoDate(day.date)}</small></th>
             <td>{formatLabourMoney(day.targetSales)}</td>
             {groups.flatMap(({ key }) => {
               const value = display(day[key], key)

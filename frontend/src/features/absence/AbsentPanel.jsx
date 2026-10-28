@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DatePicker } from '../../components/DatePicker'
 
 const emptyForm = {
   shiftEntryMode: 'saved',
@@ -75,7 +76,7 @@ function FormHistory({
           {editingForm.shiftEntryMode === 'manual' && <>
             <div className="absent-field absent-wide">
               <label htmlFor={`absent-edit-shift-date-${form.id}`}>Shift date</label>
-              <input id={`absent-edit-shift-date-${form.id}`} type="date" value={editingForm.shiftDate} onChange={(event) => onChangeEdit('shiftDate', event.target.value)} required />
+              <DatePicker id={`absent-edit-shift-date-${form.id}`} value={editingForm.shiftDate} onChange={(value) => onChangeEdit('shiftDate', value)} required />
             </div>
             <div className="absent-field">
               <label htmlFor={`absent-edit-shift-start-${form.id}`}>Shift start hour</label>
@@ -88,7 +89,7 @@ function FormHistory({
           </>}
           <div className="absent-field">
             <label htmlFor={`absent-edit-date-${form.id}`}>Notification date</label>
-            <input id={`absent-edit-date-${form.id}`} type="date" value={editingForm.notificationDate} onChange={(event) => onChangeEdit('notificationDate', event.target.value)} required />
+            <DatePicker id={`absent-edit-date-${form.id}`} value={editingForm.notificationDate} onChange={(value) => onChangeEdit('notificationDate', value)} required />
           </div>
           <div className="absent-field">
             <label htmlFor={`absent-edit-time-${form.id}`}>Notification time</label>
@@ -111,10 +112,10 @@ function FormHistory({
           </div>
         </div>
       </form> : <dl className="absent-record-details">
-          <div><dt>Driver’s full name</dt><dd>{form.driverFullName}</dd></div>
-          <div><dt>Payroll number</dt><dd>{form.payrollNumber || 'Not set'}</dd></div>
-          <div><dt>Notification date and time</dt><dd>{formatDate(form.notificationDate)} · {form.notificationTime}</dd></div>
-          <div><dt>Method of notification</dt><dd>{form.notificationMethod}</dd></div>
+          {management && <div><dt>Driver’s full name</dt><dd>{form.driverFullName}</dd></div>}
+          {management && <div><dt>Payroll number</dt><dd>{form.payrollNumber || 'Not set'}</dd></div>}
+          <div><dt>Notified</dt><dd>{formatDate(form.notificationDate)} · {form.notificationTime}</dd></div>
+          <div><dt>Method</dt><dd>{form.notificationMethod}</dd></div>
           <div className="absent-wide"><dt>Reason for cancellation</dt><dd>{form.cancellationReason}</dd></div>
         </dl>}
     </article>)}
@@ -324,11 +325,11 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
       <div className="absent-filter-fields">
         <div className="absent-filter-field">
           <label htmlFor="absent-filter-start-date">Shift start date</label>
-          <input id="absent-filter-start-date" type="date" value={filters.shiftStartDate} max={filters.shiftFinishDate || undefined} onChange={(event) => updateFilter('shiftStartDate', event.target.value)} />
+          <DatePicker id="absent-filter-start-date" value={filters.shiftStartDate} max={filters.shiftFinishDate || undefined} onChange={(value) => updateFilter('shiftStartDate', value)} placeholder="Any date" clearable />
         </div>
         <div className="absent-filter-field">
           <label htmlFor="absent-filter-finish-date">Shift finish date</label>
-          <input id="absent-filter-finish-date" type="date" value={filters.shiftFinishDate} min={filters.shiftStartDate || undefined} onChange={(event) => updateFilter('shiftFinishDate', event.target.value)} />
+          <DatePicker id="absent-filter-finish-date" value={filters.shiftFinishDate} min={filters.shiftStartDate || undefined} onChange={(value) => updateFilter('shiftFinishDate', value)} placeholder="Any date" clearable />
         </div>
         <div className="absent-filter-field absent-filter-name">
           <label htmlFor="absent-filter-employee">Employee name</label>
@@ -356,8 +357,8 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
           <div className="absent-field absent-wide">
             <span className="absent-field-label">Shift cancelled</span>
             <div className="absent-shift-mode" role="radiogroup" aria-label="How to enter the cancelled shift">
-              <button type="button" role="radio" aria-checked={form.shiftEntryMode === 'saved'} className={form.shiftEntryMode === 'saved' ? 'active' : ''} onClick={() => update('shiftEntryMode', 'saved')}>Choose saved shift</button>
-              <button type="button" role="radio" aria-checked={form.shiftEntryMode === 'manual'} className={form.shiftEntryMode === 'manual' ? 'active' : ''} onClick={() => update('shiftEntryMode', 'manual')}>Enter shift manually</button>
+              <button type="button" role="radio" aria-checked={form.shiftEntryMode === 'saved'} className={form.shiftEntryMode === 'saved' ? 'active' : ''} onClick={() => update('shiftEntryMode', 'saved')}>Saved shift</button>
+              <button type="button" role="radio" aria-checked={form.shiftEntryMode === 'manual'} className={form.shiftEntryMode === 'manual' ? 'active' : ''} onClick={() => update('shiftEntryMode', 'manual')}>Enter manually</button>
             </div>
           </div>
           {form.shiftEntryMode === 'saved' ? <div className="absent-field absent-wide">
@@ -366,12 +367,12 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
               <option value="">Select a saved roster shift</option>
               {shifts.map((shift) => <option key={shift.id} value={shift.id}>{shiftLabel(shift)}</option>)}
             </select>
-            {!shifts.length && <small>No saved driver shifts are available. Choose “Enter shift manually” above.</small>}
+            {!shifts.length && <small>No saved driver shifts are available. Choose “Enter manually” above.</small>}
             {selectedShiftMissing && <small role="alert">The selected shift has changed. Select a current saved shift or enter it manually.</small>}
           </div> : <>
             <div className="absent-field absent-wide">
               <label htmlFor="absent-shift-date">Shift date</label>
-              <input id="absent-shift-date" type="date" value={form.shiftDate} onChange={(event) => update('shiftDate', event.target.value)} required />
+              <DatePicker id="absent-shift-date" value={form.shiftDate} onChange={(value) => update('shiftDate', value)} required />
             </div>
             <div className="absent-field">
               <label htmlFor="absent-shift-start">Shift start hour</label>
@@ -385,7 +386,7 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
           </>}
           <div className="absent-field">
             <label htmlFor="absent-date">Notification date</label>
-            <input id="absent-date" type="date" value={form.notificationDate} onChange={(event) => update('notificationDate', event.target.value)} required aria-describedby="absent-date-help" />
+            <DatePicker id="absent-date" value={form.notificationDate} onChange={(value) => update('notificationDate', value)} required describedBy="absent-date-help" />
             <small id="absent-date-help">Defaults to today in Dublin and can be corrected.</small>
           </div>
           <div className="absent-field">

@@ -4,7 +4,7 @@ import {
   availabilityHeatmapStatus,
   buildAvailabilityHeatmapDays,
   buildAvailabilityHeatmapGrid,
-} from './availabilityHeatmap.js'
+} from '../../lib/availabilityHeatmap.js'
 
 const parseDate = (date) => new Date(`${date}T12:00:00`)
 const dateFormatter = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })

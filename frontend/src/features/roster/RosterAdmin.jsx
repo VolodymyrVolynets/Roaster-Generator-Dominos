@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/signalr'
-import { createRosterEventState, mergeRosterEvents } from './rosterEvents'
-import { compareRosterEmployees, employeeMatchesRosterKind, getRosterRoleGroup, rosterForKind, rosterRoleGroups } from './employeeGroups'
+import { createRosterEventState, mergeRosterEvents } from '../../lib/rosterEvents'
+import { compareRosterEmployees, employeeMatchesRosterKind, getRosterRoleGroup, rosterForKind, rosterRoleGroups } from '../../lib/employeeGroups'
 import SavedRosterLabour from './SavedRosterLabour'
-import { AreaSelector } from './SelectionControls'
-import { getWeekStartValue } from './weekSelection'
+import { AreaSelector } from '../../components/SelectionControls'
+import { getWeekStartValue } from '../../lib/weekSelection'
 
 const weightFields = [
   ['approximateHoursWeight', 'Match approximate hours', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s automatically calculated share; reduce it when shift shape or rest needs more flexibility. Set to 0 to disable it.'],
@@ -40,16 +40,24 @@ const hourOptions = Array.from({ length: 24 }, (_, hour) => `${String(hour).padS
 function SettingsForm({ settings, setSettings, savedSettings, saveSettings, saving, running, error, onRetry }) {
   const dirty = settings && savedSettings && JSON.stringify(settings) !== JSON.stringify(savedSettings)
   return (
-    <details className="roster-settings" open>
-      <summary>Scheduling preferences</summary>
+    <details className="roster-settings" open={Boolean(dirty)}>
+      <summary>
+        Scheduling preferences
+        {dirty && <span className="unsaved-badge">Unsaved changes</span>}
+      </summary>
       <p className="demand-help">
-        Exact demand is the first target at every hour. If it is impossible, generation saves the legal driver roster with the least uncovered demand; it never schedules above demand. Every shift must be 3–10 hours, within availability, and start no later than {settings?.latestShiftStartHour ?? 20}:00.
-        Shifts may finish after the latest start time or overnight, with at most one shift per business day.
-        Approximate hours are calculated automatically from useful availability, hourly demand, and how many drivers can cover each hour.
-        Weight fields use a 0–1000 scale: higher values give that preference more influence and 0 disables it. Maximum demand coverage without overstaffing,
-        availability, and hard shift rules always apply. Start with the defaults, then raise one weight at a time when a specific
-        outcome needs more influence.
+        Every shift is 3–10 hours, within availability, and starts no later than {settings?.latestShiftStartHour ?? 20}:00, with at most one shift per business day.
+        {' '}Weights run from 0 to 1000: higher means more influence, 0 turns a preference off. Start with the defaults and change one weight at a time.
       </p>
+      <details className="inline-help">
+        <summary>More about these rules</summary>
+        <p>
+          Exact demand is the first target at every hour. If it is impossible, generation saves the legal driver roster with the least uncovered demand; it never schedules above demand.
+          Shifts may finish after the latest start time or overnight.
+          Approximate hours are calculated automatically from useful availability, hourly demand, and how many drivers can cover each hour.
+          Maximum demand coverage without overstaffing, availability, and hard shift rules always apply.
+        </p>
+      </details>
       {!settings ? error ? <div>
         <p className="message error-message" role="alert">{error}</p>
         <button type="button" className="secondary-button" onClick={onRetry}>Retry loading preferences</button>
@@ -332,10 +340,16 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
         </p>
       )}
       <p className="demand-help">
-        Build an exact demand match when possible, then balance automatically calculated approximate hours, past-hour differences, shift lengths, and rest.
-        If exact coverage is impossible, the best legal under-covered roster is saved automatically and its shortages are highlighted. Generation never schedules more drivers than demand.
-        {' '}Every e-bike shift must have a car or moped driver alongside it.
+        Matches driver demand hour by hour, then balances hours fairly across drivers. It never schedules more drivers than demand.
       </p>
+      <details className="inline-help">
+        <summary>How generation works</summary>
+        <p>
+          Generation builds an exact demand match when possible, then balances automatically calculated approximate hours, past-hour differences, shift lengths, and rest.
+          If exact coverage is impossible, the best legal under-covered roster is saved automatically and its shortages are highlighted.
+          {' '}Every e-bike shift must have a car or moped driver alongside it.
+        </p>
+      </details>
       {summary && (
         <>
           <p className="save-message">Week starting {formatDate(summary.weekStart)}</p>
@@ -387,7 +401,7 @@ export function RosterGenerationPanel({ fetchJson, setErrorPopup, isVisible, onS
           </div>
           <p className="roster-generation-message">{generation.message}</p>
           <div className="roster-progress" role="progressbar" aria-label="Generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progress}>
-            <span style={{ width: `${progress}%` }} />
+            <span style={{ transform: `scaleX(${Math.min(100, Math.max(0, Number(progress) || 0)) / 100})` }} />
           </div>
           <small>Week starting {formatDate(generation.weekStart)}</small>
           {generation.status === 'completed' && <div className="roster-generation-actions">
@@ -694,6 +708,56 @@ function FairnessComparison({ roster, employeeGroups }) {
   </details>
 }
 
+// Phone layout: one day at a time, listing who works and when.
+function RosterDayView({ group, dates, activeDate, onSelectDate, mismatchDetails }) {
+  const working = group.employees
+    .flatMap((employee) => employee.shifts
+      .filter((shift) => shift.date === activeDate)
+      .map((shift) => ({ employee, shift })))
+    .sort((first, second) =>
+      (first.shift.startDayOffset - second.shift.startDayOffset) ||
+      first.shift.startTime.localeCompare(second.shift.startTime) ||
+      first.employee.employeeName.localeCompare(second.employee.employeeName))
+  const offCount = group.employees.filter((employee) => !employee.shifts.some((shift) => shift.date === activeDate)).length
+  const mismatch = mismatchDetails(activeDate)
+
+  return <div className="roster-day-view">
+    <div className="roster-day-tabs" role="tablist" aria-label="Roster day">
+      {dates.map((date) => {
+        const day = parseDate(date)
+        return <button
+          type="button"
+          role="tab"
+          key={date}
+          aria-selected={date === activeDate}
+          className={`${date === activeDate ? 'active' : ''}${mismatchDetails(date) ? ' has-mismatch' : ''}`}
+          onClick={() => onSelectDate(date)}
+        >
+          <small>{day.toLocaleDateString(undefined, { weekday: 'short' })}</small>
+          <strong>{day.getDate()}</strong>
+        </button>
+      })}
+    </div>
+    {mismatch && <p className="roster-day-mismatch">Doesn’t match current demand: {mismatch}</p>}
+    {working.length === 0 ? (
+      <p className="message info-message">Nobody is scheduled on {formatDate(activeDate)}.</p>
+    ) : (
+      <ul className="roster-day-list">
+        {working.map(({ employee, shift }, index) => (
+          <li key={`${employee.employeeId}-${index}`}>
+            <span className="roster-day-name">{employee.employeeName}</span>
+            <span className="roster-day-time">
+              {shiftTime(shift.startTime, shift.startDayOffset)}–{shiftTime(shift.finishTime, shift.finishDayOffset)}
+              <small>{formatNumber(shift.durationHours)}h</small>
+            </span>
+          </li>
+        ))}
+      </ul>
+    )}
+    {offCount > 0 && <p className="roster-day-off-count">{offCount} {offCount === 1 ? 'person is' : 'people are'} off this day.</p>}
+  </div>
+}
+
 function SavedRosterEmployeeTables({
   roster,
   rosterKind,
@@ -705,6 +769,8 @@ function SavedRosterEmployeeTables({
   onEditCell,
 }) {
   const employeeLabel = rosterKind === 'inside' ? 'inside employee' : 'driver'
+  const [phoneDate, setPhoneDate] = useState(dates[0])
+  const activePhoneDate = dates.includes(phoneDate) ? phoneDate : dates[0]
   const mismatchDetails = (date) => demandMismatchByDate.get(date)?.join(' · ')
   const mismatchEntries = [...demandMismatchByDate.entries()].flatMap(([date, details]) => details.map((detail) => ({ date, detail })))
 
@@ -735,8 +801,17 @@ function SavedRosterEmployeeTables({
               {group.employees.length} {group.employees.length === 1 ? 'employee' : 'employees'}
             </span>
           </div>
+          {group.employees.length > 0 && !editing && (
+            <RosterDayView
+              group={group}
+              dates={dates}
+              activeDate={activePhoneDate}
+              onSelectDate={setPhoneDate}
+              mismatchDetails={mismatchDetails}
+            />
+          )}
           {group.employees.length > 0 ? (
-            <div className="demand-table-wrapper">
+            <div className={`demand-table-wrapper saved-roster-grid${editing ? ' is-editing' : ''}`}>
               <table className={`saved-roster-table${editing ? ' roster-table-editing' : ''}`}>
                 <caption className="visually-hidden">{group.label} roster for the week starting {roster.weekStart}</caption>
                 <thead><tr>
