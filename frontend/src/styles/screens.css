@@ -1121,7 +1121,7 @@
 }
 
 @media (max-width: 640px) {
-  /* Let page-level panels use the full width instead of nesting padded boxes. */
+  /* Page panels are inset cards: 12px from the screen edge, content 16px inside the card. */
   .shell-content {
     padding-right: 12px;
     padding-left: 12px;
@@ -1129,22 +1129,23 @@
 
   .shell-content > section,
   .shell-content > form {
-    margin-right: -12px;
-    margin-left: -12px;
-    padding: 18px 12px;
-    border-radius: 0;
-    box-shadow: none;
+    margin-right: 0;
+    margin-left: 0;
+    padding: 18px 16px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
   }
 
   .shell-content > section + section {
-    border-top: 8px solid var(--page);
+    margin-top: 12px;
+    border-top: 0;
   }
 
   .schedule-footer {
-    margin-right: -12px;
-    margin-left: -12px;
-    padding-right: 12px;
-    padding-left: 12px;
+    margin-right: -16px;
+    margin-left: -16px;
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
   .directory-toolbar {
@@ -1240,9 +1241,9 @@
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 8px;
-    margin: 16px -12px -18px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-    border-radius: 0;
+    margin: 16px -16px -18px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   }
 
   .demand-save-bar > button[type="submit"] {

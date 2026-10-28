@@ -188,8 +188,8 @@ function App() {
       setWeekOffset(minWeekOffset)
       setErrorPopup('')
     } catch (error) {
+      // The sign-in form shows this message inline; a second toast would repeat it.
       setAuthState({ status: 'anonymous', user: null, message: error.message })
-      setErrorPopup(error.message)
     }
   }
 
