@@ -50,6 +50,9 @@ export function ScheduleEditor({
   saveSchedule,
   updateDay,
   resetDay,
+  eyebrow = 'Weekly availability',
+  lockedMessage = 'Availability for next week is locked from Saturday. Select the week after next to make changes.',
+  estimateLabel,
 }) {
   const canEdit = schedule?.canEdit !== false && !schedule?.availabilitySaveBlockedReason
 
@@ -67,7 +70,7 @@ export function ScheduleEditor({
     <form className="schedule-form" onSubmit={saveSchedule}>
       <div className="schedule-heading">
         <div>
-          <span className="eyebrow">Weekly availability</span>
+          <span className="eyebrow">{eyebrow}</span>
           <h2>{schedule.employeeName}</h2>
         </div>
         {maximumDays != null && (
@@ -78,9 +81,7 @@ export function ScheduleEditor({
       </div>
 
       {schedule.canEdit === false && (
-        <p className="message info-message" role="status">
-          Availability for next week is locked from Saturday. Select the week after next to make changes.
-        </p>
+        <p className="message info-message" role="status">{lockedMessage}</p>
       )}
 
       {schedule.availabilitySaveBlockedReason && (
@@ -188,6 +189,7 @@ export function ScheduleEditor({
           <ApproximateHoursPreview
             approximateHours={schedule.approximateHours}
             capacityHours={schedule.approximateCapacityHours}
+            label={estimateLabel}
           />
         )}
 

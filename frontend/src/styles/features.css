@@ -35,66 +35,6 @@
   font-size: 1.15rem;
 }
 
-.personal-roster-days {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.personal-roster-day {
-  min-width: 0;
-  padding: 15px;
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-
-.personal-roster-day.has-shift {
-  border-color: var(--success-border);
-  background: linear-gradient(145deg, var(--success-tint), var(--surface));
-}
-
-.personal-roster-day header {
-  display: grid;
-  gap: 5px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--separator);
-}
-
-.personal-roster-day header strong {
-  color: var(--text);
-  font-size: 0.94rem;
-}
-
-.personal-roster-day header span,
-.personal-roster-shift > span:last-child {
-  color: var(--text-tertiary);
-  font-size: 0.76rem;
-}
-
-.personal-roster-day.has-shift header span {
-  color: var(--success-text);
-}
-
-.personal-roster-day p {
-  margin: 14px 0 0;
-  color: var(--text-tertiary);
-  font-size: 0.82rem;
-}
-
-.personal-roster-shift {
-  display: grid;
-  gap: 5px;
-  margin-top: 14px;
-}
-
-.personal-roster-time {
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
 .personal-roster-empty {
   display: grid;
   gap: 7px;
@@ -110,20 +50,6 @@
 .personal-roster-empty strong {
   color: var(--text);
   font-size: 1.05rem;
-}
-
-@media (max-width: 1100px) {
-  .personal-roster-days {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.employee-workspace .app-toolbar {
-  align-items: center;
-}
-
-.employee-workspace .current-employee {
-  margin: 0 auto 0 0;
 }
 
 .role-details {
@@ -718,10 +644,6 @@
   background: var(--surface);
 }
 
-.demand-plan-select {
-  width: min(100%, 280px);
-}
-
 .demand-help {
   margin: 0 0 18px;
   color: var(--text-tertiary);
@@ -732,17 +654,6 @@
 .demand-tools input[readonly] {
   cursor: default;
   opacity: 0.82;
-}
-
-.demand-total-summary {
-  margin: 0 0 14px;
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-}
-
-.demand-total-summary strong {
-  color: var(--success-text);
-  font-variant-numeric: tabular-nums;
 }
 
 .demand-labour-settings {
@@ -927,47 +838,6 @@
 
 .demand-metric-guide strong {
   color: var(--text);
-}
-
-.demand-labour-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.demand-labour-weekly {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-}
-
-.demand-labour-weekly span {
-  color: var(--text-tertiary);
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.demand-labour-weekly strong {
-  color: var(--success-text);
-  font-size: 1.05rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.demand-labour-weekly small {
-  color: var(--text-tertiary);
-  font-size: 0.74rem;
-  line-height: 1.4;
-}
-
-.demand-labour-note {
-  margin: -4px 0 12px;
-  color: var(--text-tertiary);
-  font-size: 0.78rem;
 }
 
 .demand-labour-table-wrapper {
@@ -1240,14 +1110,6 @@
   white-space: normal;
 }
 
-.demand-import-form {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.demand-import-form label,
 .demand-paste-label {
   display: grid;
   gap: 7px;
@@ -1446,10 +1308,6 @@
   display: block;
   margin-top: 4px;
   color: var(--text-tertiary);
-}
-
-.roster-manager-label {
-  color: var(--warning-text) !important;
 }
 
 .roster-role-groups {
@@ -2128,16 +1986,6 @@
   box-shadow: 0 0 0 3px var(--danger-border);
 }
 
-.demand-result {
-  color: var(--success-text);
-  font-weight: 700;
-}
-
-.demand-readonly {
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
 .demand-mobile-controls,
 .demand-mobile-view {
   display: none;
@@ -2425,18 +2273,8 @@
   font-size: 0.82rem;
 }
 
-.employee-card-status {
-  margin-top: auto;
-  color: var(--employee-accent, var(--success-text)) !important;
-  font-weight: 700;
-}
-
 .employee-card.inactive {
   border-color: var(--danger-border);
-}
-
-.employee-card.inactive .employee-card-status {
-  color: var(--danger-text) !important;
 }
 
 .employee-editor-card {
@@ -3572,27 +3410,6 @@
     gap: 6px;
   }
 
-  .personal-roster-days {
-    grid-template-columns: 1fr;
-  }
-
-  .personal-roster-day {
-    padding: 16px;
-  }
-
-  .personal-roster-day header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .personal-roster-shift {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
@@ -3626,10 +3443,6 @@
     white-space: normal;
   }
 
-  .demand-import-form {
-    grid-template-columns: 1fr;
-  }
-
   .demand-labour-settings {
     align-items: stretch;
     flex-direction: column;
@@ -3637,10 +3450,6 @@
 
   .demand-labour-settings label {
     flex-basis: auto;
-  }
-
-  .demand-labour-summary {
-    grid-template-columns: 1fr;
   }
 
   .roster-week-summary {
@@ -3655,24 +3464,6 @@
   .employee-form-actions,
   .employee-form .save-message {
     grid-column: auto;
-  }
-
-  .employee-workspace .app-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .global-week-actions .week-selector {
-    order: -1;
-    width: 100%;
-  }
-
-  .global-week-actions .secondary-button {
-    margin-left: auto;
-  }
-
-  .employee-workspace .current-employee {
-    margin-right: 0;
   }
 
   .holiday-form-row,

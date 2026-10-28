@@ -1,17 +1,40 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { PasswordChangePrompt } from './features/auth/PasswordChangePrompt'
 import { useApplicationEvents } from './hooks/useApplicationEvents'
 import { getAvailabilityEmployeeId } from './lib/availabilityAccess'
 import { getAvailabilityDemandError, getAvailabilityLimitErrors } from './lib/availabilityLimits'
 import { fetchJson } from './api/client'
 import { ErrorPopup } from './components/ErrorPopup'
-import { AdminConsole } from './features/admin/AdminConsole'
 import { LoginView } from './features/auth/LoginView'
 import { emptyEmployeeForm, getEmployeeErrorSummary } from './features/employees/employeeForm'
-import { DriverWorkspace, EmployeeWorkspace, InStoreWorkspace } from './features/workspace/EmployeeWorkspace'
 import { minWeekOffset } from './lib/format'
+import { confirmAction } from './components/ConfirmDialog'
+
+// Admins and employees load only their own part of the app.
+const AdminConsole = lazy(() => import('./features/admin/AdminConsole').then((module) => ({ default: module.AdminConsole })))
+const loadWorkspace = () => import('./features/workspace/EmployeeWorkspace')
+const DriverWorkspace = lazy(() => loadWorkspace().then((module) => ({ default: module.DriverWorkspace })))
+const InStoreWorkspace = lazy(() => loadWorkspace().then((module) => ({ default: module.InStoreWorkspace })))
+const EmployeeWorkspace = lazy(() => loadWorkspace().then((module) => ({ default: module.EmployeeWorkspace })))
+
+function LoadingScreen({ label }) {
+  return (
+    <main className="page-shell centered-page splash" aria-busy="true">
+      <span className="shell-brand-mark" aria-hidden="true">RG</span>
+      <p role="status">{label}</p>
+    </main>
+  )
+}
 
 function App() {
+  return (
+    <Suspense fallback={<LoadingScreen label="Loading…" />}>
+      <AppContent />
+    </Suspense>
+  )
+}
+
+function AppContent() {
   const [authState, setAuthState] = useState({ status: 'loading', user: null, message: '' })
   const [employees, setEmployees] = useState([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
@@ -85,9 +108,13 @@ function App() {
       .then((payload) => {
         setEmployees(payload)
         const ownEmployeeId = authState.user.employeeId
-        const defaultEmployee = ownEmployeeId
-          ? payload.find((employee) => employee.id === ownEmployeeId)
-          : payload.find((employee) => employee.isActive)
+        // Administrators manage other people's availability, so start them on the first active driver.
+        const firstActiveDriver = payload.find((employee) => employee.isActive && employee.roles?.includes('Driver'))
+        const defaultEmployee = authState.user.isAdmin && firstActiveDriver
+          ? firstActiveDriver
+          : ownEmployeeId
+            ? payload.find((employee) => employee.id === ownEmployeeId)
+            : payload.find((employee) => employee.isActive)
         setSelectedEmployeeId(defaultEmployee ? String(defaultEmployee.id) : '')
         setEmployeesState({ status: 'success' })
       })
@@ -282,7 +309,12 @@ function App() {
   }
 
   async function removeEmployee() {
-    if (!selectedEmployeeId || !window.confirm('Remove this employee and delete their login? Roster, availability, sick leave, holiday requests and absent forms will be kept.')) {
+    if (!selectedEmployeeId || !(await confirmAction({
+      title: 'Remove employee?',
+      message: 'Their login is deleted. Roster, availability, sick leave, holiday requests and absent forms are kept.',
+      confirmLabel: 'Remove employee',
+      destructive: true,
+    }))) {
       return
     }
 
@@ -302,7 +334,12 @@ function App() {
 
   async function resetEmployeePassword() {
     if (!isSystemAdmin || !selectedEmployeeId || employeeSaveState.status === 'saving' ||
-        !window.confirm('Reset this employee’s password to the initial password? Their existing sessions will end and they must change it after signing in.')) return
+        !(await confirmAction({
+          title: 'Reset password?',
+          message: 'The password goes back to the initial password. Existing sessions end, and they must choose a new password after signing in.',
+          confirmLabel: 'Reset password',
+          destructive: true,
+        }))) return
     setEmployeeSaveState({ status: 'saving', message: '' })
     try {
       const employee = await fetchJson(`/api/admin/employees/${selectedEmployeeId}/reset-password`, { method: 'POST' })
@@ -357,12 +394,7 @@ function App() {
   }
 
   if (authState.status === 'loading') {
-    return (
-      <main className="page-shell centered-page splash" aria-busy="true">
-        <span className="shell-brand-mark" aria-hidden="true">RG</span>
-        <p role="status">Checking sign-in…</p>
-      </main>
-    )
+    return <LoadingScreen label="Checking sign-in…" />
   }
 
   if (!isAuthenticated) {

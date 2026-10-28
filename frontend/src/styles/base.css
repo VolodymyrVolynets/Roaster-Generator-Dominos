@@ -97,11 +97,6 @@ a {
   line-height: 1.5;
 }
 
-.page-header {
-  max-width: 760px;
-  margin-bottom: 20px;
-}
-
 /* ---------- Buttons ---------- */
 button {
   display: inline-flex;

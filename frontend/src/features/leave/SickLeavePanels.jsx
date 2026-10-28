@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { fetchJson } from '../../api/client'
 import { formatDateOnly, formatHolidayDate } from '../../lib/format'
 import { DatePicker } from '../../components/DatePicker'
+import { confirmAction, promptAction } from '../../components/ConfirmDialog'
 
 function SickLeaveTable({ requests, showEmployee = false, management = false, onReview, busyId }) {
   return (
@@ -59,7 +60,12 @@ export function SickLeavePanel({ setErrorPopup, realtimeKey = 0 }) {
   }
 
   async function remove(requestId) {
-    if (!window.confirm('Remove this sick leave request and its sick note?')) return
+    if (!(await confirmAction({
+      title: 'Remove sick leave request?',
+      message: 'The request and its sick note will be deleted.',
+      confirmLabel: 'Remove request',
+      destructive: true,
+    }))) return
     setAction({ status: 'saving', message: '', busyId: requestId })
     try {
       await fetchJson(`/api/sick-leave/${requestId}`, { method: 'DELETE' })
@@ -122,8 +128,20 @@ export function AdminSickLeavePanel({ setErrorPopup, includeOwnRequest = false, 
   useEffect(() => { void load() }, [realtimeKey])
   async function review(requestId, decision) {
     let reason = null
-    if (decision === 'reject') { reason = window.prompt('Optional reason for rejection:', ''); if (reason === null) return }
-    else if (!window.confirm('Approve this sick leave request? The attached sick note will be permanently deleted.')) return
+    if (decision === 'reject') {
+      reason = await promptAction({
+        title: 'Reject sick leave?',
+        message: 'The attached sick note will be permanently deleted. The employee sees the reason, if you give one.',
+        inputLabel: 'Reason (optional)',
+        confirmLabel: 'Reject',
+        destructive: true,
+      })
+      if (reason === null) return
+    } else if (!(await confirmAction({
+      title: 'Approve sick leave?',
+      message: 'The attached sick note will be permanently deleted.',
+      confirmLabel: 'Approve',
+    }))) return
     setAction({ status: 'saving', message: '', busyId: requestId })
     try {
       await fetchJson(`/api/admin/sick-leave/${requestId}/${decision}`, { method: 'POST', headers: decision === 'reject' ? { 'Content-Type': 'application/json' } : undefined, body: decision === 'reject' ? JSON.stringify({ reason }) : undefined })

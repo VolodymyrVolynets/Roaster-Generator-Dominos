@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchJson } from '../../api/client'
 import { formatHolidayDate } from '../../lib/format'
+import { confirmAction } from '../../components/ConfirmDialog'
 
 export function HolidayPanel({ setErrorPopup, realtimeKey = 0 }) {
   const [holidayState, setHolidayState] = useState({
@@ -50,7 +51,12 @@ export function HolidayPanel({ setErrorPopup, realtimeKey = 0 }) {
   }
 
   async function removeHoliday() {
-    if (!holidayState.requested || !window.confirm('Remove this holiday request?')) {
+    if (!holidayState.requested || !(await confirmAction({
+      title: 'Remove holiday request?',
+      message: 'Your pending holiday request will be withdrawn.',
+      confirmLabel: 'Remove request',
+      destructive: true,
+    }))) {
       return
     }
 
@@ -239,7 +245,11 @@ export function AdminHolidayPanel({ setErrorPopup, canExport = true, realtimeKey
   }
 
   async function approveAll() {
-    if (holidayState.requested.length === 0 || !window.confirm('Approve all requested holiday hours?')) {
+    if (holidayState.requested.length === 0 || !(await confirmAction({
+      title: 'Approve all holiday requests?',
+      message: `${holidayState.requested.length} ${holidayState.requested.length === 1 ? 'request' : 'requests'} will be approved and marked as used.`,
+      confirmLabel: 'Approve all',
+    }))) {
       return
     }
 

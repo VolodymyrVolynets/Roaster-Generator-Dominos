@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DatePicker } from '../../components/DatePicker'
+import { confirmAction } from '../../components/ConfirmDialog'
 
 const emptyForm = {
   shiftEntryMode: 'saved',
@@ -285,7 +286,12 @@ export function AbsentPanel({ admin = false, management = admin, fetchJson, real
   }
 
   async function removeForm(item) {
-    if (submitting.current || !window.confirm(`Remove the absent form submitted by ${item.driverFullName}?`)) return
+    if (submitting.current || !(await confirmAction({
+      title: 'Remove absent form?',
+      message: `The absent form submitted by ${item.driverFullName} will be permanently removed.`,
+      confirmLabel: 'Remove form',
+      destructive: true,
+    }))) return
     submitting.current = true
     setAction({ status: 'deleting', message: '', busyId: item.id })
     try {

@@ -10,12 +10,12 @@ import { RosterGenerationPanel, SavedRosterPanel } from '../roster/RosterAdmin'
 import { StoreSettingsPanel } from '../settings/StoreSettingsPanel'
 import { fetchJson } from '../../api/client'
 import { ErrorPopup } from '../../components/ErrorPopup'
-import { ApproximateHoursPreview, ScheduleEditor, TimeSelector } from '../availability/ScheduleEditor'
+import { ApproximateHoursPreview, ScheduleEditor } from '../availability/ScheduleEditor'
 import { DemandManager } from '../demand/DemandManager'
 import { EmployeeFieldError, employeeFieldLabels, getEmployeeFieldErrors } from '../employees/employeeForm'
 import { AdminHolidayPanel, HolidayPanel } from '../leave/HolidayPanels'
 import { AdminSickLeavePanel } from '../leave/SickLeavePanels'
-import { dateFormatter, getShiftDuration, parseDate } from '../../lib/format'
+import { dateFormatter, parseDate } from '../../lib/format'
 
 export function AdminConsole({
   authState,
@@ -768,93 +768,16 @@ export function AdminConsole({
               <p className="message error-message">Unable to load employee availability.</p>
             )}
 
-            {schedule && (
-              <form className="schedule-form" onSubmit={saveSchedule}>
-                <div className="schedule-heading">
-                  <div>
-                    <span className="eyebrow">Schedule for</span>
-                    <h2>{schedule.employeeName}</h2>
-                  </div>
-                  <span className="week-range">
-                    {dateFormatter.format(parseDate(schedule.weekStart))} –{' '}
-                    {dateFormatter.format(parseDate(schedule.weekEnd))}
-                  </span>
-                </div>
-
-                {schedule.canEdit === false && (
-                  <p className="message info-message" role="status">
-                    This week is outside the three-week editing window and is read-only.
-                  </p>
-                )}
-
-                {schedule.heatmap && (
-                  <ApproximateHoursPreview
-                    approximateHours={schedule.approximateHours}
-                    capacityHours={schedule.approximateCapacityHours}
-                    label={`${schedule.employeeName}'s estimated roster hours`}
-                  />
-                )}
-                <AvailabilityHeatmap heatmap={schedule.heatmap} weekStart={schedule.weekStart} />
-
-                <div className="schedule-table" role="table" aria-label="Employee schedule">
-                  <div className="schedule-row schedule-header" role="row">
-                    <span role="columnheader">Day</span>
-                    <span role="columnheader">Start time</span>
-                    <span role="columnheader">Finish time</span>
-                    <span role="columnheader">Reset</span>
-                  </div>
-                  {schedule.days.map((day) => (
-                    <div className="schedule-row" role="row" key={day.date}>
-                      <div className="day-cell" role="cell">
-                        <strong>{day.dayOfWeek}</strong>
-                        <span>{dateFormatter.format(parseDate(day.date))}</span>
-                        {getShiftDuration(day.startTime, day.finishTime) && (
-                          <span className="shift-duration">
-                            {getShiftDuration(day.startTime, day.finishTime)}
-                          </span>
-                        )}
-                      </div>
-                      <div role="cell">
-                        <TimeSelector
-                          id={`${day.date}-admin-start`}
-                          label={`${day.dayOfWeek} start time`}
-                          value={day.startTime || ''}
-                          onChange={(value) => updateDay(day.date, 'startTime', value)}
-                          disabled={schedule.canEdit === false}
-                        />
-                      </div>
-                      <div role="cell">
-                        <TimeSelector
-                          id={`${day.date}-admin-finish`}
-                          label={`${day.dayOfWeek} finish time`}
-                          value={day.finishTime || ''}
-                          onChange={(value) => updateDay(day.date, 'finishTime', value)}
-                          disabled={schedule.canEdit === false}
-                        />
-                      </div>
-                      <div role="cell">
-                        <button
-                          type="button"
-                          className="reset-button"
-                          onClick={() => resetDay(day.date)}
-                          disabled={schedule.canEdit === false || (!day.startTime && !day.finishTime)}
-                        >
-                          Reset
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="form-footer">
-                  <span className={`save-message ${saveState.status}`} aria-live="polite">
-                    {saveState.message || 'Leave both fields empty for a day off.'}
-                  </span>
-                  <button type="submit" disabled={schedule.canEdit === false || saveState.status === 'saving'}>
-                    {saveState.status === 'saving' ? 'Saving…' : 'Save availability'}
-                  </button>
-                </div>
-              </form>
-            )}
+            <ScheduleEditor
+              schedule={schedule}
+              saveState={saveState}
+              saveSchedule={saveSchedule}
+              updateDay={updateDay}
+              resetDay={resetDay}
+              eyebrow="Schedule for"
+              lockedMessage="This week is outside the three-week editing window and is read-only."
+              estimateLabel={schedule ? `${schedule.employeeName}'s estimated roster hours` : undefined}
+            />
           </section>
         )}
 

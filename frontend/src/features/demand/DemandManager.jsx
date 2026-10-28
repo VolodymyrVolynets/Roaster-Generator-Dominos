@@ -3,6 +3,7 @@ import { AreaSelector } from '../../components/SelectionControls'
 import { calculateDemandLabour, recalculateDemandPlan, recalculateDemandValue } from '../../lib/demandPlanning'
 import { getWeekStartValue } from '../../lib/weekSelection'
 import { fetchJson } from '../../api/client'
+import { confirmAction } from '../../components/ConfirmDialog'
 
 export function DemandManager({
   setErrorPopup,
@@ -235,7 +236,12 @@ export function DemandManager({
   }
 
   async function deletePlan() {
-    if (!selectedPlanId || !window.confirm('Delete this demand plan?')) {
+    if (!selectedPlanId || !(await confirmAction({
+      title: 'Delete demand plan?',
+      message: 'This week’s demand, sales targets and productivity settings for this work area will be deleted.',
+      confirmLabel: 'Delete plan',
+      destructive: true,
+    }))) {
       return
     }
 

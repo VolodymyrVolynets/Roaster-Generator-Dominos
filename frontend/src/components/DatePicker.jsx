@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { formatDateInput, getCalendarDays, parseDateInput } from '../lib/weekSelection'
+import { addDays, initialPickerDate, isDateAllowed as isAllowed, monthStartOf, todayValue } from '../lib/datePicker'
 import { Icon } from './Icon'
 import { usePresence } from '../hooks/usePresence'
 
@@ -8,25 +9,6 @@ const triggerFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', 
 const monthFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' })
 const dayLabelFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
 
-function todayValue() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
-function addDays(value, days) {
-  const date = parseDateInput(value)
-  date.setUTCDate(date.getUTCDate() + days)
-  return formatDateInput(date)
-}
-
-function monthStartOf(value) {
-  const date = parseDateInput(value)
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
-}
-
-function isAllowed(value, min, max) {
-  return (!min || value >= min) && (!max || value <= max)
-}
 
 /**
  * Calendar date field that replaces the browser's native date input.
@@ -73,7 +55,7 @@ export function DatePicker({
   }, [open, focusedValue, visibleMonth])
 
   function openPicker() {
-    const start = value || (isAllowed(today, min, max) ? today : min || max || today)
+    const start = initialPickerDate(value, min, max, today)
     setFocusedValue(start)
     setVisibleMonth(monthStartOf(start))
     setOpen(true)

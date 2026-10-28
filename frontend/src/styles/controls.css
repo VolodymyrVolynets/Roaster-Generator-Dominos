@@ -188,6 +188,55 @@
   margin-left: auto;
 }
 
+/* ---------- Confirm dialog ---------- */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--backdrop);
+}
+
+.confirm-dialog {
+  width: min(100%, 400px);
+  padding: 22px 20px 18px;
+  border-radius: 18px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+}
+
+.confirm-dialog h2 {
+  margin: 0 0 6px;
+  font-size: 1.125rem;
+}
+
+.confirm-dialog p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.confirm-input {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.confirm-actions button {
+  width: 100%;
+  min-height: 44px;
+}
+
 /* ---------- Number stepper ---------- */
 .number-stepper {
   display: inline-grid;

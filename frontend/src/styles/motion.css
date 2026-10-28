@@ -81,14 +81,24 @@
   }
 }
 
-/* ---------- Centred dialogs (week picker, roster cell editor) ---------- */
+/* ---------- Centred dialogs (week picker, roster cell editor, confirm) ---------- */
 .week-picker-backdrop,
-.roster-cell-dialog-backdrop {
+.roster-cell-dialog-backdrop,
+.confirm-backdrop {
   animation: fade-in 200ms var(--ease-out);
 }
 
+.confirm-backdrop.is-closing {
+  animation: fade-out 160ms var(--ease-out) forwards;
+}
+
+.confirm-backdrop.is-closing .confirm-dialog {
+  animation: popover-out 160ms var(--ease-out) forwards;
+}
+
 .week-picker-dialog,
-.roster-cell-dialog {
+.roster-cell-dialog,
+.confirm-dialog {
   transform-origin: center;
   animation: dialog-in 200ms var(--ease-out);
 }
@@ -119,6 +129,22 @@
 }
 
 @media (max-width: 640px) {
+  .confirm-backdrop {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .confirm-dialog {
+    width: 100%;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+    animation: sheet-in-bottom 280ms var(--ease-drawer);
+  }
+
+  .confirm-backdrop.is-closing .confirm-dialog {
+    animation: sheet-out-bottom 160ms var(--ease-out) forwards;
+  }
+
   .date-picker-popover {
     transform-origin: bottom center;
     animation: sheet-in-bottom 280ms var(--ease-drawer);
@@ -153,8 +179,13 @@
   .error-popup,
   .date-picker-popover,
   .week-picker-dialog,
-  .roster-cell-dialog {
+  .roster-cell-dialog,
+  .confirm-dialog {
     animation: fade-in 160ms ease;
+  }
+
+  .confirm-backdrop.is-closing .confirm-dialog {
+    animation: fade-out 120ms ease forwards;
   }
 
   .shell-drawer-backdrop.is-closing .shell-drawer,

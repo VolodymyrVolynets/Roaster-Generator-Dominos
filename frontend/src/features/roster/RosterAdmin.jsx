@@ -5,6 +5,7 @@ import { compareRosterEmployees, employeeMatchesRosterKind, getRosterRoleGroup, 
 import SavedRosterLabour from './SavedRosterLabour'
 import { AreaSelector } from '../../components/SelectionControls'
 import { getWeekStartValue } from '../../lib/weekSelection'
+import { getRosterDay } from '../../lib/rosterDay'
 
 const weightFields = [
   ['approximateHoursWeight', 'Match approximate hours', 'Primary fairness preference. Increase it to keep scheduled hours close to each employee’s automatically calculated share; reduce it when shift shape or rest needs more flexibility. Set to 0 to disable it.'],
@@ -39,6 +40,7 @@ const hourOptions = Array.from({ length: 24 }, (_, hour) => `${String(hour).padS
 
 function SettingsForm({ settings, setSettings, savedSettings, saveSettings, saving, running, error, onRetry }) {
   const dirty = settings && savedSettings && JSON.stringify(settings) !== JSON.stringify(savedSettings)
+  const [showHelp, setShowHelp] = useState(false)
   return (
     <details className="roster-settings" open={Boolean(dirty)}>
       <summary>
@@ -63,7 +65,15 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
         <button type="button" className="secondary-button" onClick={onRetry}>Retry loading preferences</button>
       </div> : <p className="message info-message">Loading saved preferences…</p> : (
         <form onSubmit={saveSettings}>
-          <fieldset className="roster-settings-fields" disabled={saving || running}>
+          <fieldset className={`roster-settings-fields${showHelp ? ' show-help' : ''}`} disabled={saving || running}>
+            <button
+              type="button"
+              className="secondary-button roster-help-toggle"
+              aria-pressed={showHelp}
+              onClick={() => setShowHelp((current) => !current)}
+            >
+              {showHelp ? 'Hide explanations' : 'Show explanations'}
+            </button>
             <h3>Company vehicles</h3>
             <p className="demand-help">Enter the vehicles available at the same time. Drivers using their own vehicle do not use these counts. A count of 0 prevents company-vehicle shifts of that type. E-bike drivers always need a car or moped driver alongside them.</p>
             <div className="roster-settings-grid">
@@ -78,6 +88,7 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
               </label>)}
             </div>
             <p className="demand-help">Saved counts also update approximate hours and availability guidance.</p>
+            <h3>Fairness</h3>
             <div className="roster-settings-grid">
               <label>
                 <span>Availability fairness alpha</span>
@@ -93,6 +104,9 @@ function SettingsForm({ settings, setSettings, savedSettings, saveSettings, savi
                   <small>{help}</small>
                 </label>
               ))}
+            </div>
+            <h3>Shifts and rest</h3>
+            <div className="roster-settings-grid">
               <label>
                 <span>Minimum rest (hours)</span>
                 <input type="number" min="0" max="24" step="1" required value={settings.minimumRestHours}
@@ -710,15 +724,7 @@ function FairnessComparison({ roster, employeeGroups }) {
 
 // Phone layout: one day at a time, listing who works and when.
 function RosterDayView({ group, dates, activeDate, onSelectDate, mismatchDetails }) {
-  const working = group.employees
-    .flatMap((employee) => employee.shifts
-      .filter((shift) => shift.date === activeDate)
-      .map((shift) => ({ employee, shift })))
-    .sort((first, second) =>
-      (first.shift.startDayOffset - second.shift.startDayOffset) ||
-      first.shift.startTime.localeCompare(second.shift.startTime) ||
-      first.employee.employeeName.localeCompare(second.employee.employeeName))
-  const offCount = group.employees.filter((employee) => !employee.shifts.some((shift) => shift.date === activeDate)).length
+  const { working, offCount } = getRosterDay(group.employees, activeDate)
   const mismatch = mismatchDetails(activeDate)
 
   return <div className="roster-day-view">

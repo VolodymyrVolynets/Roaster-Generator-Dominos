@@ -818,6 +818,24 @@
   gap: 10px;
 }
 
+/* Roster preferences: per-field explanations stay hidden until requested. */
+.roster-settings-fields {
+  position: relative;
+}
+
+.roster-help-toggle {
+  float: right;
+  margin: 0 0 8px 12px;
+}
+
+.roster-settings-fields:not(.show-help) .roster-settings-grid small {
+  display: none;
+}
+
+.roster-settings-fields h3 {
+  margin: 20px 0 8px;
+}
+
 .unsaved-badge {
   padding: 2px 8px;
   border-radius: 999px;
