@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { checklistSummary, fieldsChanged, fieldsFor, fitWithin, mergeFields, toFormFields, toSubmitRequest } from './documents.js'
+import { checklistSummary, fieldsChanged, fieldsFor, fitWithin, mergeFields, toDocumentListQuery, toFormFields, toSubmitRequest } from './documents.js'
 
 test('fitWithin never scales up', () => {
   assert.deepEqual(fitWithin(800, 600), { width: 800, height: 600 })
@@ -78,4 +78,12 @@ test('mergeFields keeps typed values and takes new readings for the rest', () =>
   assert.equal(merged.referenceNumber, 'AB2')
   assert.equal(merged.holderName, 'JOHN SMITH')
   assert.equal(merged.expiryDate, '2030-01-01')
+})
+
+test('toDocumentListQuery leaves out empty filters', () => {
+  assert.equal(toDocumentListQuery({ search: '  ', documentTypeId: '', state: '', includeInactive: false }), '')
+  assert.equal(
+    toDocumentListQuery({ search: ' Anna B ', documentTypeId: 't', state: 'Expired', includeInactive: true }),
+    '?search=Anna+B&documentTypeId=t&state=Expired&includeInactive=true',
+  )
 })

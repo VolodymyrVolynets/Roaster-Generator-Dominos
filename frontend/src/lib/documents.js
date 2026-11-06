@@ -4,6 +4,21 @@ const maxPixels = 3_750_000
 const vehicleCodes = new Set(['nct', 'motor-tax', 'insurance', 'obu'])
 const countryCodes = new Set(['passport', 'driving-licence', 'irp'])
 
+export const documentFilterStates = [
+  'WaitingForReview', 'Expired', 'ExpiringSoon', 'NotUploaded', 'Valid',
+]
+
+export const fieldLabels = {
+  holderName: 'Name on document',
+  referenceNumber: 'Reference number',
+  issuingCountry: 'Issuing country code',
+  stamp: 'Stamp',
+  vehicleRegistration: 'Vehicle registration',
+  expiryDate: 'Expiry date',
+  signingDate: 'Signing date',
+  penaltyPoints: 'Penalty points',
+}
+
 export const stateDetails = {
   Valid: { label: 'Valid', tone: 'good' },
   ExpiringSoon: { label: 'Expiring soon', tone: 'warning' },
@@ -76,4 +91,25 @@ export function mergeFields(previousOriginal, current, next) {
 
 export function fieldsChanged(original, current) {
   return Object.keys(emptyFields).some((key) => String(original[key]).trim() !== String(current[key]).trim())
+}
+
+export function toDocumentListQuery({ search, documentTypeId, state, includeInactive }) {
+  const query = new URLSearchParams()
+  if (search.trim()) query.set('search', search.trim())
+  if (documentTypeId) query.set('documentTypeId', documentTypeId)
+  if (state) query.set('state', state)
+  if (includeInactive) query.set('includeInactive', 'true')
+  const text = query.toString()
+  return text ? `?${text}` : ''
+}
+
+export const auditActionLabels = {
+  Uploaded: 'Uploaded',
+  Replaced: 'Replaced',
+  Viewed: 'Viewed',
+  Downloaded: 'Downloaded',
+  Edited: 'Edited',
+  Reviewed: 'Reviewed',
+  Deleted: 'Deleted',
+  Analysed: 'Checked',
 }

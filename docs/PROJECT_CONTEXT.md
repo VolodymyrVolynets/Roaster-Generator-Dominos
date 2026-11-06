@@ -128,7 +128,7 @@ Enforce these rules in the API and validator/service layer; UI limits are only c
 
 ## Employee documents
 
-Administrators configure document types and required lists under **Document settings**. Employees use the **Documents** tab, and Managers or Admins with an employee role use **My documents**. The admin document list is not built yet, and no signed-file concept is modelled.
+Administrators configure document types and required lists under **Document settings**. Employees use the **Documents** tab, and Managers or Admins with an employee role use **My documents**. Administrators use **Documents** to see every employee's documents, and no signed-file concept is modelled.
 
 - `DocumentType` is the catalogue. `Code` is stable and is what the rules and AI analysis use. `DocumentRequirement` holds one required list per `DocumentCategory` (`CarOwn`, `CarCompany`, `MopedOwn`, `MopedCompany`, `EBikeOwn`, `EBikeCompany`, `InStore`, `Manager`), each item marked `Always`, `NonEuPassport` or `Stamp2`.
 - `EmployeeDocument` is the current document of one type for one employee, enforced by a unique index. Files are in `EmployeeDocumentFile`, a separate table so list queries never load bytes. A file belongs to exactly one document or `DocumentDraft`, enforced by a check constraint.
@@ -147,6 +147,10 @@ The employee can always continue. A failed analysis, an unreadable or unidentifi
 `ClaudeDocumentAnalyser` makes one Messages call with no tools and a fixed output schema, sends files only in the request, and uses `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` (default `claude-opus-5-5`). It may fall back to another Claude model on a refusal. `DocumentAnalysisParser` treats the output as untrusted and limits it. Never log document content, file names, names or reference numbers. Analyses are limited to 20 per user per hour, in memory, because each is a paid call. Without `Documents__EncryptionKey` uploads return `503`; without `ANTHROPIC_API_KEY` they continue as failed analyses.
 
 The browser resizes photos and re-encodes them as JPEG before upload, which removes EXIF location data. Adding another page re-runs the analysis on all pages and keeps anything the person already typed.
+
+`/api/admin/documents` is Admin-only; Managers have no access to other people's documents. The list returns employees with their whole checklist, including missing documents, filtered by search, type, state and active status. It is not paged, because a store has few employees. `GET /api/admin/documents/{id}/files/{fileId}` always sends an attachment with `no-store` and `nosniff`, and records `Viewed` with `?preview=true`, otherwise `Downloaded`. `DocumentFileNames` names downloads by the onboarding convention, such as `Anna IRP Stamp 2 31.12.30 front.jpg`, and never includes reference numbers. Saving through `PUT` means an administrator has checked the document, so it clears the review flag; `Revision` refuses stale edits. The document type cannot be edited; delete it and upload again.
+
+Documents never affect rostering. Expired, missing or flagged documents do not change availability, roster eligibility, generation or saved rosters.
 
 Removing an employee archives the row, so the foreign-key cascade does not run. `EmployeeDocumentRemoval` therefore permanently deletes their documents, files and drafts in the removal transaction and records a `Deleted` audit event per document. Deactivating an employee keeps their documents.
 

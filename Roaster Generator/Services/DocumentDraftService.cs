@@ -235,7 +235,7 @@ public sealed class DocumentDraftService(
         return changed;
     }
 
-    private static DocumentFields Normalize(DocumentFields fields) => new()
+    internal static DocumentFields Normalize(DocumentFields fields) => new()
     {
         HolderName = Clean(fields.HolderName),
         ReferenceNumber = Clean(fields.ReferenceNumber),

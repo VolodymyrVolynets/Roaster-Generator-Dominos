@@ -1,24 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchJson } from '../../api/client'
 import { DatePicker } from '../../components/DatePicker'
-import { fieldsChanged, fieldsFor, maxDocumentFiles, mergeFields, toFormFields, toSubmitRequest } from '../../lib/documents'
+import { fieldLabels, fieldsChanged, fieldsFor, maxDocumentFiles, mergeFields, toFormFields, toSubmitRequest } from '../../lib/documents'
 import { prepareDocumentImage } from '../../lib/prepareDocumentImage'
-
-const fieldLabels = {
-  holderName: 'Name on document',
-  referenceNumber: 'Reference number',
-  issuingCountry: 'Issuing country code',
-  stamp: 'Stamp',
-  vehicleRegistration: 'Vehicle registration',
-  expiryDate: 'Expiry date',
-  signingDate: 'Signing date',
-  penaltyPoints: 'Penalty points',
-}
 
 const dateFields = new Set(['expiryDate', 'signingDate'])
 const supportsCamera = () => navigator.maxTouchPoints > 0
 
-export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish }) {
+export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, basePath = '/api/documents' }) {
   const [step, setStep] = useState('choose')
   const [files, setFiles] = useState([])
   const [error, setError] = useState('')
@@ -54,7 +43,7 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish })
     nextFiles.forEach((file) => body.append('files', file))
     if (requestedTypeId) body.append('documentTypeId', requestedTypeId)
     try {
-      const result = await fetchJson('/api/documents/analyses', { method: 'POST', body })
+      const result = await fetchJson(`${basePath}/analyses`, { method: 'POST', body })
       draftRef.current = result.draftId
       const nextFields = toFormFields(result.fields)
       setFields(analysis ? mergeFields(original, fields, nextFields) : nextFields)
@@ -87,7 +76,7 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish })
     onFinish()
     if (draftId) {
       try {
-        await fetchJson(`/api/documents/analyses/${draftId}`, { method: 'DELETE' })
+        await fetchJson(`${basePath}/analyses/${draftId}`, { method: 'DELETE' })
       } catch {
         // The server removes unconfirmed drafts within the hour.
       }
@@ -99,7 +88,7 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish })
     setStep('saving')
     setError('')
     try {
-      const saved = await fetchJson(`/api/documents/analyses/${analysis.draftId}/submit`, {
+      const saved = await fetchJson(`${basePath}/analyses/${analysis.draftId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(toSubmitRequest(fields, typeId, note)),

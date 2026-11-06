@@ -7,6 +7,7 @@ import { getWeekOffsetFromDate } from '../../lib/weekSelection'
 import { AbsentPanel } from '../absence/AbsentPanel'
 import { AvailabilityHeatmap } from '../availability/DriverAvailabilityHeatmap'
 import { RosterGenerationPanel, SavedRosterPanel } from '../roster/RosterAdmin'
+import { AdminDocumentsPanel } from '../documents/AdminDocumentsPanel'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { DocumentSettingsPanel } from '../settings/DocumentSettingsPanel'
 import { StoreSettingsPanel } from '../settings/StoreSettingsPanel'
@@ -215,6 +216,7 @@ export function AdminConsole({
         { id: 'holiday', label: 'Holiday', icon: 'sun' },
         { id: 'sick-leave', label: 'Sick leave', icon: 'cross' },
         { id: 'absent', label: 'Absent', icon: 'absent' },
+        isSystemAdmin && { id: 'documents', label: 'Documents', icon: 'document' },
         hasOwnDocuments && { id: 'my-documents', label: 'My documents', icon: 'document' },
       ].filter(Boolean),
     },
@@ -638,6 +640,8 @@ export function AdminConsole({
         {activeTab === 'sick-leave' && <AdminSickLeavePanel setErrorPopup={setErrorPopup} includeOwnRequest={!authState.user.isAdmin && Boolean(authState.user.employeeId)} realtimeKey={realtimeVersions.sickLeave} />}
 
         {activeTab === 'absent' && <AbsentPanel management admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
+
+        {activeTab === 'documents' && authState.user.isAdmin && <AdminDocumentsPanel realtimeKey={realtimeVersions.documents} />}
 
         {activeTab === 'my-documents' && hasOwnDocuments && <DocumentsPanel realtimeKey={realtimeVersions.documents} />}
 

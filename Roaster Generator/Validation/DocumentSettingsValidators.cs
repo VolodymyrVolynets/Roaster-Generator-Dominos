@@ -29,19 +29,32 @@ public sealed class DocumentRequirementListRequestValidator : AbstractValidator<
     }
 }
 
+public sealed class DocumentFieldsValidator : AbstractValidator<DocumentFields>
+{
+    public DocumentFieldsValidator()
+    {
+        RuleFor(fields => fields.HolderName).MaximumLength(200);
+        RuleFor(fields => fields.ReferenceNumber).MaximumLength(100);
+        RuleFor(fields => fields.IssuingCountry)
+            .Must(country => string.IsNullOrWhiteSpace(country) || DocumentCountries.Normalize(country) is not null)
+            .WithMessage("Use the two-letter country code.");
+        RuleFor(fields => fields.Stamp).MaximumLength(20);
+        RuleFor(fields => fields.VehicleRegistration).MaximumLength(20);
+        RuleFor(fields => fields.PenaltyPoints).InclusiveBetween(0, 100);
+    }
+}
+
 public sealed class DocumentSubmitRequestValidator : AbstractValidator<DocumentSubmitRequest>
 {
     public DocumentSubmitRequestValidator()
     {
+        Include(new DocumentFieldsValidator());
         RuleFor(request => request.DocumentTypeId).NotEmpty().WithMessage("Choose the document type.");
-        RuleFor(request => request.HolderName).MaximumLength(200);
-        RuleFor(request => request.ReferenceNumber).MaximumLength(100);
-        RuleFor(request => request.IssuingCountry)
-            .Must(country => string.IsNullOrWhiteSpace(country) || DocumentCountries.Normalize(country) is not null)
-            .WithMessage("Use the two-letter country code.");
-        RuleFor(request => request.Stamp).MaximumLength(20);
-        RuleFor(request => request.VehicleRegistration).MaximumLength(20);
-        RuleFor(request => request.PenaltyPoints).InclusiveBetween(0, 100);
         RuleFor(request => request.Note).MaximumLength(500);
     }
+}
+
+public sealed class DocumentAdminUpdateRequestValidator : AbstractValidator<DocumentAdminUpdateRequest>
+{
+    public DocumentAdminUpdateRequestValidator() => Include(new DocumentFieldsValidator());
 }
