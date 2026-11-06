@@ -60,12 +60,17 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(employee => employee.IsDeleted)
+            .HasColumnName("is_deleted")
+            .HasDefaultValue(false);
+
         builder.HasIndex(employee => employee.EmployeeNumber)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("is_deleted = false");
 
         builder.HasIndex(employee => employee.PayrollNumber)
             .IsUnique()
-            .HasFilter("payroll_number IS NOT NULL");
+            .HasFilter("payroll_number IS NOT NULL AND is_deleted = false");
 
         builder.HasData(
             new Employee

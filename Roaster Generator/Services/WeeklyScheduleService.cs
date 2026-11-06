@@ -1,5 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Schedules;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
@@ -10,8 +12,11 @@ namespace Roaster_Generator.Services;
 public sealed class WeeklyScheduleService(
     AppDbContext db,
     RosterInputService? rosterInputs,
-    ApplicationEventPublisher? events = null)
+    ApplicationEventPublisher? events = null,
+    IOptions<ShopHoursOptions>? shopHoursOptions = null)
 {
+    private readonly ShopHoursOptions shopHours = shopHoursOptions?.Value ?? new ShopHoursOptions();
+
     public const int MinWeekOffset = 1;
     public const int MaxWeekOffset = 3;
 
@@ -86,6 +91,9 @@ public sealed class WeeklyScheduleService(
         var weekEnd = weekStart.AddDays(7);
 
         var employees = await DriverRosterEmployees.Query(db)
+            .Union(db.Employees.Where(employee => employee.IsDeleted &&
+                db.Shifts.Any(shift => shift.EmployeeId == employee.Id &&
+                    shift.Date >= weekStart && shift.Date < weekEnd)))
             .AsNoTracking()
             .OrderBy(employee => employee.LastName)
             .ThenBy(employee => employee.FirstName)
@@ -129,7 +137,7 @@ public sealed class WeeklyScheduleService(
         CancellationToken cancellationToken)
     {
         var employee = await db.Employees
-            .SingleOrDefaultAsync(item => item.Id == employeeId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
 
         if (employee is null)
         {
@@ -213,7 +221,7 @@ public sealed class WeeklyScheduleService(
         }
     }
 
-    private static WeeklyScheduleResponse BuildResponse(
+    private WeeklyScheduleResponse BuildResponse(
         Employee employee,
         DateOnly weekStart,
         IReadOnlyCollection<Shift> shifts,
@@ -228,13 +236,16 @@ public sealed class WeeklyScheduleService(
             {
                 var date = weekStart.AddDays(offset);
                 shiftsByDate.TryGetValue(date, out var shift);
+                var dayHours = shopHours.For(date.DayOfWeek);
 
                 return new ScheduleDayResponse
                 {
                     Date = date,
                     DayOfWeek = date.DayOfWeek.ToString(),
                     StartTime = FormatTime(shift?.StartTime),
-                    FinishTime = FormatTime(shift?.FinishTime)
+                    FinishTime = FormatTime(shift?.FinishTime),
+                    OpeningTime = FormatTime(dayHours.OpeningTime),
+                    ClosingTime = FormatTime(dayHours.ClosingTime)
                 };
             })
             .ToList();
@@ -243,6 +254,7 @@ public sealed class WeeklyScheduleService(
         {
             EmployeeId = employee.Id,
             EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
+            CanEdit = !employee.IsDeleted,
             WeekStart = weekStart,
             WeekEnd = weekStart.AddDays(6),
             ApproximateHours = approximateHours?.ExpectedHours,

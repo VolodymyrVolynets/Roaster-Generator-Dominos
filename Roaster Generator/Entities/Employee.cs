@@ -20,6 +20,8 @@ public sealed class Employee
 
     public bool IsActive { get; set; } = true;
 
+    public bool IsDeleted { get; set; }
+
     public DriverProfile? DriverProfile { get; set; }
 
     public InStoreProfile? InStoreProfile { get; set; }

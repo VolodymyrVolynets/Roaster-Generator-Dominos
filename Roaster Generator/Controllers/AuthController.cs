@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using FluentValidation;
+using Roaster_Generator.Services;
 using Roaster_Generator.Contracts.Auth;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
@@ -38,6 +40,9 @@ public sealed class AuthController(
             logger.LogWarning("Login failed for username {Username}: user was not found.", username);
             return Unauthorized(new { message = "Invalid username or password." });
         }
+
+        if (await userManager.IsLockedOutAsync(user))
+            return Unauthorized(new { message = "This account is inactive." });
 
         if (user.EmployeeId is Guid employeeId &&
             !await db.Employees.AnyAsync(
@@ -77,7 +82,7 @@ public sealed class AuthController(
     {
         var user = await userManager.GetUserAsync(User);
 
-        if (user is null)
+        if (user is null || await userManager.IsLockedOutAsync(user))
         {
             return Unauthorized();
         }
@@ -103,11 +108,49 @@ public sealed class AuthController(
             Username = user.UserName ?? string.Empty,
             Roles = roles.ToArray(),
             IsAdmin = roles.Contains(RoleNames.Admin),
+            HasChangedPassword = user.HasChangedPassword,
             EmployeeId = user.EmployeeId,
             EmployeeName = employee is null
                 ? null
                 : $"{employee.FirstName} {employee.LastName}".Trim()
         });
+    }
+
+    [HttpPost("change-initial-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangeInitialPassword(
+        [FromBody] ChangeInitialPasswordRequest request,
+        [FromServices] IValidator<ChangeInitialPasswordRequest> validator,
+        [FromServices] ApplicationEventPublisher events,
+        CancellationToken cancellationToken)
+    {
+        var user = await userManager.GetUserAsync(User);
+        if (user is null || await userManager.IsLockedOutAsync(user)) return Unauthorized();
+        if (user.HasChangedPassword)
+            return Conflict(new { message = "Your initial password has already been changed." });
+        if (user.EmployeeId is Guid employeeId && !await db.Employees.AnyAsync(
+            employee => employee.Id == employeeId && employee.IsActive, cancellationToken))
+            return Unauthorized();
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+            return BadRequest(new { message = string.Join(" ", validation.Errors.Select(error => error.ErrorMessage)) });
+        if (await userManager.CheckPasswordAsync(user, request.NewPassword))
+            return BadRequest(new { message = "Choose a password different from your initial password." });
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await userManager.ResetPasswordAsync(user, token, request.NewPassword);
+        if (!result.Succeeded)
+            return BadRequest(new { message = string.Join(" ", result.Errors.Select(error => error.Description)) });
+        user.HasChangedPassword = true;
+        result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+            return BadRequest(new { message = "Your password change could not be saved. Please try again." });
+        await transaction.CommitAsync(cancellationToken);
+        await signInManager.RefreshSignInAsync(user);
+        if (user.EmployeeId is Guid changedEmployeeId)
+            await events.EmployeeChangedAsync(changedEmployeeId, cancellationToken);
+        return Ok();
     }
 
     [HttpPost("logout")]

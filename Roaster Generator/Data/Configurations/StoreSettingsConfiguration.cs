@@ -22,5 +22,10 @@ public sealed class StoreSettingsConfiguration : IEntityTypeConfiguration<StoreS
             .HasColumnName("store_name")
             .HasMaxLength(200)
             .IsRequired();
+        builder.Property(settings => settings.FranchiseeName)
+            .HasColumnName("franchisee_name")
+            .HasMaxLength(200)
+            .HasDefaultValue(string.Empty)
+            .IsRequired();
     }
 }

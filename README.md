@@ -12,6 +12,15 @@ The API is available at `http://localhost:5029/` and `http://localhost:5029/api/
 
 ## Run the full stack locally with Docker
 
+For local document uploads, add these to the git-ignored `.env` in the repository root, then recreate the backend. Generate the encryption key with `openssl rand -base64 32`, and use a different value from production.
+
+```text
+ANTHROPIC_API_KEY=
+DOCUMENTS_ENCRYPTION_KEY=
+```
+
+In Rider, select **Local Docker stack** to run `compose.yaml`. This starts the API, PostgreSQL and frontend together and supplies the backend environment settings. Running the backend Dockerfile alone does not supply `ConnectionStrings__Postgres` or the bootstrap authentication configuration. The root `.env` provides values to Compose; it is not automatically passed into a standalone Dockerfile container.
+
 ```bash
 docker compose up --build
 ```

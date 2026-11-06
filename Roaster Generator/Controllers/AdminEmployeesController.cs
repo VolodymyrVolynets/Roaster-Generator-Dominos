@@ -21,11 +21,13 @@ public sealed class AdminEmployeesController(
     IValidator<EmployeeRequest> employeeValidator,
     ApplicationEventPublisher? events = null) : ApiControllerBase
 {
+    private readonly AdminAccountProtection adminProtection = new(db);
     [HttpGet]
     public async Task<IActionResult> GetEmployees(CancellationToken cancellationToken)
     {
         var employees = await db.Employees
             .AsNoTracking()
+            .Where(employee => !employee.IsDeleted)
             .Include(employee => employee.DriverProfile)
             .Include(employee => employee.InStoreProfile)
             .Include(employee => employee.ManagerProfile)
@@ -72,7 +74,7 @@ public sealed class AdminEmployeesController(
         var phoneNumber = request.PhoneNumber.Trim();
         var payrollNumber = NormalizeOptional(request.PayrollNumber);
 
-        if (await db.Employees.AnyAsync(employee => employee.EmployeeNumber == employeeNumber, cancellationToken) ||
+        if (await db.Employees.AnyAsync(employee => !employee.IsDeleted && employee.EmployeeNumber == employeeNumber, cancellationToken) ||
             await userManager.FindByNameAsync(employeeNumber) is not null)
         {
             return ValidationError(
@@ -84,7 +86,7 @@ public sealed class AdminEmployeesController(
         }
 
         if (payrollNumber is not null &&
-            await db.Employees.AnyAsync(employee => employee.PayrollNumber == payrollNumber, cancellationToken))
+            await db.Employees.AnyAsync(employee => !employee.IsDeleted && employee.PayrollNumber == payrollNumber, cancellationToken))
         {
             return ValidationError(
                 new Dictionary<string, string[]>
@@ -95,6 +97,8 @@ public sealed class AdminEmployeesController(
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        await adminProtection.LockAsync(cancellationToken);
 
         var employee = new Employee
         {
@@ -135,6 +139,7 @@ public sealed class AdminEmployeesController(
             return IdentityValidationError(roleResult, "The employee roles could not be assigned.");
         }
 
+        await adminProtection.DisableBootstrapAdminsAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         var response = await ToEmployeeResponseAsync(employee, cancellationToken);
         if (events is not null)
@@ -152,7 +157,7 @@ public sealed class AdminEmployeesController(
             .Include(item => item.DriverProfile)
             .Include(item => item.InStoreProfile)
             .Include(item => item.ManagerProfile)
-            .SingleOrDefaultAsync(item => item.Id == employeeId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
 
         if (employee is null)
         {
@@ -178,7 +183,7 @@ public sealed class AdminEmployeesController(
         var payrollNumber = NormalizeOptional(request.PayrollNumber);
 
         if (await db.Employees.AnyAsync(
-                item => item.Id != employeeId && item.EmployeeNumber == employeeNumber,
+                item => !item.IsDeleted && item.Id != employeeId && item.EmployeeNumber == employeeNumber,
                 cancellationToken))
         {
             return ValidationError(
@@ -191,7 +196,7 @@ public sealed class AdminEmployeesController(
 
         if (payrollNumber is not null &&
             await db.Employees.AnyAsync(
-                item => item.Id != employeeId && item.PayrollNumber == payrollNumber,
+                item => !item.IsDeleted && item.Id != employeeId && item.PayrollNumber == payrollNumber,
                 cancellationToken))
         {
             return ValidationError(
@@ -202,6 +207,8 @@ public sealed class AdminEmployeesController(
                 "The employee is invalid.");
         }
 
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await adminProtection.LockAsync(cancellationToken);
         var user = await userManager.Users
             .SingleOrDefaultAsync(item => item.EmployeeId == employeeId, cancellationToken);
         var currentRoles = user is null
@@ -215,7 +222,13 @@ public sealed class AdminEmployeesController(
             return Forbid();
         }
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (user is not null && currentRoles.Contains(RoleNames.Admin, StringComparer.Ordinal) &&
+            !roles.Contains(RoleNames.Admin, StringComparer.Ordinal))
+        {
+            var error = await adminProtection.RemovalErrorAsync(user, User, cancellationToken);
+            if (error is not null)
+                return ValidationError(new Dictionary<string, string[]> { ["roles"] = [error] }, "Administrator access is protected.");
+        }
 
         if (user is not null && !string.Equals(user.UserName, employeeNumber, StringComparison.Ordinal))
         {
@@ -268,6 +281,7 @@ public sealed class AdminEmployeesController(
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await adminProtection.DisableBootstrapAdminsAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         var response = await ToEmployeeResponseAsync(employee, cancellationToken);
@@ -282,7 +296,7 @@ public sealed class AdminEmployeesController(
         CancellationToken cancellationToken)
     {
         var employee = await db.Employees.SingleOrDefaultAsync(
-            item => item.Id == employeeId,
+            item => item.Id == employeeId && !item.IsDeleted,
             cancellationToken);
 
         if (employee is null)
@@ -290,12 +304,23 @@ public sealed class AdminEmployeesController(
             return NotFound(new { message = "Employee not found." });
         }
 
+        var actorUserId = Guid.TryParse(userManager.GetUserId(User), out var parsedActorId) ? parsedActorId : (Guid?)null;
+        var actorName = userManager.GetUserName(User) ?? "Unknown";
+
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await adminProtection.LockAsync(cancellationToken);
         var user = await userManager.Users
             .SingleOrDefaultAsync(item => item.EmployeeId == employeeId, cancellationToken);
 
         if (user is not null)
         {
+            if (await adminProtection.IsAdminAsync(user, cancellationToken))
+            {
+                if (!User.IsInRole(RoleNames.Admin)) return Forbid();
+                var error = await adminProtection.RemovalErrorAsync(user, User, cancellationToken);
+                if (error is not null)
+                    return ValidationError(new Dictionary<string, string[]> { ["roles"] = [error] }, "Administrator access is protected.");
+            }
             var userResult = await userManager.DeleteAsync(user);
 
             if (!userResult.Succeeded)
@@ -304,7 +329,10 @@ public sealed class AdminEmployeesController(
             }
         }
 
-        db.Employees.Remove(employee);
+        // Keep the employee as the owner of historical availability, rosters and forms.
+        employee.IsActive = false;
+        employee.IsDeleted = true;
+        await EmployeeDocumentRemoval.StageAsync(db, employeeId, actorUserId, actorName, DateTimeOffset.UtcNow, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -316,6 +344,31 @@ public sealed class AdminEmployeesController(
     [HttpPost("{employeeId:guid}/deactivate")]
     public Task<IActionResult> Deactivate(Guid employeeId, CancellationToken cancellationToken) =>
         SetStatusAsync(employeeId, false, cancellationToken);
+
+    [HttpPost("{employeeId:guid}/reset-password")]
+    [Authorize(Policy = AuthorizationPolicies.Admin)]
+    public async Task<IActionResult> ResetPassword(Guid employeeId, CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole(RoleNames.Admin)) return Forbid();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await adminProtection.LockAsync(cancellationToken);
+        var employee = await db.Employees
+            .Include(item => item.DriverProfile).Include(item => item.InStoreProfile).Include(item => item.ManagerProfile)
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
+        if (employee is null) return NotFound(new { message = "Employee not found." });
+        var user = await userManager.Users.SingleOrDefaultAsync(item => item.EmployeeId == employeeId, cancellationToken);
+        if (user is null) return NotFound(new { message = "This employee has no login account." });
+
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await userManager.ResetPasswordAsync(user, token, AuthOptions.DefaultEmployeePassword);
+        if (!result.Succeeded) return IdentityValidationError(result, "The password could not be reset.");
+        user.HasChangedPassword = false;
+        result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded) return IdentityValidationError(result, "The password reset could not be saved.");
+        await transaction.CommitAsync(cancellationToken);
+        if (events is not null) await events.EmployeeChangedAsync(employeeId, cancellationToken);
+        return Ok(await ToEmployeeResponseAsync(employee, cancellationToken));
+    }
 
     [HttpPost("{employeeId:guid}/reactivate")]
     public Task<IActionResult> Reactivate(Guid employeeId, CancellationToken cancellationToken) =>
@@ -330,15 +383,30 @@ public sealed class AdminEmployeesController(
             .Include(item => item.DriverProfile)
             .Include(item => item.InStoreProfile)
             .Include(item => item.ManagerProfile)
-            .SingleOrDefaultAsync(item => item.Id == employeeId, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == employeeId && !item.IsDeleted, cancellationToken);
 
         if (employee is null)
         {
             return NotFound(new { message = "Employee not found." });
         }
 
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await adminProtection.LockAsync(cancellationToken);
+        var user = await userManager.Users.SingleOrDefaultAsync(item => item.EmployeeId == employeeId, cancellationToken);
+        if (user is not null && await adminProtection.IsAdminAsync(user, cancellationToken))
+        {
+            if (!User.IsInRole(RoleNames.Admin)) return Forbid();
+            if (!isActive)
+            {
+                var error = await adminProtection.RemovalErrorAsync(user, User, cancellationToken);
+                if (error is not null)
+                    return ValidationError(new Dictionary<string, string[]> { ["roles"] = [error] }, "Administrator access is protected.");
+            }
+        }
         employee.IsActive = isActive;
         await db.SaveChangesAsync(cancellationToken);
+        await adminProtection.DisableBootstrapAdminsAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         var response = await ToEmployeeResponseAsync(employee, cancellationToken);
         if (events is not null)
             await events.EmployeeChangedAsync(employee.Id, cancellationToken);
@@ -355,7 +423,7 @@ public sealed class AdminEmployeesController(
             ? []
             : await userManager.GetRolesAsync(user);
 
-        return EmployeeResponseMapper.ToResponse(employee, roles);
+        return EmployeeResponseMapper.ToResponse(employee, roles, user?.HasChangedPassword);
     }
 
     private void SynchronizeProfiles(

@@ -16,11 +16,200 @@ using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
 using Roaster_Generator.Security;
 using Roaster_Generator.Validation;
+using Roaster_Generator.Services;
+using Roaster_Generator.Enums;
+using Roaster_Generator.Contracts.Holidays;
+using Roaster_Generator.Contracts.SickLeave;
+using Roaster_Generator.Contracts.Absent;
 
 namespace Roaster_Generator.Tests;
 
 public sealed class EmployeePayRateTests
 {
+    [Fact]
+    public async Task RemovingEmployeeKeepsHistoryReadableAndPreventsReactivation()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.PayrollNumber = "history-payroll";
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        var db = fixture.Db;
+        var week = WeeklyScheduleService.GetWeekMonday(-4);
+        var plan = new RosterPlan { Id = Guid.NewGuid(), WeekStart = week };
+        db.RosterPlans.Add(plan);
+        db.RosterShifts.Add(new RosterShift { EmployeeId = created.Id, RosterPlan = plan,
+            Date = week, StartTime = new TimeOnly(12, 0), FinishTime = new TimeOnly(18, 0) });
+        db.Shifts.Add(new Shift { EmployeeId = created.Id, Date = week,
+            StartTime = new TimeOnly(12, 0), FinishTime = new TimeOnly(20, 0) });
+        db.HolidayRequests.Add(new HolidayRequest { EmployeeId = created.Id, Hours = 16 });
+        db.SickLeaveRequests.Add(new SickLeaveRequest { EmployeeId = created.Id,
+            StartDate = week, FinishDate = week, Status = SickLeaveStatus.Approved });
+        db.AbsentForms.Add(new AbsentForm { EmployeeId = created.Id,
+            DriverFullName = $"{request.FirstName} {request.LastName}", ShiftDate = week,
+            NotificationDate = week, NotificationMethod = "Phone", CancellationReason = "Illness" });
+        await db.SaveChangesAsync();
+
+        Assert.IsType<NoContentResult>(await fixture.Controller.Delete(created.Id, default));
+        db.ChangeTracker.Clear();
+        var archived = await db.Employees.SingleAsync(employee => employee.Id == created.Id);
+        Assert.True(archived.IsDeleted);
+        Assert.False(archived.IsActive);
+        Assert.Empty(await db.Users.ToListAsync());
+        Assert.Single(await db.RosterShifts.ToListAsync());
+        Assert.Single(await db.Shifts.ToListAsync());
+        Assert.Single(await db.HolidayRequests.ToListAsync());
+        Assert.Single(await db.SickLeaveRequests.ToListAsync());
+        Assert.Single(await db.AbsentForms.ToListAsync());
+        var directory = Assert.IsType<List<EmployeeResponse>>(
+            Assert.IsType<OkObjectResult>(await fixture.Controller.GetEmployees(default)).Value);
+        Assert.Empty(directory);
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.Reactivate(created.Id, default));
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.Update(created.Id, request, default));
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.Delete(created.Id, default));
+        Assert.IsType<NotFoundObjectResult>(await fixture.Controller.ResetPassword(created.Id, default));
+
+        var schedules = new WeeklyScheduleService(db, null);
+        var history = Assert.Single((await schedules.GetWeekForAllAsync(-4, default)).Employees);
+        Assert.Equal(created.Id, history.EmployeeId);
+        Assert.Equal("12:00", history.Days[0].StartTime);
+        Assert.False(history.CanEdit);
+        Assert.Empty((await schedules.GetWeekForAllAsync(-3, default)).Employees);
+        Assert.Null(await schedules.ReplaceWeekAsync(created.Id,
+            new Roaster_Generator.Contracts.Schedules.WeeklyScheduleRequest { WeekOffset = -4 }, default));
+        var holidays = Assert.IsType<AdminHolidayResponse>(Assert.IsType<OkObjectResult>(
+            await new AdminHolidaysController(db).Get(default)).Value);
+        Assert.Equal(created.Id, Assert.Single(holidays.Requested).EmployeeId);
+        var sickness = Assert.IsType<SickLeaveOverviewResponse>(Assert.IsType<OkObjectResult>(
+            await new AdminSickLeaveController(db, null!).Get(default)).Value);
+        Assert.Equal(created.Id, Assert.Single(sickness.Reviewed).EmployeeId);
+        Assert.Single(await new AbsentFormService(db, TimeProvider.System)
+            .GetForManagementAsync(new AbsentManagementFilter(), default));
+
+        var replacement = ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.NotEqual(created.Id, replacement.Id);
+        Assert.Equal(created.Id, (await db.HolidayRequests.SingleAsync()).EmployeeId);
+    }
+
+    [Fact]
+    public async Task ManagerCannotCreateAnAdmin()
+    {
+        using var fixture = new EmployeeFixture();
+        fixture.Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, RoleNames.Manager)], "TestAuthentication"));
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        Assert.IsType<ForbidResult>(await fixture.Controller.Create(request, default));
+        Assert.Empty(await fixture.Db.Employees.ToListAsync());
+    }
+
+    [Fact]
+    public async Task AnInactiveAdminDoesNotPermitRemovalOfTheLastActiveAdmin()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var first = ReadEmployee(await fixture.Controller.Create(request, default));
+        var second = Request();
+        second.EmployeeNumber = "inactive-admin";
+        second.Roles.Add(RoleNames.Admin);
+        var other = ReadEmployee(await fixture.Controller.Create(second, default));
+        Assert.IsType<OkObjectResult>(await fixture.Controller.Deactivate(other.Id, default));
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.Delete(first.Id, default));
+    }
+
+    [Theory]
+    [InlineData("delete")]
+    [InlineData("deactivate")]
+    [InlineData("demote")]
+    public async Task ManagersCannotRemoveAdministratorAccess(string operation)
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        fixture.Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, RoleNames.Manager)], "TestAuthentication"));
+        request.Roles.Remove(RoleNames.Admin);
+        var result = operation switch
+        {
+            "delete" => await fixture.Controller.Delete(created.Id, default),
+            "deactivate" => await fixture.Controller.Deactivate(created.Id, default),
+            _ => await fixture.Controller.Update(created.Id, request, default)
+        };
+        Assert.IsType<ForbidResult>(result);
+        Assert.True((await fixture.Db.Employees.SingleAsync()).IsActive);
+    }
+
+    [Theory]
+    [InlineData("delete", false)]
+    [InlineData("deactivate", false)]
+    [InlineData("demote", false)]
+    [InlineData("delete", true)]
+    [InlineData("deactivate", true)]
+    [InlineData("demote", true)]
+    public async Task LastAdminAndOwnAdminAccessCannotBeRemoved(string operation, bool isSelf)
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var created = ReadEmployee(await fixture.Controller.Create(request, default));
+        var user = await fixture.Db.Users.SingleAsync();
+        if (isSelf)
+        {
+            var second = Request();
+            second.EmployeeNumber = "another-admin";
+            second.Roles.Add(RoleNames.Admin);
+            ReadEmployee(await fixture.Controller.Create(second, default));
+            fixture.Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, RoleNames.Admin), new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())], "TestAuthentication"));
+        }
+        request.Roles.Remove(RoleNames.Admin);
+        var result = operation switch
+        {
+            "delete" => await fixture.Controller.Delete(created.Id, default),
+            "deactivate" => await fixture.Controller.Deactivate(created.Id, default),
+            _ => await fixture.Controller.Update(created.Id, request, default)
+        };
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.True((await fixture.Db.Employees.SingleAsync(employee => employee.Id == created.Id)).IsActive);
+    }
+
+    [Fact]
+    public async Task AnotherAdminCanBeDemotedWhenAnActiveAdminRemains()
+    {
+        using var fixture = new EmployeeFixture();
+        var first = Request();
+        first.Roles.Add(RoleNames.Admin);
+        var created = ReadEmployee(await fixture.Controller.Create(first, default));
+        var second = Request();
+        second.EmployeeNumber = "another-admin";
+        second.Roles.Add(RoleNames.Admin);
+        ReadEmployee(await fixture.Controller.Create(second, default));
+        first.Roles.Remove(RoleNames.Admin);
+        Assert.DoesNotContain(RoleNames.Admin, ReadEmployee(await fixture.Controller.Update(created.Id, first, default)).Roles);
+    }
+
+    [Fact]
+    public async Task CreatingAnEmployeeAdminPermanentlyDisablesBootstrapAdmin()
+    {
+        using var fixture = new EmployeeFixture();
+        var bootstrap = new ApplicationUser { Id = Guid.NewGuid(), UserName = "bootstrap", LockoutEnabled = false };
+        fixture.Db.Users.Add(bootstrap);
+        fixture.Db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = bootstrap.Id,
+            RoleId = (await fixture.Db.Roles.SingleAsync(role => role.Name == RoleNames.Admin)).Id });
+        await fixture.Db.SaveChangesAsync();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        ReadEmployee(await fixture.Controller.Create(request, default));
+        Assert.True(bootstrap.LockoutEnabled);
+        Assert.Equal(DateTimeOffset.MaxValue, bootstrap.LockoutEnd);
+        Assert.NotEqual("bootstrap", bootstrap.UserName);
+        Assert.Equal(bootstrap.UserName!.ToUpperInvariant(), bootstrap.NormalizedUserName);
+        var reused = Request();
+        reused.EmployeeNumber = "bootstrap";
+        Assert.DoesNotContain(RoleNames.Admin, ReadEmployee(await fixture.Controller.Create(reused, default)).Roles);
+    }
+
     [Theory]
     [InlineData("-0.01", false)]
     [InlineData("10000.01", false)]
@@ -238,6 +427,64 @@ public sealed class EmployeePayRateTests
         Assert.Equal(ValueGenerated.Never, property.ValueGenerated);
     }
 
+    [Fact]
+    public async Task RemovingAnEmployeeDeletesTheirDocumentsButKeepsTheAuditTrail()
+    {
+        using var fixture = new EmployeeFixture();
+        var removed = ReadEmployee(await fixture.Controller.Create(Request(), default));
+        var otherRequest = Request();
+        otherRequest.EmployeeNumber = "emp-other";
+        var other = ReadEmployee(await fixture.Controller.Create(otherRequest, default));
+        var type = new DocumentType { Id = Guid.NewGuid(), Code = DocumentTypeCodes.Passport, Name = "Passport" };
+        fixture.Db.DocumentTypes.Add(type);
+        var document = AddDocument(fixture, removed.Id, type);
+        var otherDocument = AddDocument(fixture, other.Id, type);
+        var draft = new DocumentDraft { Id = Guid.NewGuid(), EmployeeId = removed.Id };
+        fixture.Db.DocumentDrafts.Add(draft);
+        fixture.Db.EmployeeDocumentFiles.Add(new EmployeeDocumentFile { Id = Guid.NewGuid(), DraftId = draft.Id });
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.IsType<NoContentResult>(await fixture.Controller.Delete(removed.Id, default));
+
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Equal(otherDocument.Id, (await fixture.Db.EmployeeDocuments.SingleAsync()).Id);
+        Assert.Equal(otherDocument.Id, (await fixture.Db.EmployeeDocumentFiles.SingleAsync()).DocumentId);
+        Assert.Empty(fixture.Db.DocumentDrafts);
+        var audit = await fixture.Db.DocumentAuditEvents.SingleAsync();
+        Assert.Equal(removed.Id, audit.EmployeeId);
+        Assert.Equal(document.Id, audit.DocumentId);
+        Assert.Equal(DocumentAuditAction.Deleted, audit.Action);
+        Assert.Equal(DocumentTypeCodes.Passport, audit.DocumentTypeCode);
+    }
+
+    [Fact]
+    public async Task BlockedRemovalKeepsTheEmployeesDocuments()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var administrator = ReadEmployee(await fixture.Controller.Create(request, default));
+        var type = new DocumentType { Id = Guid.NewGuid(), Code = DocumentTypeCodes.Passport, Name = "Passport" };
+        fixture.Db.DocumentTypes.Add(type);
+        AddDocument(fixture, administrator.Id, type);
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.Delete(administrator.Id, default));
+
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Single(fixture.Db.EmployeeDocuments);
+    }
+
+    private static EmployeeDocument AddDocument(EmployeeFixture fixture, Guid employeeId, DocumentType type)
+    {
+        var document = new EmployeeDocument { Id = Guid.NewGuid(), EmployeeId = employeeId, DocumentTypeId = type.Id };
+        fixture.Db.EmployeeDocuments.Add(document);
+        fixture.Db.EmployeeDocumentFiles.Add(new EmployeeDocumentFile { Id = Guid.NewGuid(), DocumentId = document.Id });
+        return document;
+    }
+
     private sealed class EmployeeFixture : IDisposable
     {
         private readonly ServiceProvider services = new ServiceCollection().BuildServiceProvider();
@@ -249,7 +496,7 @@ public sealed class EmployeePayRateTests
 
         public EmployeeFixture()
         {
-            foreach (var role in new[] { RoleNames.Driver, RoleNames.InStore, RoleNames.Manager })
+            foreach (var role in new[] { RoleNames.Driver, RoleNames.InStore, RoleNames.Manager, RoleNames.Admin })
                 Db.Roles.Add(new IdentityRole<Guid> { Id = Guid.NewGuid(), Name = role, NormalizedName = role.ToUpperInvariant() });
             Db.SaveChanges();
             userManager = new UserManager<ApplicationUser>(

@@ -112,4 +112,10 @@ public sealed class ScheduleDayResponse
     public string? StartTime { get; init; }
 
     public string? FinishTime { get; init; }
+
+    /// <summary>Shop opening time for this day; availability cannot start earlier.</summary>
+    public string? OpeningTime { get; init; }
+
+    /// <summary>Shop closing time for this day (may be after midnight); availability cannot finish later.</summary>
+    public string? ClosingTime { get; init; }
 }

@@ -20,7 +20,7 @@ internal static class DriverRosterEmployees
         var insideIds = memberships.Where(membership => membership.Role == RoleNames.Manager || membership.Role == RoleNames.InStore)
             .Select(membership => membership.EmployeeId);
 
-        return db.Employees.Where(employee => employee.IsActive && employee.DriverProfile != null
+        return db.Employees.Where(employee => !employee.IsDeleted && employee.IsActive && employee.DriverProfile != null
             && employee.ManagerProfile == null && employee.InStoreProfile == null
             && driverIds.Contains(employee.Id) && !insideIds.Contains(employee.Id));
     }
@@ -42,7 +42,7 @@ internal static class InsideRosterEmployees
         var inStoreIds = memberships.Where(membership => membership.Role == RoleNames.InStore)
             .Select(membership => membership.EmployeeId);
 
-        return db.Employees.Where(employee => employee.IsActive &&
+        return db.Employees.Where(employee => !employee.IsDeleted && employee.IsActive &&
             (employee.ManagerProfile != null && managerIds.Contains(employee.Id) ||
              employee.InStoreProfile != null && inStoreIds.Contains(employee.Id)));
     }

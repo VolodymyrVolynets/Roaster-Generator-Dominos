@@ -29,7 +29,7 @@ public sealed class EmployeesController(
     [HttpGet]
     public async Task<IActionResult> GetEmployees(CancellationToken cancellationToken)
     {
-        var query = db.Employees.AsNoTracking();
+        var query = db.Employees.AsNoTracking().Where(employee => !employee.IsDeleted);
 
         if (!User.IsInRole(RoleNames.Admin) && !User.IsInRole(RoleNames.Manager))
         {
@@ -188,7 +188,7 @@ public sealed class EmployeesController(
         schedule.MinimumEditableWeekOffset = isAdmin
             ? null
             : minimumEditableWeekOffset;
-        schedule.CanEdit = isAdmin
+        schedule.CanEdit &= isAdmin
             ? weekOffset <= WeeklyScheduleService.MaxWeekOffset
             : weekOffset >= minimumEditableWeekOffset &&
               weekOffset <= WeeklyScheduleService.MaxWeekOffset;
