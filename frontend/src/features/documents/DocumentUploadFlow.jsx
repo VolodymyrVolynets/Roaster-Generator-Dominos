@@ -156,7 +156,9 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
         </ul>
         {canAddPage && <button type="button" className="secondary-button" onClick={() => addRef.current.click()}>Add another side or page</button>}
         <p className="holiday-help">Add every side or page first, then check the document.</p>
-        <button type="button" onClick={() => analyse(files)} disabled={files.length === 0}>Check document</button>
+        <div className="document-sheet-actions">
+          <button type="button" onClick={() => analyse(files)} disabled={files.length === 0}>Check document</button>
+        </div>
       </div>}
 
       {step === 'checking' && <div className="document-checking" role="status">
@@ -216,7 +218,7 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
           </div>}
         </fieldset>
         {edited && <p className="holiday-help">Because you changed something, an administrator will review this document.</p>}
-        <div className="document-type-actions">
+        <div className="document-sheet-actions">
           <button type="submit" disabled={busy || !typeId || missingSide}>{step === 'saving' ? 'Uploading…' : 'Upload'}</button>
         </div>
       </form>}

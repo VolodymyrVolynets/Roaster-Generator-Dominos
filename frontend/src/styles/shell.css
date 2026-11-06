@@ -584,3 +584,24 @@
   color: var(--text-tertiary);
   font-size: 0.8125rem;
 }
+
+/* Six tabs need tighter labels on narrow phones. */
+@media (max-width: 400px) {
+  .shell-tabbar {
+    padding-right: 2px;
+    padding-left: 2px;
+  }
+
+  .shell-tab {
+    min-width: 0;
+    padding-right: 0;
+    padding-left: 0;
+    font-size: 0.625rem;
+  }
+}
+
+@media (max-width: 340px) {
+  .shell-tab {
+    font-size: 0.5625rem;
+  }
+}

@@ -182,13 +182,15 @@ function SignOffSheet({ documentId, onFinish }) {
       {state.status === 'loading' && <p className="message info-message" role="status">Loading the form…</p>}
       {state.status === 'error' && <p className="message error-message" role="alert">{state.message}</p>}
       {form && <form className="document-review" onSubmit={save}>
-        <a className="table-link" href={`${url}/form`} target="_blank" rel="noreferrer">Read the completed form</a>
+        <a className="secondary-button document-link-button" href={`${url}/form`} target="_blank" rel="noreferrer">Read the completed form</a>
         {form.asksForManagerName && <div className="absent-field">
           <label htmlFor="signoff-name">Your name</label>
           <input id="signoff-name" value={managerName} maxLength={200} required onChange={(event) => setManagerName(event.target.value)} />
         </div>}
         <SignaturePad ref={padRef} disabled={saving} onChange={setSigned} />
-        <button type="submit" disabled={!signed || saving}>{saving ? 'Saving…' : 'Sign and save'}</button>
+        <div className="document-sheet-actions">
+          <button type="submit" disabled={!signed || saving}>{saving ? 'Saving…' : 'Sign and save'}</button>
+        </div>
       </form>}
     </section>
   </div>

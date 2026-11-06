@@ -26,6 +26,20 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
     return () => { cancelled = true }
   }, [documentTypeId])
 
+  function renderField(field) {
+    if (field.isCheckbox) return <label key={field.name} className="document-type-toggle document-note">
+      <input type="checkbox" checked={values[field.name] === 'true'}
+        onChange={(event) => setValues((current) => ({ ...current, [field.name]: String(event.target.checked) }))} />
+      <span>{field.label}</span>
+    </label>
+
+    return <div className="absent-field" key={field.name}>
+      <label htmlFor={`sign-${field.name}`}>{field.label}{field.required ? '' : ' (optional)'}</label>
+      <input id={`sign-${field.name}`} value={values[field.name] ?? ''} readOnly={field.readOnly}
+        onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} />
+    </div>
+  }
+
   async function save(event) {
     event.preventDefault()
     const missing = missingSignFields(form.fields, values)
@@ -55,33 +69,30 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
       {state.status === 'loading' && <p className="message info-message" role="status">Loading the form…</p>}
       {state.status === 'error' && <p className="message error-message" role="alert">{state.message}</p>}
       {form && <form className="document-review" onSubmit={save} noValidate>
-        <a className="table-link" href={`/api/documents/sign/${documentTypeId}/blank-form`} target="_blank" rel="noreferrer">Read the full form</a>
+        <a className="secondary-button document-link-button" href={`/api/documents/sign/${documentTypeId}/blank-form`} target="_blank" rel="noreferrer">Read the full form</a>
         <fieldset className="absent-fields document-review-fields" disabled={saving}>
-          {groupSignFields(form.fields).map((group) => (group.kind === 'question'
-            ? <div className="absent-field document-note" key={group.key} role="group" aria-label={group.label}>
-                <span className="absent-field-label">{group.label}</span>
-                <div className="document-type-actions">
-                  {[[group.yes, 'Yes', group.no], [group.no, 'No', group.yes]].map(([field, label, other]) => <label key={field.name} className="document-type-toggle">
-                    <input type="radio" name={group.key} checked={values[field.name] === 'true'}
-                      onChange={() => setValues((current) => ({ ...current, [field.name]: 'true', [other.name]: 'false' }))} />
-                    <span>{label}</span>
-                  </label>)}
-                </div>
+          {groupSignFields(form.fields).map((group) => {
+            if (group.kind === 'section') return <details className="document-note document-section" key={group.key}>
+              <summary>{group.title}</summary>
+              <div className="document-section-fields">{group.fields.map(renderField)}</div>
+            </details>
+            if (group.kind === 'field') return renderField(group.field)
+            return <div className="absent-field document-note" key={group.key} role="group" aria-label={group.label}>
+              <span className="absent-field-label">{group.label}</span>
+              <div className="document-type-actions">
+                {[[group.yes, 'Yes', group.no], [group.no, 'No', group.yes]].map(([field, label, other]) => <label key={field.name} className="document-type-toggle">
+                  <input type="radio" name={group.key} checked={values[field.name] === 'true'}
+                    onChange={() => setValues((current) => ({ ...current, [field.name]: 'true', [other.name]: 'false' }))} />
+                  <span>{label}</span>
+                </label>)}
               </div>
-            : group.field.isCheckbox
-              ? <label key={group.key} className="document-type-toggle document-note">
-                  <input type="checkbox" checked={values[group.field.name] === 'true'}
-                    onChange={(event) => setValues((current) => ({ ...current, [group.field.name]: String(event.target.checked) }))} />
-                  <span>{group.field.label}</span>
-                </label>
-              : <div className="absent-field" key={group.key}>
-                  <label htmlFor={`sign-${group.field.name}`}>{group.field.label}{group.field.required ? '' : ' (optional)'}</label>
-                  <input id={`sign-${group.field.name}`} value={values[group.field.name] ?? ''} readOnly={group.field.readOnly}
-                    onChange={(event) => setValues((current) => ({ ...current, [group.field.name]: event.target.value }))} />
-                </div>))}
+            </div>
+          })}
         </fieldset>
         <SignaturePad ref={padRef} disabled={saving} onChange={setSigned} />
-        <button type="submit" disabled={!signed || saving}>{saving ? 'Saving…' : 'Sign and save'}</button>
+        <div className="document-sheet-actions">
+          <button type="submit" disabled={!signed || saving}>{saving ? 'Saving…' : 'Sign and save'}</button>
+        </div>
       </form>}
     </section>
   </div>

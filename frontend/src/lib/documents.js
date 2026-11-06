@@ -105,16 +105,30 @@ export function stateFor(item) {
   return stateDetails[item.state] ?? { label: item.state, tone: 'neutral' }
 }
 
-/** Pairs fields named x_yes and x_no into one question, so only one answer can be chosen. */
+/**
+ * Makes long forms easier on a phone: fields named x_yes and x_no become one question, and
+ * neighbouring fields labelled "Group: Field" fold into one section.
+ */
 export function groupSignFields(fields) {
   const byName = new Map(fields.map((field) => [field.name, field]))
   const groups = []
   for (const field of fields) {
     if (field.isCheckbox && field.name.endsWith('_no') && byName.has(`${field.name.slice(0, -3)}_yes`)) continue
     const no = field.isCheckbox && field.name.endsWith('_yes') ? byName.get(`${field.name.slice(0, -4)}_no`) : null
-    groups.push(no
-      ? { kind: 'question', key: field.name, label: field.label.replace(/:\s*Yes$/, ''), yes: field, no }
-      : { kind: 'field', key: field.name, field })
+    if (no) {
+      groups.push({ kind: 'question', key: field.name, label: field.label.replace(/:\s*Yes$/, ''), yes: field, no })
+      continue
+    }
+
+    const [title, ...rest] = field.label.split(': ')
+    const previous = groups.at(-1)
+    if (!field.isCheckbox && rest.length > 0) {
+      const part = { ...field, label: rest.join(': ') }
+      if (previous?.kind === 'section' && previous.title === title) previous.fields.push(part)
+      else groups.push({ kind: 'section', key: field.name, title, fields: [part] })
+      continue
+    }
+    groups.push({ kind: 'field', key: field.name, field })
   }
   return groups
 }

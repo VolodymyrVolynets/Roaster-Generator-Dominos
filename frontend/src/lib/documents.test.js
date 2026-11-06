@@ -93,6 +93,19 @@ test('missingSignFields finds empty required text and unticked boxes', () => {
   assert.deepEqual(missingSignFields(fields, { a: '  ', c: 'false', d: 'x' }).map((field) => field.name), ['a', 'c'])
 })
 
+test('groupSignFields folds labelled neighbours into sections', () => {
+  const groups = groupSignFields([
+    { name: 'job1_from', label: 'Previous work 1: From' },
+    { name: 'job1_to', label: 'Previous work 1: To' },
+    { name: 'job2_from', label: 'Previous work 2: From' },
+    { name: 'title', label: 'Title' },
+  ])
+
+  assert.deepEqual(groups.map((group) => group.kind), ['section', 'section', 'field'])
+  assert.equal(groups[0].title, 'Previous work 1')
+  assert.deepEqual(groups[0].fields.map((field) => field.label), ['From', 'To'])
+})
+
 test('groupSignFields pairs yes and no into one question', () => {
   const groups = groupSignFields([
     { name: 'name', isCheckbox: false, label: 'Name' },
