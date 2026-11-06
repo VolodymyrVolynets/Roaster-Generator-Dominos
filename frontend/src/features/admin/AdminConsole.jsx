@@ -7,6 +7,10 @@ import { getWeekOffsetFromDate } from '../../lib/weekSelection'
 import { AbsentPanel } from '../absence/AbsentPanel'
 import { AvailabilityHeatmap } from '../availability/DriverAvailabilityHeatmap'
 import { RosterGenerationPanel, SavedRosterPanel } from '../roster/RosterAdmin'
+import { AdminDocumentsPanel } from '../documents/AdminDocumentsPanel'
+import { DocumentSignOffsPanel } from '../documents/DocumentSignOffsPanel'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
+import { DocumentSettingsPanel } from '../settings/DocumentSettingsPanel'
 import { StoreSettingsPanel } from '../settings/StoreSettingsPanel'
 import { fetchJson } from '../../api/client'
 import { ErrorPopup } from '../../components/ErrorPopup'
@@ -202,6 +206,8 @@ export function AdminConsole({
     : (realtimeVersions.rosterDrivers || 0) + (realtimeVersions.demandDrivers || 0)
 
   const isSystemAdmin = authState.user.isAdmin
+  const hasOwnDocuments = Boolean(authState.user.employeeId) &&
+    authState.user.roles?.some((role) => ['Driver', 'InStore', 'Manager'].includes(role))
   const weekScopedTabs = new Set(['roster', 'employee-availability', 'my-availability', 'demand', 'generate-roster', 'saved-rosters'])
   const navGroups = [
     {
@@ -211,7 +217,10 @@ export function AdminConsole({
         { id: 'holiday', label: 'Holiday', icon: 'sun' },
         { id: 'sick-leave', label: 'Sick leave', icon: 'cross' },
         { id: 'absent', label: 'Absent', icon: 'absent' },
-      ],
+        isSystemAdmin && { id: 'documents', label: 'Documents', icon: 'document' },
+        { id: 'document-signoffs', label: 'Forms to sign', icon: 'document' },
+        hasOwnDocuments && { id: 'my-documents', label: 'My documents', icon: 'document' },
+      ].filter(Boolean),
     },
     {
       label: 'Availability',
@@ -231,7 +240,10 @@ export function AdminConsole({
     },
     isSystemAdmin && {
       label: 'Store',
-      items: [{ id: 'store-settings', label: 'Store settings', icon: 'gear' }],
+      items: [
+        { id: 'store-settings', label: 'Store settings', icon: 'gear' },
+        { id: 'document-settings', label: 'Document settings', icon: 'document' },
+      ],
     },
   ].filter(Boolean)
 
@@ -631,7 +643,15 @@ export function AdminConsole({
 
         {activeTab === 'absent' && <AbsentPanel management admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
 
+        {activeTab === 'documents' && authState.user.isAdmin && <AdminDocumentsPanel realtimeKey={realtimeVersions.documents} />}
+
+        {activeTab === 'document-signoffs' && <DocumentSignOffsPanel realtimeKey={realtimeVersions.documents} ownEmployeeName={authState.user.employeeName} isAdmin={authState.user.isAdmin} />}
+
+        {activeTab === 'my-documents' && hasOwnDocuments && <DocumentsPanel realtimeKey={realtimeVersions.documents} />}
+
         {activeTab === 'store-settings' && authState.user.isAdmin && <StoreSettingsPanel fetchJson={fetchJson} />}
+
+        {activeTab === 'document-settings' && authState.user.isAdmin && <DocumentSettingsPanel fetchJson={fetchJson} />}
 
         {activeTab === 'roster' && (
           <section className="availability-section admin-tools">

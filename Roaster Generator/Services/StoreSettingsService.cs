@@ -50,6 +50,7 @@ public sealed class StoreSettingsService(
 
         settings.StoreId = request.StoreId.Trim();
         settings.StoreName = request.StoreName.Trim();
+        settings.FranchiseeName = request.FranchiseeName.Trim();
         await db.SaveChangesAsync(ct);
         return ToResponse(settings);
     }
@@ -57,6 +58,7 @@ public sealed class StoreSettingsService(
     private static StoreSettingsResponse ToResponse(StoreSettings settings) => new()
     {
         StoreId = settings.StoreId,
-        StoreName = settings.StoreName
+        StoreName = settings.StoreName,
+        FranchiseeName = settings.FranchiseeName
     };
 }

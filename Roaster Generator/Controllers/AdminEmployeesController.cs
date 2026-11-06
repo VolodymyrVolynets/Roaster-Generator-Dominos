@@ -304,6 +304,9 @@ public sealed class AdminEmployeesController(
             return NotFound(new { message = "Employee not found." });
         }
 
+        var actorUserId = Guid.TryParse(userManager.GetUserId(User), out var parsedActorId) ? parsedActorId : (Guid?)null;
+        var actorName = userManager.GetUserName(User) ?? "Unknown";
+
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await adminProtection.LockAsync(cancellationToken);
         var user = await userManager.Users
@@ -329,6 +332,7 @@ public sealed class AdminEmployeesController(
         // Keep the employee as the owner of historical availability, rosters and forms.
         employee.IsActive = false;
         employee.IsDeleted = true;
+        await EmployeeDocumentRemoval.StageAsync(db, employeeId, actorUserId, actorName, DateTimeOffset.UtcNow, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 

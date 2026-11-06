@@ -311,7 +311,7 @@ function AppContent() {
   async function removeEmployee() {
     if (!selectedEmployeeId || !(await confirmAction({
       title: 'Remove employee?',
-      message: 'Their login is deleted. Roster, availability, sick leave, holiday requests and absent forms are kept.',
+      message: 'Their login and uploaded documents are permanently deleted. Roster, availability, sick leave, holiday requests and absent forms are kept.',
       confirmLabel: 'Remove employee',
       destructive: true,
     }))) {

@@ -16,6 +16,7 @@ public static class ApplicationEventTypes
     public const string AbsentChanged = "absentChanged";
     public const string EmployeeChanged = "employeeChanged";
     public const string RosterSettingsChanged = "rosterSettingsChanged";
+    public const string DocumentsChanged = "documentsChanged";
 }
 
 public sealed class ApplicationEventPublisher(
@@ -63,6 +64,15 @@ public sealed class ApplicationEventPublisher(
             RosterKind = rosterKind
         }, [ApplicationEventGroups.Management, ApplicationEventGroups.Role(employeeRole)], ct);
     }
+
+    /// <summary>Only says something changed; Managers use it to refresh forms waiting for their signature.</summary>
+    public Task DocumentsChangedAsync(Guid employeeId, CancellationToken ct = default) => PublishAsync(
+        new ApplicationChangedEvent
+        {
+            Type = ApplicationEventTypes.DocumentsChanged,
+            EntityId = employeeId
+        },
+        [ApplicationEventGroups.Role(RoleNames.Admin), ApplicationEventGroups.Role(RoleNames.Manager), ApplicationEventGroups.Employee(employeeId)], ct);
 
     public Task SickLeaveChangedAsync(Guid requestId, Guid employeeId, bool affectsDriverPlanning,
         CancellationToken ct = default) => PublishAsync(

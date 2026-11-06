@@ -13,6 +13,7 @@ export const initialApplicationEventVersions = Object.freeze({
   holiday: 0,
   absent: 0,
   settings: 0,
+  documents: 0,
 })
 
 function increment(current, ...keys) {
@@ -38,6 +39,8 @@ export function applyApplicationChangedEvent(current, event, employeeId) {
     case 'employeeChanged':
       return increment(current, 'employees', 'availability',
         ...(employeeId && String(event.entityId) === String(employeeId) ? ['auth'] : []))
+    case 'documentsChanged':
+      return increment(current, 'documents')
     case 'rosterSettingsChanged':
       return increment(current, 'settings')
     default:

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const emptySettings = { storeId: '', storeName: '' }
+const emptySettings = { storeId: '', storeName: '', franchiseeName: '' }
 
 export function StoreSettingsPanel({ fetchJson }) {
   const [settings, setSettings] = useState(null)
@@ -50,7 +50,7 @@ export function StoreSettingsPanel({ fetchJson }) {
       <div><span className="eyebrow">Settings</span><h2>Store details</h2></div>
       <button type="button" className="secondary-button" onClick={() => setRefresh((current) => current + 1)} disabled={state.status === 'loading' || state.status === 'saving'}>Refresh</button>
     </div>
-    <p className="holiday-help">Store ID and store name are saved for this application and added to every downloaded absence PDF.</p>
+    <p className="holiday-help">Store ID and store name are added to every downloaded absence PDF. The franchisee name is added to signed forms.</p>
     {state.status === 'loading' && <p className="message info-message" role="status">Loading store settings…</p>}
     {state.status === 'error' && <p className="message error-message" role="alert">{state.message}</p>}
     {settings && <form className="store-settings-form" onSubmit={save}>
@@ -62,6 +62,11 @@ export function StoreSettingsPanel({ fetchJson }) {
         <div className="absent-field">
           <label htmlFor="store-settings-name">Store name</label>
           <input id="store-settings-name" value={settings.storeName} onChange={(event) => setSettings((current) => ({ ...current, storeName: event.target.value }))} maxLength={200} required />
+        </div>
+        <div className="absent-field">
+          <label htmlFor="store-settings-franchisee">Franchisee name</label>
+          <input id="store-settings-franchisee" value={settings.franchiseeName} maxLength={200}
+            onChange={(event) => setSettings((current) => ({ ...current, franchiseeName: event.target.value }))} />
         </div>
       </fieldset>
       <div className="absent-form-footer">

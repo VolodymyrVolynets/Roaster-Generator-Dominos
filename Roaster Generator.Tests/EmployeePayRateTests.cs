@@ -427,6 +427,64 @@ public sealed class EmployeePayRateTests
         Assert.Equal(ValueGenerated.Never, property.ValueGenerated);
     }
 
+    [Fact]
+    public async Task RemovingAnEmployeeDeletesTheirDocumentsButKeepsTheAuditTrail()
+    {
+        using var fixture = new EmployeeFixture();
+        var removed = ReadEmployee(await fixture.Controller.Create(Request(), default));
+        var otherRequest = Request();
+        otherRequest.EmployeeNumber = "emp-other";
+        var other = ReadEmployee(await fixture.Controller.Create(otherRequest, default));
+        var type = new DocumentType { Id = Guid.NewGuid(), Code = DocumentTypeCodes.Passport, Name = "Passport" };
+        fixture.Db.DocumentTypes.Add(type);
+        var document = AddDocument(fixture, removed.Id, type);
+        var otherDocument = AddDocument(fixture, other.Id, type);
+        var draft = new DocumentDraft { Id = Guid.NewGuid(), EmployeeId = removed.Id };
+        fixture.Db.DocumentDrafts.Add(draft);
+        fixture.Db.EmployeeDocumentFiles.Add(new EmployeeDocumentFile { Id = Guid.NewGuid(), DraftId = draft.Id });
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.IsType<NoContentResult>(await fixture.Controller.Delete(removed.Id, default));
+
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Equal(otherDocument.Id, (await fixture.Db.EmployeeDocuments.SingleAsync()).Id);
+        Assert.Equal(otherDocument.Id, (await fixture.Db.EmployeeDocumentFiles.SingleAsync()).DocumentId);
+        Assert.Empty(fixture.Db.DocumentDrafts);
+        var audit = await fixture.Db.DocumentAuditEvents.SingleAsync();
+        Assert.Equal(removed.Id, audit.EmployeeId);
+        Assert.Equal(document.Id, audit.DocumentId);
+        Assert.Equal(DocumentAuditAction.Deleted, audit.Action);
+        Assert.Equal(DocumentTypeCodes.Passport, audit.DocumentTypeCode);
+    }
+
+    [Fact]
+    public async Task BlockedRemovalKeepsTheEmployeesDocuments()
+    {
+        using var fixture = new EmployeeFixture();
+        var request = Request();
+        request.Roles.Add(RoleNames.Admin);
+        var administrator = ReadEmployee(await fixture.Controller.Create(request, default));
+        var type = new DocumentType { Id = Guid.NewGuid(), Code = DocumentTypeCodes.Passport, Name = "Passport" };
+        fixture.Db.DocumentTypes.Add(type);
+        AddDocument(fixture, administrator.Id, type);
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.IsType<BadRequestObjectResult>(await fixture.Controller.Delete(administrator.Id, default));
+
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Single(fixture.Db.EmployeeDocuments);
+    }
+
+    private static EmployeeDocument AddDocument(EmployeeFixture fixture, Guid employeeId, DocumentType type)
+    {
+        var document = new EmployeeDocument { Id = Guid.NewGuid(), EmployeeId = employeeId, DocumentTypeId = type.Id };
+        fixture.Db.EmployeeDocuments.Add(document);
+        fixture.Db.EmployeeDocumentFiles.Add(new EmployeeDocumentFile { Id = Guid.NewGuid(), DocumentId = document.Id });
+        return document;
+    }
+
     private sealed class EmployeeFixture : IDisposable
     {
         private readonly ServiceProvider services = new ServiceCollection().BuildServiceProvider();

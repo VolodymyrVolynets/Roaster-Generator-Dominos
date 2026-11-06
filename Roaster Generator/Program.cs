@@ -10,6 +10,7 @@ using Roaster_Generator.Configuration;
 using Roaster_Generator.Contracts.Absent;
 using Roaster_Generator.Contracts.Auth;
 using Roaster_Generator.Contracts.Demand;
+using Roaster_Generator.Contracts.Documents;
 using Roaster_Generator.Contracts.Employees;
 using Roaster_Generator.Contracts.Holidays;
 using Roaster_Generator.Contracts.Roster;
@@ -50,6 +51,8 @@ builder.Services.AddOptions<ShopHoursOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<AbsencePdfOptions>()
     .Bind(builder.Configuration.GetSection(AbsencePdfOptions.SectionName));
+builder.Services.AddOptions<DocumentStorageOptions>()
+    .Bind(builder.Configuration.GetSection(DocumentStorageOptions.SectionName));
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
         options.User.RequireUniqueEmail = false;
@@ -117,6 +120,24 @@ builder.Services.AddScoped<AbsentFormService>();
 builder.Services.AddScoped<AbsentPdfService>();
 builder.Services.AddScoped<StoreSettingsService>();
 builder.Services.AddScoped<IValidator<StoreSettingsRequest>, StoreSettingsRequestValidator>();
+builder.Services.AddScoped<DocumentCatalogueService>();
+builder.Services.AddSingleton<DocumentFileProtector>();
+builder.Services.AddScoped<DocumentSettingsService>();
+builder.Services.AddScoped<DocumentDraftService>();
+builder.Services.AddScoped<DocumentChecklistService>();
+builder.Services.AddScoped<DocumentVehicleService>();
+builder.Services.AddScoped<DocumentSigningService>();
+builder.Services.AddScoped<IValidator<DocumentTemplateFieldsRequest>, DocumentTemplateFieldsRequestValidator>();
+builder.Services.AddScoped<IValidator<VehicleChangeRequest>, VehicleChangeRequestValidator>();
+builder.Services.AddScoped<AdminDocumentService>();
+builder.Services.AddScoped<IValidator<DocumentAdminUpdateRequest>, DocumentAdminUpdateRequestValidator>();
+builder.Services.AddSingleton<IDocumentAnalyser, ClaudeDocumentAnalyser>();
+builder.Services.AddHostedService<DocumentDraftCleanupService>();
+builder.Services.AddRateLimiter(DocumentRateLimits.Configure);
+builder.Services.AddScoped<IValidator<DocumentSubmitRequest>, DocumentSubmitRequestValidator>();
+builder.Services.AddScoped<IValidator<DocumentAnalyseForm>, DocumentUploadRequestValidator>();
+builder.Services.AddScoped<IValidator<DocumentTypeRequest>, DocumentTypeRequestValidator>();
+builder.Services.AddScoped<IValidator<DocumentRequirementListRequest>, DocumentRequirementListRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandImportRequest>, DemandImportRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandPlanUpdateRequest>, DemandPlanUpdateRequestValidator>();
 builder.Services.AddScoped<DemandService>();
@@ -145,12 +166,15 @@ app.UseForwardedHeaders();
 app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
     await scope.ServiceProvider.GetRequiredService<StoreSettingsService>()
+        .EnsureInitializedAsync(CancellationToken.None);
+    await scope.ServiceProvider.GetRequiredService<DocumentCatalogueService>()
         .EnsureInitializedAsync(CancellationToken.None);
     await IdentitySeeder.SeedAsync(scope.ServiceProvider);
 }

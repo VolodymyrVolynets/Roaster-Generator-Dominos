@@ -55,7 +55,7 @@ export function AppShell({
   const { theme, cycleTheme } = useTheme()
   const items = navGroups.flatMap((group) => group.items)
   const activeItem = items.find((item) => item.id === activeId)
-  const useTabBar = items.length <= 5
+  const useTabBar = items.length <= 6
 
   useEffect(() => {
     if (!drawerOpen) return undefined
