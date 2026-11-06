@@ -20,7 +20,8 @@ public sealed class DocumentSettingsService(AppDbContext db)
         var types = await db.DocumentTypes.AsNoTracking()
             .OrderBy(type => type.SortOrder).ThenBy(type => type.Name)
             .ToListAsync(ct);
-        return types.Select(ToResponse).ToArray();
+        var withTemplates = await db.DocumentTemplates.AsNoTracking().Select(item => item.DocumentTypeId).ToListAsync(ct);
+        return types.Select(type => ToResponse(type, withTemplates.Contains(type.Id))).ToArray();
     }
 
     public async Task<DocumentTypeResponse> CreateTypeAsync(DocumentTypeRequest request, CancellationToken ct)
@@ -31,8 +32,10 @@ public sealed class DocumentSettingsService(AppDbContext db)
         {
             Code = await UniqueCodeAsync(name, ct),
             Name = name,
+            Kind = request.Kind,
             ExpiryRule = request.ExpiryRule,
             HasReference = request.HasReference,
+            RequiresBothSides = request.RequiresBothSides,
             IsActive = request.IsActive,
             SortOrder = (await db.DocumentTypes.MaxAsync(item => (int?)item.SortOrder, ct) ?? 0) + SortOrderStep
         };
@@ -50,11 +53,13 @@ public sealed class DocumentSettingsService(AppDbContext db)
         var name = request.Name.Trim();
         await EnsureNameIsFreeAsync(name, id, ct);
         type.Name = name;
+        type.Kind = request.Kind;
         type.ExpiryRule = request.ExpiryRule;
         type.HasReference = request.HasReference;
+        type.RequiresBothSides = request.RequiresBothSides;
         type.IsActive = request.IsActive;
         await db.SaveChangesAsync(ct);
-        return ToResponse(type);
+        return ToResponse(type, await db.DocumentTemplates.AnyAsync(item => item.DocumentTypeId == id, ct));
     }
 
     /// <returns>False when the type does not exist.</returns>
@@ -139,13 +144,16 @@ public sealed class DocumentSettingsService(AppDbContext db)
         return trimmed.Length > 0 ? trimmed : "document";
     }
 
-    private static DocumentTypeResponse ToResponse(DocumentType type) => new()
+    private static DocumentTypeResponse ToResponse(DocumentType type, bool hasTemplate = false) => new()
     {
         Id = type.Id,
         Code = type.Code,
         Name = type.Name,
+        Kind = type.Kind,
+        HasTemplate = hasTemplate,
         ExpiryRule = type.ExpiryRule,
         HasReference = type.HasReference,
+        RequiresBothSides = type.RequiresBothSides,
         IsActive = type.IsActive,
         SortOrder = type.SortOrder,
         IsBuiltIn = DocumentTypeCodes.BuiltIn.Contains(type.Code)

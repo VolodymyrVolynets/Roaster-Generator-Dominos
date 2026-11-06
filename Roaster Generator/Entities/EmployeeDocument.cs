@@ -41,6 +41,16 @@ public sealed class EmployeeDocument
 
     public string? EmployeeNote { get; set; }
 
+    /// <summary>An administrator has asked the employee to sign this form again.</summary>
+    public bool NewSignatureRequested { get; set; }
+
+    /// <summary>The employee has signed a form that also needs a manager's signature.</summary>
+    public bool AwaitingManagerSignature { get; set; }
+
+    public string? ManagerSignedByName { get; set; }
+
+    public DateTimeOffset? ManagerSignedAtUtc { get; set; }
+
     public DateTimeOffset UploadedAtUtc { get; set; }
 
     public Guid? UploadedByUserId { get; set; }

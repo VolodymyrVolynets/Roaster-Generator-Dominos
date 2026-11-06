@@ -27,6 +27,7 @@ public sealed class DocumentDraftService(
 
     private const string AnalysisUnavailable = "This document could not be checked automatically.";
     private const string Unreadable = "The document could not be read clearly.";
+    private const string MissingSide = "Only one side of this document was provided.";
     private const string UnknownType = "The document type could not be identified.";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -41,7 +42,8 @@ public sealed class DocumentDraftService(
         if (!protector.IsConfigured)
             throw new DocumentUnavailableException("Document uploads are not available yet.");
 
-        var types = await db.DocumentTypes.AsNoTracking().Where(type => type.IsActive)
+        var types = await db.DocumentTypes.AsNoTracking()
+            .Where(type => type.IsActive && (actor.IsAdministrator || type.Kind == DocumentKind.Upload))
             .OrderBy(type => type.SortOrder).ToListAsync(ct);
         var analysis = await analyser.AnalyseAsync(
             files, types.Select(type => new DocumentCatalogueEntry(type.Code, type.Name)).ToArray(), ct);
@@ -57,6 +59,7 @@ public sealed class DocumentDraftService(
             EmployeeId = employee.Id,
             CreatedByUserId = actor.UserId,
             AnalysisResult = analysis is null ? null : JsonSerializer.Serialize(analysis, Json),
+            PageCount = files.Sum(file => file.PageCount),
             CreatedAtUtc = now,
             ExpiresAtUtc = now + DraftLifetime
         };
@@ -83,7 +86,8 @@ public sealed class DocumentDraftService(
             Summary = analysis?.Summary,
             Fields = analysis?.Fields ?? new DocumentFields(),
             Warnings = warnings,
-            VehiclePrompt = vehiclePrompt
+            VehiclePrompt = vehiclePrompt,
+            HasBothSides = HasBothSides(draft.PageCount, analysis)
         };
     }
 
@@ -99,10 +103,17 @@ public sealed class DocumentDraftService(
 
         var type = await db.DocumentTypes.SingleOrDefaultAsync(item => item.Id == request.DocumentTypeId && item.IsActive, ct)
             ?? throw new DocumentSettingsException("Choose a document type from the list.");
+        if (type.Kind == DocumentKind.Sign && !actor.IsAdministrator)
+            throw new DocumentSettingsException("This document has to be signed in the app, not uploaded.");
         var analysis = Deserialize(draft.AnalysisResult);
         var fields = Normalize(request);
 
+        var missingSide = type.RequiresBothSides && !HasBothSides(draft.PageCount, analysis);
+        if (missingSide && !actor.IsAdministrator && analysis is not null)
+            throw new DocumentSettingsException($"{type.Name} needs both sides. Add the other side and check it again.");
+
         var reasons = actor.IsAdministrator ? [] : await ReviewReasonsAsync(employee, type, fields, analysis, ct);
+        if (missingSide && !actor.IsAdministrator) reasons.Add(MissingSide);
         var existing = await db.EmployeeDocuments.Include(item => item.Files)
             .SingleOrDefaultAsync(item => item.EmployeeId == employee.Id && item.DocumentTypeId == type.Id, ct);
         var document = new EmployeeDocument
@@ -227,6 +238,9 @@ public sealed class DocumentDraftService(
             employee.LastName,
             vehicle.TracksVehicle && vehicle.Registration is not null ? [vehicle.Registration] : [],
             DocumentDates.Today(timeProvider));
+
+    private static bool HasBothSides(int pageCount, DocumentAnalysis? analysis) =>
+        pageCount >= 2 || analysis?.BothSides == true;
 
     private static List<string> ChangedFields(DocumentAnalysis analysis, DocumentType type, DocumentFields fields)
     {

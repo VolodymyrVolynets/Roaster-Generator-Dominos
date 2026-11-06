@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { checklistSummary, fieldsChanged, fieldsFor, fitWithin, mergeFields, toDocumentListQuery, toFormFields, toSubmitRequest } from './documents.js'
+import { checklistSummary, fieldsChanged, fieldsFor, fitWithin, groupSignFields, missingSignFields, stateFor, toDocumentListQuery, toFormFields, toSubmitRequest } from './documents.js'
 
 test('fitWithin never scales up', () => {
   assert.deepEqual(fitWithin(800, 600), { width: 800, height: 600 })
 })
 
 test('fitWithin limits the long edge of narrow images', () => {
-  assert.deepEqual(fitWithin(6000, 1000), { width: 2576, height: 429 })
+  assert.deepEqual(fitWithin(6000, 1000), { width: 2000, height: 333 })
 })
 
 test('fitWithin limits the total pixels of phone photos', () => {
   const { width, height } = fitWithin(4032, 3024)
 
-  assert.ok(width * height <= 3_750_000 * 1.001)
+  assert.ok(width * height <= 2_200_000 * 1.001)
   assert.equal(Math.round((width / height) * 100), 133)
 })
 
@@ -70,22 +70,38 @@ test('checklistSummary counts only required documents that need action', () => {
   ]), { required: 6, outstanding: 4 })
 })
 
-test('mergeFields keeps typed values and takes new readings for the rest', () => {
-  const original = toFormFields({ referenceNumber: 'AB1', holderName: 'JOHN' })
-  const current = { ...original, referenceNumber: 'AB2' }
-  const next = toFormFields({ referenceNumber: 'AB1', holderName: 'JOHN SMITH', expiryDate: '2030-01-01' })
-
-  const merged = mergeFields(original, current, next)
-
-  assert.equal(merged.referenceNumber, 'AB2')
-  assert.equal(merged.holderName, 'JOHN SMITH')
-  assert.equal(merged.expiryDate, '2030-01-01')
-})
-
 test('toDocumentListQuery leaves out empty filters', () => {
   assert.equal(toDocumentListQuery({ search: '  ', documentTypeId: '', state: '', includeInactive: false }), '')
   assert.equal(
     toDocumentListQuery({ search: ' Anna B ', documentTypeId: 't', state: 'Expired', includeInactive: true }),
     '?search=Anna+B&documentTypeId=t&state=Expired&includeInactive=true',
   )
+})
+
+test('stateFor describes unsigned forms as not signed', () => {
+  assert.equal(stateFor({ kind: 'Sign', state: 'NotUploaded' }).label, 'Not signed yet')
+  assert.equal(stateFor({ kind: 'Upload', state: 'NotUploaded' }).label, 'Not uploaded yet')
+  assert.equal(stateFor({ kind: 'Sign', state: 'Expired' }).label, 'Expired')
+})
+
+test('missingSignFields finds empty required text and unticked boxes', () => {
+  const fields = [
+    { name: 'a', required: true }, { name: 'b', required: false },
+    { name: 'c', required: true, isCheckbox: true }, { name: 'd', required: true },
+  ]
+
+  assert.deepEqual(missingSignFields(fields, { a: '  ', c: 'false', d: 'x' }).map((field) => field.name), ['a', 'c'])
+})
+
+test('groupSignFields pairs yes and no into one question', () => {
+  const groups = groupSignFields([
+    { name: 'name', isCheckbox: false, label: 'Name' },
+    { name: 'licence_yes', isCheckbox: true, label: 'Current licence: Yes' },
+    { name: 'licence_no', isCheckbox: true, label: 'Current licence: No' },
+    { name: 'avail_mon', isCheckbox: true, label: 'Monday' },
+  ])
+
+  assert.deepEqual(groups.map((group) => group.kind), ['field', 'question', 'field'])
+  assert.equal(groups[1].label, 'Current licence')
+  assert.equal(groups[1].no.name, 'licence_no')
 })

@@ -14,6 +14,9 @@ public sealed class DocumentDraft
     /// <summary>The analysis as JSON, or null when the file could not be analysed.</summary>
     public string? AnalysisResult { get; set; }
 
+    /// <summary>Images plus PDF pages, used to tell whether both sides of a card were provided.</summary>
+    public int PageCount { get; set; } = 1;
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public DateTimeOffset ExpiresAtUtc { get; set; }

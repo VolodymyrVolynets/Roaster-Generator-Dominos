@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Roaster_Generator.Contracts.Documents;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
+using Roaster_Generator.Enums;
 
 namespace Roaster_Generator.Services;
 
@@ -32,18 +33,22 @@ public sealed class DocumentChecklistService(
         var rows = DocumentRequirementResolver.Resolve(
             DocumentRequirementResolver.CategoriesFor(employee, roles), requirements, types, documents,
             DocumentDates.Today(timeProvider), vehicle.Context);
+        var templates = (await db.DocumentTemplates.AsNoTracking().ToListAsync(ct))
+            .Where(item => DocumentSigningService.IsReady(item.Fields)).Select(item => item.DocumentTypeId).ToHashSet();
         return new DocumentChecklistResponse
         {
-            Items = rows.Select(ToItem).ToArray(),
+            Items = rows.Select(row => ToItem(row, templates)).ToArray(),
             Vehicle = ToVehicleSummary(vehicle, rows),
-            DocumentTypes = types.Where(type => type.IsActive).OrderBy(type => type.SortOrder)
+            DocumentTypes = types.Where(type => type.IsActive && type.Kind == DocumentKind.Upload).OrderBy(type => type.SortOrder)
                 .Select(type => new DocumentChecklistType
                 {
                     Id = type.Id,
                     Code = type.Code,
                     Name = type.Name,
+                    Kind = type.Kind,
                     ExpiryRule = type.ExpiryRule,
-                    HasReference = type.HasReference
+                    HasReference = type.HasReference,
+                    RequiresBothSides = type.RequiresBothSides
                 }).ToArray(),
             CanAnalyse = protector.IsConfigured
         };
@@ -66,10 +71,19 @@ public sealed class DocumentChecklistService(
                 }
         };
 
-    private static DocumentChecklistItem ToItem(DocumentChecklistRow row) => new()
+    private static readonly DocumentRowState[] SignableStates =
+    [
+        DocumentRowState.NotUploaded, DocumentRowState.Expired, DocumentRowState.ExpiringSoon,
+        DocumentRowState.NeedsNewSignature, DocumentRowState.NeedsVehicleUpdate, DocumentRowState.WrongVehicle
+    ];
+
+    private static DocumentChecklistItem ToItem(DocumentChecklistRow row, IReadOnlySet<Guid> templates) => new()
     {
         DocumentTypeId = row.DocumentType.Id,
-        DocumentTypeName = row.DocumentType.Name,
+        DocumentTypeName = DocumentRequirementResolver.DisplayName(row),
+        Kind = row.DocumentType.Kind,
+        CanSign = row.DocumentType.Kind == DocumentKind.Sign && row.DocumentType.IsActive &&
+                  templates.Contains(row.DocumentType.Id) && SignableStates.Contains(row.State),
         State = row.State,
         IsRequired = row.IsRequired,
         DocumentId = row.Document?.Id,

@@ -9,6 +9,8 @@ public enum DocumentRowState
     Valid,
     ExpiringSoon,
     WaitingForReview,
+    WaitingForManager,
+    NeedsNewSignature,
     NeedsVehicleUpdate,
     WrongVehicle,
     NeedsAdminDecision,
@@ -133,10 +135,18 @@ public static class DocumentRequirementResolver
         return row with { State = vehicle.HasOpenChange ? DocumentRowState.NeedsVehicleUpdate : DocumentRowState.WrongVehicle };
     }
 
+    /// <summary>Tells the employee an outstanding IRP can also be met by a labour market permission.</summary>
+    public static string DisplayName(DocumentChecklistRow row) =>
+        row.DocumentType.Code == DocumentTypeCodes.Irp && row.IsRequired && row.Document is null
+            ? $"{row.DocumentType.Name} or Labour market permission"
+            : row.DocumentType.Name;
+
     public static DocumentRowState StateOf(EmployeeDocument document, DateOnly today)
     {
         var hasExpiry = document.DocumentType.ExpiryRule != DocumentExpiryRule.None;
         if (hasExpiry && document.ExpiryDate < today) return DocumentRowState.Expired;
+        if (document.NewSignatureRequested) return DocumentRowState.NeedsNewSignature;
+        if (document.AwaitingManagerSignature) return DocumentRowState.WaitingForManager;
         if (document.ReviewStatus == DocumentReviewStatus.NeedsReview) return DocumentRowState.WaitingForReview;
         return hasExpiry && document.ExpiryDate <= today.AddDays(ExpiringSoonDays)
             ? DocumentRowState.ExpiringSoon

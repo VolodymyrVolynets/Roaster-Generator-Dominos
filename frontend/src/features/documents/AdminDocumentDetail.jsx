@@ -48,6 +48,17 @@ export function AdminDocumentDetail({ documentId, onClose, onChanged }) {
     }
   }
 
+  async function requestSignature() {
+    setState({ status: 'saving', message: '' })
+    try {
+      setDocument(await fetchJson(`/api/admin/documents/${documentId}/request-signature`, { method: 'POST' }))
+      setState({ status: 'idle', message: 'The employee will be asked to sign again.' })
+      onChanged()
+    } catch (error) {
+      setState({ status: 'error', message: error.message })
+    }
+  }
+
   async function remove() {
     if (!(await confirmAction({
       title: 'Delete document?',
@@ -103,6 +114,8 @@ export function AdminDocumentDetail({ documentId, onClose, onChanged }) {
         {state.message && <p className="save-message success" role="status">{state.message}</p>}
         <div className="document-type-actions">
           <button type="submit" disabled={busy}>{busy ? 'Saving…' : document.needsReview ? 'Save and mark reviewed' : 'Save changes'}</button>
+          {document.documentType.kind === 'Sign' && <button type="button" className="secondary-button" onClick={requestSignature}
+            disabled={busy || document.newSignatureRequested}>{document.newSignatureRequested ? 'Signature requested' : 'Ask to sign again'}</button>}
           <button type="button" className="danger-button" onClick={remove} disabled={busy}>Delete</button>
         </div>
         <div className="document-audit">

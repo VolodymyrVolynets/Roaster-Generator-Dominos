@@ -126,6 +126,8 @@ builder.Services.AddScoped<DocumentSettingsService>();
 builder.Services.AddScoped<DocumentDraftService>();
 builder.Services.AddScoped<DocumentChecklistService>();
 builder.Services.AddScoped<DocumentVehicleService>();
+builder.Services.AddScoped<DocumentSigningService>();
+builder.Services.AddScoped<IValidator<DocumentTemplateFieldsRequest>, DocumentTemplateFieldsRequestValidator>();
 builder.Services.AddScoped<IValidator<VehicleChangeRequest>, VehicleChangeRequestValidator>();
 builder.Services.AddScoped<AdminDocumentService>();
 builder.Services.AddScoped<IValidator<DocumentAdminUpdateRequest>, DocumentAdminUpdateRequestValidator>();

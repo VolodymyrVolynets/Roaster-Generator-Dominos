@@ -185,6 +185,22 @@ public sealed class AdminDocumentService(
         return await GetAsync(id, ct);
     }
 
+    /// <returns>The document, or null when it is missing or is not a signed form.</returns>
+    public async Task<AdminDocumentDetail?> RequestSignatureAsync(Guid id, DocumentActor actor, CancellationToken ct)
+    {
+        var document = await db.EmployeeDocuments.Include(item => item.DocumentType)
+            .SingleOrDefaultAsync(item => item.Id == id && item.DocumentType.Kind == DocumentKind.Sign, ct);
+        if (document is null) return null;
+
+        document.NewSignatureRequested = true;
+        document.UpdatedAtUtc = timeProvider.GetUtcNow();
+        document.Revision++;
+        db.DocumentAuditEvents.Add(Audit(document.EmployeeId, document.Id, actor, DocumentAuditAction.Edited, document.DocumentType.Code));
+        await db.SaveChangesAsync(ct);
+        if (events is not null) await events.DocumentsChangedAsync(document.EmployeeId, ct);
+        return await GetAsync(id, ct);
+    }
+
     /// <returns>False when the document does not exist.</returns>
     public async Task<bool> DeleteAsync(Guid id, DocumentActor actor, CancellationToken ct)
     {
@@ -229,7 +245,8 @@ public sealed class AdminDocumentService(
     private static AdminDocumentRow ToRow(DocumentChecklistRow row) => new()
     {
         DocumentTypeId = row.DocumentType.Id,
-        DocumentTypeName = row.DocumentType.Name,
+        DocumentTypeName = DocumentRequirementResolver.DisplayName(row),
+        Kind = row.DocumentType.Kind,
         State = row.State,
         IsRequired = row.IsRequired,
         DocumentId = row.Document?.Id,
@@ -245,7 +262,8 @@ public sealed class AdminDocumentService(
 
     private static DocumentChecklistType ToType(DocumentType type) => new()
     {
-        Id = type.Id, Code = type.Code, Name = type.Name, ExpiryRule = type.ExpiryRule, HasReference = type.HasReference
+        Id = type.Id, Code = type.Code, Name = type.Name, Kind = type.Kind, ExpiryRule = type.ExpiryRule, HasReference = type.HasReference,
+        RequiresBothSides = type.RequiresBothSides
     };
 
     private static AdminDocumentDetail ToDetail(
@@ -268,6 +286,7 @@ public sealed class AdminDocumentService(
             PenaltyPoints = document.PenaltyPoints
         },
         NeedsReview = document.ReviewStatus == DocumentReviewStatus.NeedsReview,
+        NewSignatureRequested = document.NewSignatureRequested,
         ReviewReasons = document.ReviewReasons,
         EmployeeNote = document.EmployeeNote,
         UploadedAtUtc = document.UploadedAtUtc,

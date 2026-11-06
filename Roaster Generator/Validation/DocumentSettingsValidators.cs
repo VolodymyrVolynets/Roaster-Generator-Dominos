@@ -10,6 +10,7 @@ public sealed class DocumentTypeRequestValidator : AbstractValidator<DocumentTyp
     {
         RuleFor(request => request.Name).NotEmpty().MaximumLength(100);
         RuleFor(request => request.ExpiryRule).IsInEnum();
+        RuleFor(request => request.Kind).IsInEnum();
     }
 }
 
@@ -68,5 +69,18 @@ public sealed class VehicleChangeRequestValidator : AbstractValidator<VehicleCha
             .MaximumLength(20)
             .Must(registration => DocumentChecks.NormalizeRegistration(registration ?? string.Empty).Length >= 2)
             .WithMessage("Enter a valid registration.");
+    }
+}
+
+public sealed class DocumentTemplateFieldsRequestValidator : AbstractValidator<DocumentTemplateFieldsRequest>
+{
+    public DocumentTemplateFieldsRequestValidator()
+    {
+        RuleForEach(request => request.Fields).ChildRules(field =>
+        {
+            field.RuleFor(value => value.Name).NotEmpty();
+            field.RuleFor(value => value.Label).NotEmpty().MaximumLength(100);
+            field.RuleFor(value => value.Source).IsInEnum();
+        });
     }
 }

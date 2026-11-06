@@ -3,7 +3,7 @@ using PdfSharp.Pdf.IO;
 
 namespace Roaster_Generator.Services;
 
-public sealed record ValidatedDocumentFile(byte[] Content, string FileName, string ContentType);
+public sealed record ValidatedDocumentFile(byte[] Content, string FileName, string ContentType, int PageCount = 1);
 
 /// <summary>
 /// Validates files against what storage and the AI analysis can take. The total stays at
@@ -62,13 +62,14 @@ public static class DocumentFileValidator
         if (!string.Equals(expectedType, FileSignature.DetectContentType(content), StringComparison.Ordinal))
             throw new InvalidDataException("The file contents do not match its file extension.");
 
-        if (expectedType == PdfContentType) EnsureReadablePdf(content);
+        var pageCount = 1;
+        if (expectedType == PdfContentType) pageCount = ReadablePdfPages(content);
         else if (content.Length > MaxImageSize) throw new InvalidDataException("Each image must be 5 MB or smaller.");
 
-        return new(content, fileName, expectedType);
+        return new(content, fileName, expectedType, pageCount);
     }
 
-    private static void EnsureReadablePdf(byte[] content)
+    private static int ReadablePdfPages(byte[] content)
     {
         // An encryption dictionary is outside compressed streams, and Claude cannot read encrypted PDFs
         // even when no password is needed to open them.
@@ -89,5 +90,6 @@ public static class DocumentFileValidator
 
         if (pageCount is 0 or > MaxPdfPages)
             throw new InvalidDataException($"A PDF must have between 1 and {MaxPdfPages} pages.");
+        return pageCount;
     }
 }

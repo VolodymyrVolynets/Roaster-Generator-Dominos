@@ -1,11 +1,11 @@
 export const maxDocumentFiles = 4
-const maxLongEdge = 2576
-const maxPixels = 3_750_000
+const maxLongEdge = 2000
+const maxPixels = 2_200_000
 const vehicleCodes = new Set(['nct', 'motor-tax', 'insurance', 'obu'])
 const countryCodes = new Set(['passport', 'driving-licence', 'irp'])
 
 export const documentFilterStates = [
-  'WaitingForReview', 'WrongVehicle', 'NeedsVehicleUpdate', 'Expired', 'ExpiringSoon', 'NotUploaded', 'Valid',
+  'WaitingForReview', 'WaitingForManager', 'WrongVehicle', 'NeedsVehicleUpdate', 'Expired', 'ExpiringSoon', 'NotUploaded', 'Valid',
 ]
 
 export const fieldLabels = {
@@ -23,6 +23,8 @@ export const stateDetails = {
   Valid: { label: 'Valid', tone: 'good' },
   ExpiringSoon: { label: 'Expiring soon', tone: 'warning' },
   WaitingForReview: { label: 'Waiting for review', tone: 'neutral' },
+  WaitingForManager: { label: 'Waiting for manager', tone: 'neutral' },
+  NeedsNewSignature: { label: 'Please sign again', tone: 'warning' },
   NeedsVehicleUpdate: { label: 'Needs updating for new car', tone: 'warning' },
   WrongVehicle: { label: 'Wrong vehicle', tone: 'danger' },
   NeedsAdminDecision: { label: 'An admin will confirm', tone: 'neutral' },
@@ -31,7 +33,7 @@ export const stateDetails = {
   Expired: { label: 'Expired', tone: 'danger' },
 }
 
-const needsAction = new Set(['NotUploaded', 'Expired', 'WrongVehicle', 'NeedsVehicleUpdate'])
+const needsAction = new Set(['NotUploaded', 'Expired', 'WrongVehicle', 'NeedsVehicleUpdate', 'NeedsNewSignature'])
 
 export function checklistSummary(items) {
   const required = items.filter((item) => item.isRequired)
@@ -39,7 +41,7 @@ export function checklistSummary(items) {
   return { required: required.length, outstanding }
 }
 
-/** Scales down to what Claude reads at full resolution, keeping the aspect ratio. Never scales up. */
+/** Large photos are scaled down to keep fine print readable at a lower cost. Small images stay as they are. */
 export function fitWithin(width, height) {
   const scale = Math.min(1, maxLongEdge / Math.max(width, height), Math.sqrt(maxPixels / (width * height)))
   return { width: Math.round(width * scale), height: Math.round(height * scale) }
@@ -83,14 +85,6 @@ export function toSubmitRequest(fields, documentTypeId, note) {
   }
 }
 
-/** A new analysis, after adding a page, must not undo what the person already typed. */
-export function mergeFields(previousOriginal, current, next) {
-  return Object.fromEntries(Object.keys(emptyFields).map((key) => [
-    key,
-    String(previousOriginal[key]) === String(current[key]) ? next[key] : current[key],
-  ]))
-}
-
 export function fieldsChanged(original, current) {
   return Object.keys(emptyFields).some((key) => String(original[key]).trim() !== String(current[key]).trim())
 }
@@ -105,8 +99,35 @@ export function toDocumentListQuery({ search, documentTypeId, state, includeInac
   return text ? `?${text}` : ''
 }
 
+/** Signed forms read differently from uploads while nothing is on file yet. */
+export function stateFor(item) {
+  if (item.kind === 'Sign' && item.state === 'NotUploaded') return { label: 'Not signed yet', tone: 'warning' }
+  return stateDetails[item.state] ?? { label: item.state, tone: 'neutral' }
+}
+
+/** Pairs fields named x_yes and x_no into one question, so only one answer can be chosen. */
+export function groupSignFields(fields) {
+  const byName = new Map(fields.map((field) => [field.name, field]))
+  const groups = []
+  for (const field of fields) {
+    if (field.isCheckbox && field.name.endsWith('_no') && byName.has(`${field.name.slice(0, -3)}_yes`)) continue
+    const no = field.isCheckbox && field.name.endsWith('_yes') ? byName.get(`${field.name.slice(0, -4)}_no`) : null
+    groups.push(no
+      ? { kind: 'question', key: field.name, label: field.label.replace(/:\s*Yes$/, ''), yes: field, no }
+      : { kind: 'field', key: field.name, field })
+  }
+  return groups
+}
+
+export function missingSignFields(fields, values) {
+  return fields.filter((field) => field.required &&
+    (field.isCheckbox ? values[field.name] !== 'true' : !String(values[field.name] ?? '').trim()))
+}
+
 export const auditActionLabels = {
   Uploaded: 'Uploaded',
+  Signed: 'Signed',
+  ManagerSigned: 'Signed by manager',
   Replaced: 'Replaced',
   Viewed: 'Viewed',
   Downloaded: 'Downloaded',

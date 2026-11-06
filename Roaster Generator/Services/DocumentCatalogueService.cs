@@ -20,12 +20,13 @@ public static class DocumentTypeCodes
     public const string Obu = "obu";
     public const string PenaltyPoints = "pp";
     public const string CollegeLetter = "college-letter";
+    public const string BikeSafety = "bike-safety";
 
     /// <summary>Codes the requirement rules and checks refer to, so these types cannot be deleted.</summary>
     public static readonly IReadOnlySet<string> BuiltIn = new HashSet<string>(StringComparer.Ordinal)
     {
         Passport, DrivingLicence, Irp, LabourMarketPermission, TemporaryResidenceCertificate, Spf,
-        FoodHandler, Nct, MotorTax, Insurance, Obu, PenaltyPoints, CollegeLetter
+        FoodHandler, Nct, MotorTax, Insurance, Obu, PenaltyPoints, CollegeLetter, BikeSafety
     };
 }
 
@@ -49,17 +50,24 @@ public sealed class DocumentCatalogueService(AppDbContext db)
         (DocumentTypeCodes.Nct, "NCT", DocumentExpiryRule.Printed, false),
         (DocumentTypeCodes.MotorTax, "Motor tax", DocumentExpiryRule.Printed, false),
         (DocumentTypeCodes.Insurance, "Insurance", DocumentExpiryRule.Printed, false),
-        (DocumentTypeCodes.Obu, "Business Use Insurance", DocumentExpiryRule.None, false)
+        (DocumentTypeCodes.Obu, "Business Use Insurance", DocumentExpiryRule.None, false),
+        (DocumentTypeCodes.BikeSafety, "Bike safety", DocumentExpiryRule.None, false)
     ];
 
-    private static readonly DocumentCategory[] DriverCategories =
+    private static readonly string[] SignedCodes =
     [
-        DocumentCategory.CarOwn, DocumentCategory.CarCompany,
-        DocumentCategory.MopedOwn, DocumentCategory.MopedCompany,
-        DocumentCategory.EBikeOwn, DocumentCategory.EBikeCompany
+        DocumentTypeCodes.Spf, DocumentTypeCodes.Obu, DocumentTypeCodes.PenaltyPoints, DocumentTypeCodes.BikeSafety
     ];
 
-    private static readonly DocumentCategory[] StoreStaffCategories = [DocumentCategory.InStore, DocumentCategory.Manager];
+    private static readonly DocumentCategory[] BikeCategories =
+    [
+        DocumentCategory.MopedOwn, DocumentCategory.MopedCompany, DocumentCategory.EBikeOwn, DocumentCategory.EBikeCompany
+    ];
+
+    private static readonly DocumentCategory[] StoreStaffCategories =
+    [
+        DocumentCategory.InStore, DocumentCategory.Manager, DocumentCategory.EBikeOwn, DocumentCategory.EBikeCompany
+    ];
 
     private static readonly (string Code, DocumentRequirementCondition Condition)[] DriverList =
     [
@@ -75,6 +83,12 @@ public sealed class DocumentCatalogueService(AppDbContext db)
         (DocumentTypeCodes.Insurance, Always),
         (DocumentTypeCodes.Obu, Always)
     ];
+
+    private static readonly (string Code, DocumentRequirementCondition Condition)[] CompanyVehicleList =
+        DriverList.Where(item => !DocumentChecks.IsVehicleDocument(item.Code) || item.Code == DocumentTypeCodes.Obu).ToArray();
+
+    private static readonly (string Code, DocumentRequirementCondition Condition)[] OwnMopedList =
+        DriverList.Where(item => item.Code != DocumentTypeCodes.Nct).ToArray();
 
     private static readonly (string Code, DocumentRequirementCondition Condition)[] StoreStaffList =
     [
@@ -94,6 +108,8 @@ public sealed class DocumentCatalogueService(AppDbContext db)
         {
             Id = Guid.NewGuid(),
             Code = item.Code,
+            Kind = SignedCodes.Contains(item.Code) ? DocumentKind.Sign : DocumentKind.Upload,
+            RequiresBothSides = item.Code is DocumentTypeCodes.Irp or DocumentTypeCodes.DrivingLicence,
             Name = item.Name,
             ExpiryRule = item.Rule,
             HasReference = item.HasReference,
@@ -101,8 +117,12 @@ public sealed class DocumentCatalogueService(AppDbContext db)
         }).ToDictionary(type => type.Code, StringComparer.Ordinal);
 
         db.DocumentTypes.AddRange(types.Values);
-        foreach (var category in DriverCategories)
-            db.DocumentRequirements.AddRange(ToRequirements(category, DriverList, types));
+        db.DocumentRequirements.AddRange(ToRequirements(DocumentCategory.CarOwn, DriverList, types));
+        db.DocumentRequirements.AddRange(ToRequirements(DocumentCategory.CarCompany, CompanyVehicleList, types));
+        db.DocumentRequirements.AddRange(ToRequirements(DocumentCategory.MopedCompany, CompanyVehicleList, types));
+        db.DocumentRequirements.AddRange(ToRequirements(DocumentCategory.MopedOwn, OwnMopedList, types));
+        foreach (var category in BikeCategories)
+            db.DocumentRequirements.AddRange(ToRequirements(category, [(DocumentTypeCodes.BikeSafety, Always)], types));
         foreach (var category in StoreStaffCategories)
             db.DocumentRequirements.AddRange(ToRequirements(category, StoreStaffList, types));
         await db.SaveChangesAsync(ct);

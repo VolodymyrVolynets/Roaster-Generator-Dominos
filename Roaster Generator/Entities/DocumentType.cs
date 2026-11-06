@@ -11,9 +11,14 @@ public sealed class DocumentType
 
     public string Name { get; set; } = string.Empty;
 
+    public DocumentKind Kind { get; set; } = DocumentKind.Upload;
+
     public DocumentExpiryRule ExpiryRule { get; set; } = DocumentExpiryRule.Printed;
 
     public bool HasReference { get; set; } = true;
+
+    /// <summary>A card with a front and a back, which is only complete with both.</summary>
+    public bool RequiresBothSides { get; set; }
 
     public bool IsActive { get; set; } = true;
 

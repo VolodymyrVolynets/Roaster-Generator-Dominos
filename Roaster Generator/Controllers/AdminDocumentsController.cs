@@ -62,6 +62,10 @@ public sealed class AdminDocumentsController(
         }
     }
 
+    [HttpPost("{id:guid}/request-signature")]
+    public async Task<IActionResult> RequestSignature(Guid id, CancellationToken ct) =>
+        await documents.RequestSignatureAsync(id, CurrentActor(), ct) is { } updated ? Ok(updated) : DocumentNotFound();
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct) =>
         await documents.DeleteAsync(id, CurrentActor(), ct) ? NoContent() : DocumentNotFound();

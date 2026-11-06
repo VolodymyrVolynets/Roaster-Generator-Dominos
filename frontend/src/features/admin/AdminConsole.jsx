@@ -8,6 +8,7 @@ import { AbsentPanel } from '../absence/AbsentPanel'
 import { AvailabilityHeatmap } from '../availability/DriverAvailabilityHeatmap'
 import { RosterGenerationPanel, SavedRosterPanel } from '../roster/RosterAdmin'
 import { AdminDocumentsPanel } from '../documents/AdminDocumentsPanel'
+import { DocumentSignOffsPanel } from '../documents/DocumentSignOffsPanel'
 import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { DocumentSettingsPanel } from '../settings/DocumentSettingsPanel'
 import { StoreSettingsPanel } from '../settings/StoreSettingsPanel'
@@ -217,6 +218,7 @@ export function AdminConsole({
         { id: 'sick-leave', label: 'Sick leave', icon: 'cross' },
         { id: 'absent', label: 'Absent', icon: 'absent' },
         isSystemAdmin && { id: 'documents', label: 'Documents', icon: 'document' },
+        { id: 'document-signoffs', label: 'Forms to sign', icon: 'document' },
         hasOwnDocuments && { id: 'my-documents', label: 'My documents', icon: 'document' },
       ].filter(Boolean),
     },
@@ -642,6 +644,8 @@ export function AdminConsole({
         {activeTab === 'absent' && <AbsentPanel management admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
 
         {activeTab === 'documents' && authState.user.isAdmin && <AdminDocumentsPanel realtimeKey={realtimeVersions.documents} />}
+
+        {activeTab === 'document-signoffs' && <DocumentSignOffsPanel realtimeKey={realtimeVersions.documents} ownEmployeeName={authState.user.employeeName} isAdmin={authState.user.isAdmin} />}
 
         {activeTab === 'my-documents' && hasOwnDocuments && <DocumentsPanel realtimeKey={realtimeVersions.documents} />}
 

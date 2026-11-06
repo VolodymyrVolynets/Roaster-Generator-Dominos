@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchJson } from '../../api/client'
-import { checklistSummary, stateDetails } from '../../lib/documents'
+import { checklistSummary, stateFor } from '../../lib/documents'
 import { formatDateOnly, formatHolidayDate } from '../../lib/format'
+import { DocumentSignFlow } from './DocumentSignFlow'
 import { DocumentUploadFlow } from './DocumentUploadFlow'
 import { VehiclePanel } from './VehiclePanel'
-
-const uploadedStates = new Set(['Valid', 'ExpiringSoon', 'WaitingForReview', 'Expired', 'WrongVehicle', 'NeedsVehicleUpdate'])
 
 export function DocumentsPanel({ realtimeKey = 0 }) {
   const [state, setState] = useState({ status: 'loading', items: [], documentTypes: [], canAnalyse: false, message: '' })
   const [upload, setUpload] = useState(null)
+  const [signing, setSigning] = useState(null)
   const [notice, setNotice] = useState('')
   const [retry, setRetry] = useState(0)
 
@@ -36,9 +36,9 @@ export function DocumentsPanel({ realtimeKey = 0 }) {
   const required = state.items.filter((item) => item.isRequired)
   const others = state.items.filter((item) => !item.isRequired)
   const { outstanding } = checklistSummary(state.items)
-  const openUpload = (documentTypeId = null) => {
+  const openUpload = () => {
     setNotice('')
-    setUpload({ documentTypeId })
+    setUpload(true)
   }
 
   return <section className="admin-tools role-details documents-panel">
@@ -47,7 +47,7 @@ export function DocumentsPanel({ realtimeKey = 0 }) {
         <span className="eyebrow">Documents</span>
         <h2>My documents</h2>
       </div>
-      <button type="button" onClick={() => openUpload()} disabled={!state.canAnalyse}>Upload document</button>
+      <button type="button" onClick={openUpload} disabled={!state.canAnalyse}>Upload document</button>
     </div>
     {state.status === 'success' && <p className="holiday-help">
       {outstanding > 0 ? `${outstanding} of ${required.length} required documents still need attention.`
@@ -60,34 +60,39 @@ export function DocumentsPanel({ realtimeKey = 0 }) {
     </div>}
     {notice && <p className="save-message success" role="status">{notice}</p>}
     {state.vehicle && <VehiclePanel vehicle={state.vehicle} basePath="/api/documents" onChanged={() => setRetry((current) => current + 1)} />}
-    {required.length > 0 && <DocumentList items={required} canUpload={state.canAnalyse} onUpload={openUpload} />}
+    {required.length > 0 && <DocumentList items={required} onSign={setSigning} />}
     {others.length > 0 && <>
       <h3 className="documents-subheading">Other documents</h3>
-      <DocumentList items={others} canUpload={state.canAnalyse} onUpload={openUpload} />
+      <DocumentList items={others} onSign={setSigning} />
     </>}
+    {signing && <DocumentSignFlow documentTypeId={signing.documentTypeId} onFinish={(message) => {
+      setSigning(null)
+      if (message) {
+        setNotice(message)
+        setRetry((current) => current + 1)
+      }
+    }} />}
     {upload && <DocumentUploadFlow
       documentTypes={state.documentTypes}
-      requestedTypeId={upload.documentTypeId}
       onFinish={finishUpload}
       onVehicleChanged={() => setRetry((current) => current + 1)}
     />}
   </section>
 }
 
-function DocumentList({ items, canUpload, onUpload }) {
+function DocumentList({ items, onSign }) {
   return <ul className="documents-list">
-    {items.map((item) => <DocumentRow key={`${item.documentTypeId}-${item.isRequired}`} item={item} canUpload={canUpload} onUpload={onUpload} />)}
+    {items.map((item) => <DocumentRow key={`${item.documentTypeId}-${item.isRequired}`} item={item} onSign={onSign} />)}
   </ul>
 }
 
-function DocumentRow({ item, canUpload, onUpload }) {
-  const state = stateDetails[item.state] ?? { label: item.state, tone: 'neutral' }
-  const uploaded = uploadedStates.has(item.state) && item.documentId
+function DocumentRow({ item, onSign }) {
+  const state = stateFor(item)
   const details = [
     item.satisfiedByName && `Covered by ${item.satisfiedByName}`,
     item.referenceNumber && `Ref ${item.referenceNumber}`,
     item.expiryDate && `Expires ${formatDateOnly(item.expiryDate)}`,
-    item.uploadedAtUtc && `Uploaded ${formatHolidayDate(item.uploadedAtUtc)}`,
+    item.uploadedAtUtc && `${item.kind === 'Sign' ? 'Signed' : 'Uploaded'} ${formatHolidayDate(item.uploadedAtUtc)}`,
   ].filter(Boolean)
 
   return <li>
@@ -100,7 +105,6 @@ function DocumentRow({ item, canUpload, onUpload }) {
       {details.length > 0 && <small>{details.join(' · ')}</small>}
       {item.state === 'DependsOnPassport' && <small>Upload your passport first. This applies to non-EU passports.</small>}
     </div>
-    <button type="button" className="secondary-button" onClick={() => onUpload(item.documentTypeId)} disabled={!canUpload}
-      aria-label={`${uploaded ? 'Replace' : 'Upload'} ${item.documentTypeName}`}>{uploaded ? 'Replace' : 'Upload'}</button>
+    {item.canSign && <button type="button" onClick={() => onSign(item)} aria-label={`Sign ${item.documentTypeName}`}>Sign</button>}
   </li>
 }

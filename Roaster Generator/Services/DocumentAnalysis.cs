@@ -12,6 +12,7 @@ public sealed class DocumentAnalysis
 
     public string DocumentType { get; set; } = UnknownType;
     public bool Readable { get; set; }
+    public bool BothSides { get; set; }
     public string? Summary { get; set; }
     public List<string> Problems { get; set; } = [];
     public DocumentFields Fields { get; set; } = new();
@@ -56,6 +57,7 @@ public static class DocumentAnalysisParser
                     ? type
                     : DocumentAnalysis.UnknownType,
                 Readable = root.TryGetProperty("readable", out var readable) && readable.ValueKind == JsonValueKind.True,
+                BothSides = root.TryGetProperty("bothSides", out var bothSides) && bothSides.ValueKind == JsonValueKind.True,
                 Summary = Text(root, "summary", MaxSummaryLength),
                 Problems = Problems(root),
                 Fields = new DocumentFields

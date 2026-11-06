@@ -43,6 +43,8 @@ public enum DocumentAuditAction
     Edited,
     Reviewed,
     Deleted,
+    Signed,
+    ManagerSigned,
     VehicleChanged,
     VehicleCancelled,
     VehicleCompleted
@@ -53,4 +55,35 @@ public enum VehicleChangeStatus
     Open,
     Completed,
     Cancelled
+}
+
+public enum DocumentKind
+{
+    Upload,
+    Sign
+}
+
+/// <summary>Where the value of a field on a signed form comes from.</summary>
+public enum DocumentFieldSource
+{
+    Ask,
+    FullName,
+    FirstName,
+    LastName,
+    EmployeeNumber,
+    PhoneNumber,
+    PayrollNumber,
+    VehicleRegistration,
+    PenaltyPoints,
+    Today,
+    StoreId,
+    StoreName,
+    Signature,
+    Ignore,
+    ManagerName,
+    ManagerSignature,
+    ManagerDate,
+    FranchiseeName,
+    AlwaysTicked,
+    TickedForMoped
 }

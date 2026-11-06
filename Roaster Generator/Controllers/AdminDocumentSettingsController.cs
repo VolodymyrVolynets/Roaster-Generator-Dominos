@@ -56,6 +56,51 @@ public sealed class AdminDocumentSettingsController(
         return await HandleAsync(async () => Ok(await settings.SaveListAsync(category, request, ct)), InvalidListTitle);
     }
 
+    [HttpGet("document-types/{id:guid}/template")]
+    public async Task<IActionResult> GetTemplate(
+        Guid id, [FromServices] DocumentSigningService signing, CancellationToken ct) =>
+        await signing.GetTemplateAsync(id, ct) is { } template ? Ok(template) : TemplateNotFound();
+
+    [HttpPost("document-types/{id:guid}/template")]
+    [RequestSizeLimit(DocumentFileValidator.MaxTotalSize + 1024 * 1024)]
+    public async Task<IActionResult> UploadTemplate(
+        Guid id, IFormFile? file, [FromServices] DocumentSigningService signing, CancellationToken ct)
+    {
+        const string title = "The form template is invalid.";
+        if (file is null || file.Length is <= 0 or > DocumentFileValidator.MaxTotalSize)
+            return ValidationError(new Dictionary<string, string[]> { ["file"] = ["Choose a PDF of 20 MB or smaller."] }, title);
+
+        try
+        {
+            using var content = new MemoryStream((int)file.Length);
+            await file.CopyToAsync(content, ct);
+            return await signing.SaveTemplateAsync(id, content.ToArray(), Path.GetFileName(file.FileName), ct) is { } template
+                ? Ok(template)
+                : TypeNotFound();
+        }
+        catch (InvalidDataException exception)
+        {
+            return ValidationError(new Dictionary<string, string[]> { ["file"] = [exception.Message] }, title);
+        }
+    }
+
+    [HttpPut("document-types/{id:guid}/template/fields")]
+    public async Task<IActionResult> SaveTemplateFields(
+        Guid id,
+        [FromBody] DocumentTemplateFieldsRequest request,
+        [FromServices] DocumentSigningService signing,
+        [FromServices] IValidator<DocumentTemplateFieldsRequest> validator,
+        CancellationToken ct)
+    {
+        const string title = "The form fields are invalid.";
+        var validationError = await ValidateRequestAsync(validator, request, title, ct);
+        if (validationError is not null) return validationError;
+        return await HandleAsync(async () =>
+            await signing.SaveFieldsAsync(id, request.Fields, ct) is { } template ? Ok(template) : TemplateNotFound(), title);
+    }
+
+    private NotFoundObjectResult TemplateNotFound() => NotFound(new { message = "No form has been uploaded for this document type." });
+
     private NotFoundObjectResult TypeNotFound() => NotFound(new { message = "Document type not found." });
 
     private async Task<IActionResult> HandleAsync(Func<Task<IActionResult>> action, string title)

@@ -293,6 +293,114 @@ public sealed class DocumentDraftServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task OneSideOfATwoSidedCardIsRefused()
+    {
+        await RequireBothSides();
+        var draft = await Analyse();
+
+        Assert.False(draft.HasBothSides);
+        await Assert.ThrowsAsync<DocumentSettingsException>(
+            () => service.SubmitAsync(employee, actor, draft.DraftId, Request(passport), default));
+    }
+
+    [Fact]
+    public async Task TwoPagesCountAsBothSides()
+    {
+        await RequireBothSides();
+        var draft = await service.AnalyseAsync(employee, actor, [.. Files(), .. Files()], null, default);
+
+        Assert.True(draft.HasBothSides);
+        Assert.NotNull(await service.SubmitAsync(employee, actor, draft.DraftId, Request(passport), default));
+    }
+
+    [Fact]
+    public async Task TwoPagePdfCountsAsBothSides()
+    {
+        await RequireBothSides();
+        ValidatedDocumentFile[] pdf = [new(Content, "card.pdf", "application/pdf", 2)];
+        var draft = await service.AnalyseAsync(employee, actor, pdf, null, default);
+
+        Assert.True(draft.HasBothSides);
+    }
+
+    [Fact]
+    public async Task OnePhotoShowingBothSidesIsAccepted()
+    {
+        await RequireBothSides();
+        analyser.Result!.BothSides = true;
+        var draft = await Analyse();
+
+        Assert.NotNull(await service.SubmitAsync(employee, actor, draft.DraftId, Request(passport), default));
+    }
+
+    [Fact]
+    public async Task OutageStillAllowsOneSideButFlagsIt()
+    {
+        await RequireBothSides();
+        analyser.Result = null;
+        var draft = await Analyse(passport.Id);
+
+        await service.SubmitAsync(employee, actor, draft.DraftId, Request(passport), default);
+
+        Assert.Contains((await db.EmployeeDocuments.SingleAsync()).ReviewReasons, reason => reason.Contains("one side"));
+    }
+
+    [Fact]
+    public async Task AdministratorCanUploadOneSide()
+    {
+        await RequireBothSides();
+        var admin = new DocumentActor(Guid.NewGuid(), "admin", true);
+        var draft = await service.AnalyseAsync(employee, admin, Files(), null, default);
+
+        Assert.False((await service.SubmitAsync(employee, admin, draft.DraftId, Request(passport), default))!.NeedsReview);
+    }
+
+    [Fact]
+    public async Task TypeWithoutTheRuleAcceptsOneSide()
+    {
+        Assert.NotNull(await service.SubmitAsync(employee, actor, (await Analyse()).DraftId, Request(passport), default));
+    }
+
+    private async Task RequireBothSides()
+    {
+        passport.RequiresBothSides = true;
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task EmployeesCannotUploadASignedType()
+    {
+        passport.Kind = DocumentKind.Sign;
+        await db.SaveChangesAsync();
+        var draft = await Analyse();
+
+        await Assert.ThrowsAsync<DocumentSettingsException>(
+            () => service.SubmitAsync(employee, actor, draft.DraftId, Request(passport), default));
+    }
+
+    [Fact]
+    public async Task AdministratorsCanUploadAPaperCopyOfASignedType()
+    {
+        passport.Kind = DocumentKind.Sign;
+        await db.SaveChangesAsync();
+        var admin = new DocumentActor(Guid.NewGuid(), "admin", true);
+        var draft = await service.AnalyseAsync(employee, admin, Files(), passport.Id, default);
+
+        Assert.NotNull(await service.SubmitAsync(employee, admin, draft.DraftId, Request(passport), default));
+    }
+
+    [Fact]
+    public async Task SignedTypesAreNotOfferedToTheAnalysisForEmployees()
+    {
+        passport.Kind = DocumentKind.Sign;
+        await db.SaveChangesAsync();
+
+        await Analyse();
+
+        Assert.DoesNotContain(analyser.LastCatalogue, entry => entry.Code == passport.Code);
+    }
+
+    [Fact]
     public async Task InactiveTypeIsRejected()
     {
         var draft = await Analyse();
@@ -344,12 +452,14 @@ public sealed class DocumentDraftServiceTests : IDisposable
     {
         public DocumentAnalysis? Result { get; set; }
         public int Calls { get; private set; }
+        public IReadOnlyList<DocumentCatalogueEntry> LastCatalogue { get; private set; } = [];
         public bool IsConfigured => true;
 
         public Task<DocumentAnalysis?> AnalyseAsync(
             IReadOnlyList<ValidatedDocumentFile> files, IReadOnlyList<DocumentCatalogueEntry> catalogue, CancellationToken cancellationToken)
         {
             Calls++;
+            LastCatalogue = catalogue;
             return Task.FromResult(Result);
         }
     }
@@ -435,6 +545,13 @@ public sealed class DocumentAnalysisParserTests
     }
 
     [Fact]
+    public void ReadsWhetherBothSidesWereSeen()
+    {
+        Assert.True(DocumentAnalysisParser.Parse("""{"bothSides":true}""", Codes)!.BothSides);
+        Assert.False(DocumentAnalysisParser.Parse("{}", Codes)!.BothSides);
+    }
+
+    [Fact]
     public void MissingReadableMeansUnreadable()
     {
         Assert.False(DocumentAnalysisParser.Parse("{}", Codes)!.Readable);
@@ -464,10 +581,10 @@ public sealed class DocumentEndpointAccessTests
     {
         var returnsFiles = typeof(DocumentsController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .SelectMany(method => method.GetCustomAttributes<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>())
-            .Where(route => route.Template?.Contains("file", StringComparison.OrdinalIgnoreCase) == true);
+            .Where(route => route.Template?.Contains("files", StringComparison.OrdinalIgnoreCase) == true);
 
         Assert.Empty(returnsFiles);
-        Assert.Equal(["GET", "POST", "POST", "DELETE", "POST", "DELETE"],
+        Assert.Equal(["GET", "POST", "POST", "DELETE", "POST", "DELETE", "GET", "GET", "POST"],
             typeof(DocumentsController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                 .SelectMany(method => method.GetCustomAttributes<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>())
                 .SelectMany(route => route.HttpMethods));

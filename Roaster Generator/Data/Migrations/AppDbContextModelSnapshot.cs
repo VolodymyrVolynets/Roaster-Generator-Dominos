@@ -537,6 +537,12 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at_utc");
 
+                    b.Property<int>("PageCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("page_count");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EmployeeId");
@@ -544,6 +550,52 @@ namespace Roaster_Generator.Data.Migrations
                     b.HasIndex("ExpiresAtUtc");
 
                     b.ToTable("document_drafts", (string)null);
+                });
+
+            modelBuilder.Entity("Roaster_Generator.Entities.DocumentManagerSignature", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("EncryptedContent")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("encrypted_content");
+
+                    b.Property<string>("KeyId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("key_id");
+
+                    b.Property<Guid?>("ManagerEmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("manager_employee_id");
+
+                    b.Property<string>("ManagerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("manager_name");
+
+                    b.Property<byte[]>("Nonce")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("nonce");
+
+                    b.Property<DateTimeOffset>("SavedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("saved_at_utc");
+
+                    b.Property<byte[]>("Tag")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("tag");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("document_manager_signatures", (string)null);
                 });
 
             modelBuilder.Entity("Roaster_Generator.Entities.DocumentRequirement", b =>
@@ -580,6 +632,37 @@ namespace Roaster_Generator.Data.Migrations
                     b.ToTable("document_requirements", (string)null);
                 });
 
+            modelBuilder.Entity("Roaster_Generator.Entities.DocumentTemplate", b =>
+                {
+                    b.Property<Guid>("DocumentTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_type_id");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("content");
+
+                    b.Property<string>("Fields")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("fields");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("file_name");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("DocumentTypeId");
+
+                    b.ToTable("document_templates", (string)null);
+                });
+
             modelBuilder.Entity("Roaster_Generator.Entities.DocumentType", b =>
                 {
                     b.Property<Guid>("Id")
@@ -608,11 +691,23 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Upload")
+                        .HasColumnName("kind");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("name");
+
+                    b.Property<bool>("RequiresBothSides")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requires_both_sides");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer")
@@ -979,6 +1074,10 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
+                    b.Property<bool>("AwaitingManagerSignature")
+                        .HasColumnType("boolean")
+                        .HasColumnName("awaiting_manager_signature");
+
                     b.Property<Guid>("DocumentTypeId")
                         .HasColumnType("uuid")
                         .HasColumnName("document_type_id");
@@ -1009,6 +1108,19 @@ namespace Roaster_Generator.Data.Migrations
                         .HasMaxLength(2)
                         .HasColumnType("character varying(2)")
                         .HasColumnName("issuing_country");
+
+                    b.Property<DateTimeOffset?>("ManagerSignedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("manager_signed_at_utc");
+
+                    b.Property<string>("ManagerSignedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("manager_signed_by_name");
+
+                    b.Property<bool>("NewSignatureRequested")
+                        .HasColumnType("boolean")
+                        .HasColumnName("new_signature_requested");
 
                     b.Property<int?>("PenaltyPoints")
                         .HasColumnType("integer")
@@ -1637,6 +1749,14 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("FranchiseeName")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasDefaultValue("")
+                        .HasColumnName("franchisee_name");
+
                     b.Property<string>("StoreId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1841,6 +1961,17 @@ namespace Roaster_Generator.Data.Migrations
                         .WithMany()
                         .HasForeignKey("DocumentTypeId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DocumentType");
+                });
+
+            modelBuilder.Entity("Roaster_Generator.Entities.DocumentTemplate", b =>
+                {
+                    b.HasOne("Roaster_Generator.Entities.DocumentType", "DocumentType")
+                        .WithOne()
+                        .HasForeignKey("Roaster_Generator.Entities.DocumentTemplate", "DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("DocumentType");

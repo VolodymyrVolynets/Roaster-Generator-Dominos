@@ -52,6 +52,10 @@ public sealed class AppDbContext(
 
     public DbSet<DocumentAuditEvent> DocumentAuditEvents => Set<DocumentAuditEvent>();
 
+    public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
+
+    public DbSet<DocumentManagerSignature> DocumentManagerSignatures => Set<DocumentManagerSignature>();
+
     public DbSet<EmployeeVehicle> EmployeeVehicles => Set<EmployeeVehicle>();
 
     public DbSet<VehicleChange> VehicleChanges => Set<VehicleChange>();

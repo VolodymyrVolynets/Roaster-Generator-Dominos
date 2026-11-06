@@ -74,6 +74,57 @@ public sealed class DocumentsController(
         return employee is null ? Forbid() : await CancelVehicleChangeCoreAsync(employee, vehicles, ct);
     }
 
+    [HttpGet("sign/{documentTypeId:guid}")]
+    public async Task<IActionResult> GetSignForm(
+        Guid documentTypeId, [FromServices] DocumentSigningService signing, CancellationToken ct)
+    {
+        var employee = await GetCurrentEmployeeAsync(ct);
+        if (employee is null) return Forbid();
+        return await signing.GetFormAsync(employee, documentTypeId, ct) is { } form ? Ok(form) : FormNotFound();
+    }
+
+    /// <summary>The blank form, for reading before signing. It holds no personal data.</summary>
+    [HttpGet("sign/{documentTypeId:guid}/blank-form")]
+    public async Task<IActionResult> GetBlankForm(
+        Guid documentTypeId, [FromServices] DocumentSigningService signing, CancellationToken ct)
+    {
+        var employee = await GetCurrentEmployeeAsync(ct);
+        if (employee is null) return Forbid();
+        if (await signing.ReadBlankFormAsync(documentTypeId, ct) is not { } form) return FormNotFound();
+        Response.Headers.XContentTypeOptions = "nosniff";
+        return File(form.Content, "application/pdf");
+    }
+
+    [HttpPost("sign/{documentTypeId:guid}")]
+    [RequestSizeLimit(2 * 1024 * 1024)]
+    public async Task<IActionResult> Sign(
+        Guid documentTypeId, [FromBody] DocumentSignRequest request, [FromServices] DocumentSigningService signing, CancellationToken ct)
+    {
+        var employee = await GetCurrentEmployeeAsync(ct);
+        if (employee is null) return Forbid();
+
+        try
+        {
+            return await signing.SignAsync(employee, CurrentActor(), documentTypeId, request, ct) is { } id
+                ? Ok(new { documentId = id })
+                : FormNotFound();
+        }
+        catch (DocumentSettingsException exception)
+        {
+            return ValidationError(new Dictionary<string, string[]> { ["form"] = [exception.Message] }, "The form is incomplete.");
+        }
+        catch (DocumentUnavailableException exception)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = exception.Message });
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { message = "This document was just updated. Reload and try again." });
+        }
+    }
+
+    private NotFoundObjectResult FormNotFound() => NotFound(new { message = "This form isn't available yet." });
+
     private async Task<Employee?> GetCurrentEmployeeAsync(CancellationToken ct)
     {
         var user = await Users.GetUserAsync(User);

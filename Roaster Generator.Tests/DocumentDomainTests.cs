@@ -133,6 +133,16 @@ public sealed class DocumentRequirementResolverTests
     }
 
     [Fact]
+    public void OutstandingIrpMentionsTheLabourMarketRoute()
+    {
+        var missing = NonEuRows().Single(row => row.DocumentType == Types.Irp);
+        var onFile = NonEuRows(Document(Types.Irp, Today.AddYears(1))).Single(row => row.DocumentType == Types.Irp);
+
+        Assert.EndsWith("or Labour market permission", DocumentRequirementResolver.DisplayName(missing));
+        Assert.Equal(Types.Irp.Name, DocumentRequirementResolver.DisplayName(onFile));
+    }
+
+    [Fact]
     public void LmpAloneDoesNotSatisfyIrpAndAsksForTrc()
     {
         var rows = NonEuRows(Document(Types.Lmp, Today.AddYears(1)));
@@ -665,6 +675,12 @@ public sealed class DocumentFileValidatorTests
     }
 
     [Fact]
+    public async Task CountsPdfPages()
+    {
+        Assert.Equal(3, Assert.Single(await Read(File("scan.pdf", Pdf(3)))).PageCount);
+    }
+
+    [Fact]
     public Task RejectsPdfWithTooManyPages() => AssertRejected(File("long.pdf", Pdf(DocumentFileValidator.MaxPdfPages + 1)));
 
     [Fact]
@@ -729,13 +745,20 @@ public sealed class DocumentCatalogueServiceTests
         await new DocumentCatalogueService(db).EnsureInitializedAsync(default);
 
         var requirements = await db.DocumentRequirements.Include(item => item.DocumentType).ToListAsync();
-        Assert.Equal(13, await db.DocumentTypes.CountAsync());
-        foreach (var category in new[]
-                 {
-                     DocumentCategory.CarOwn, DocumentCategory.CarCompany, DocumentCategory.MopedOwn,
-                     DocumentCategory.MopedCompany, DocumentCategory.EBikeOwn, DocumentCategory.EBikeCompany
-                 })
-            Assert.Equal(11, requirements.Count(item => item.Category == category));
+        Assert.Equal(14, await db.DocumentTypes.CountAsync());
+        Assert.Equal(
+            [DocumentTypeCodes.DrivingLicence, DocumentTypeCodes.Irp],
+            await db.DocumentTypes.Where(type => type.RequiresBothSides).Select(type => type.Code).OrderBy(code => code).ToListAsync());
+        Assert.Equal(8, requirements.Count(item => item.Category == DocumentCategory.CarCompany));
+        Assert.Equal(11, requirements.Count(item => item.Category == DocumentCategory.MopedOwn));
+        Assert.Equal(9, requirements.Count(item => item.Category == DocumentCategory.MopedCompany));
+        Assert.Equal(6, requirements.Count(item => item.Category == DocumentCategory.EBikeOwn));
+        Assert.Contains(requirements, item => item.Category == DocumentCategory.CarCompany && item.DocumentType.Code == DocumentTypeCodes.Obu);
+        Assert.Equal(11, requirements.Count(item => item.Category == DocumentCategory.CarOwn));
+        Assert.Equal(6, requirements.Count(item => item.Category == DocumentCategory.EBikeCompany));
+        Assert.Equal(DocumentKind.Sign, (await db.DocumentTypes.SingleAsync(type => type.Code == DocumentTypeCodes.BikeSafety)).Kind);
+        Assert.DoesNotContain(requirements, item => item.DocumentType.Code == DocumentTypeCodes.BikeSafety &&
+            item.Category is DocumentCategory.CarOwn or DocumentCategory.CarCompany or DocumentCategory.InStore or DocumentCategory.Manager);
         Assert.Equal(5, requirements.Count(item => item.Category == DocumentCategory.InStore));
         Assert.Equal(5, requirements.Count(item => item.Category == DocumentCategory.Manager));
         Assert.All(requirements.Where(item => item.DocumentType.Code == DocumentTypeCodes.Irp),

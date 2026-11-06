@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchJson } from '../../api/client'
 import { DatePicker } from '../../components/DatePicker'
-import { fieldLabels, fieldsChanged, fieldsFor, maxDocumentFiles, mergeFields, toFormFields, toSubmitRequest } from '../../lib/documents'
+import { fieldLabels, fieldsChanged, fieldsFor, maxDocumentFiles, toFormFields, toSubmitRequest } from '../../lib/documents'
 import { prepareDocumentImage } from '../../lib/prepareDocumentImage'
 
 const dateFields = new Set(['expiryDate', 'signingDate'])
 const supportsCamera = () => navigator.maxTouchPoints > 0
 
-export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, onVehicleChanged, basePath = '/api/documents' }) {
+export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, onVehicleChanged, basePath = '/api/documents', enforceBothSides = true }) {
   const [step, setStep] = useState('choose')
   const [files, setFiles] = useState([])
   const [error, setError] = useState('')
@@ -33,11 +33,10 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
   const edited = Boolean(analysis?.isAnalysed) &&
     (fieldsChanged(original, fields) || (analysis.documentTypeId ?? '') !== typeId)
   const flagged = edited || analysis?.warnings.length > 0
+  const missingSide = enforceBothSides && Boolean(analysis?.isAnalysed) && Boolean(selectedType?.requiresBothSides) && !analysis.hasBothSides
   const canAddPage = files.length < maxDocumentFiles && files[0]?.type !== 'application/pdf'
 
   async function analyse(nextFiles) {
-    const previousFiles = files
-    setFiles(nextFiles)
     setStep('checking')
     setError('')
     const body = new FormData()
@@ -46,16 +45,14 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
     try {
       const result = await fetchJson(`${basePath}/analyses`, { method: 'POST', body })
       draftRef.current = result.draftId
-      const nextFields = toFormFields(result.fields)
-      setFields(analysis ? mergeFields(original, fields, nextFields) : nextFields)
-      setTypeId((current) => (analysis && current !== (analysis.documentTypeId ?? '') ? current : result.documentTypeId ?? ''))
+      setFields(toFormFields(result.fields))
+      setTypeId(result.documentTypeId ?? '')
       setAnalysis(result)
       setVehiclePrompt(result.vehiclePrompt)
       setStep('review')
     } catch (requestError) {
-      setFiles(previousFiles)
       setError(requestError.message)
-      setStep(draftRef.current ? 'review' : 'choose')
+      setStep('pages')
     }
   }
 
@@ -65,11 +62,23 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
     if (!chosen) return
     setError('')
     try {
-      const prepared = chosen.type === 'application/pdf' ? chosen : await prepareDocumentImage(chosen)
-      await analyse([...files, prepared])
+      if (chosen.type === 'application/pdf') {
+        setFiles([chosen])
+        await analyse([chosen])
+      } else {
+        const prepared = await prepareDocumentImage(chosen)
+        setFiles((current) => [...current, prepared])
+        setStep('pages')
+      }
     } catch (selectionError) {
       setError(selectionError.message)
     }
+  }
+
+  function removePage(index) {
+    const remaining = files.filter((_, position) => position !== index)
+    setFiles(remaining)
+    if (remaining.length === 0) setStep('choose')
   }
 
   async function confirmNewCar() {
@@ -135,7 +144,19 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
         {supportsCamera() && <button type="button" onClick={() => cameraRef.current.click()}>Take a photo</button>}
         <button type="button" className="secondary-button" onClick={() => imageRef.current.click()}>Choose an image</button>
         <button type="button" className="secondary-button" onClick={() => pdfRef.current.click()}>Upload a PDF</button>
-        <p className="holiday-help">For cards, you can add the other side after the first photo. Your file is checked by AI before you upload it.</p>
+        <p className="holiday-help">For two-sided cards such as your IRP or driving licence, add the other side after the first photo. Your document is checked by AI before you upload it.</p>
+      </div>}
+
+      {step === 'pages' && <div className="document-review">
+        <ul className="document-previews">
+          {previews.map((preview, index) => <li key={`${preview.name}-${index}`}>
+            {preview.url ? <img src={preview.url} alt={`Page ${index + 1} of your document`} /> : <span>{preview.name}</span>}
+            <button type="button" className="secondary-button" onClick={() => removePage(index)}>Remove</button>
+          </li>)}
+        </ul>
+        {canAddPage && <button type="button" className="secondary-button" onClick={() => addRef.current.click()}>Add another side or page</button>}
+        <p className="holiday-help">Add every side or page first, then check the document.</p>
+        <button type="button" onClick={() => analyse(files)} disabled={files.length === 0}>Check document</button>
       </div>}
 
       {step === 'checking' && <div className="document-checking" role="status">
@@ -150,7 +171,6 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
             {preview.url ? <img src={preview.url} alt={`Page ${index + 1} of your document`} /> : <span>{preview.name}</span>}
           </li>)}
         </ul>
-        {canAddPage && <button type="button" className="secondary-button" onClick={() => addRef.current.click()} disabled={busy}>Add another side or page</button>}
         {analysis.summary && <p className="holiday-help">{analysis.summary}</p>}
         {vehiclePrompt && <div className="message info-message document-warnings" role="status">
           <strong>This shows a different car</strong>
@@ -164,6 +184,13 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
           <strong>Please check</strong>
           <ul>{analysis.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
           <span>You can retake it, or upload it anyway and an administrator will review it.</span>
+        </div>}
+        {missingSide && <div className="message info-message document-warnings" role="alert">
+          <strong>{selectedType.name} needs both sides</strong>
+          <span>Add a photo of the other side, then check the document again.</span>
+          <div className="document-type-actions">
+            <button type="button" onClick={() => setStep('pages')} disabled={busy}>Add the other side</button>
+          </div>
         </div>}
         <fieldset className="absent-fields document-review-fields" disabled={busy}>
           <div className="absent-field">
@@ -190,7 +217,7 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, o
         </fieldset>
         {edited && <p className="holiday-help">Because you changed something, an administrator will review this document.</p>}
         <div className="document-type-actions">
-          <button type="submit" disabled={busy || !typeId}>{step === 'saving' ? 'Uploading…' : 'Upload'}</button>
+          <button type="submit" disabled={busy || !typeId || missingSide}>{step === 'saving' ? 'Uploading…' : 'Upload'}</button>
         </div>
       </form>}
     </section>

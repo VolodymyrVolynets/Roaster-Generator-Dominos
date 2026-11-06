@@ -17,6 +17,7 @@ public sealed class AdminDocumentRow
 {
     public Guid DocumentTypeId { get; init; }
     public string DocumentTypeName { get; init; } = string.Empty;
+    public DocumentKind Kind { get; init; }
     public DocumentRowState State { get; init; }
     public bool IsRequired { get; init; }
     public Guid? DocumentId { get; init; }
@@ -71,6 +72,7 @@ public sealed class AdminDocumentDetail
     public DocumentChecklistType DocumentType { get; init; } = new();
     public DocumentFields Fields { get; init; } = new();
     public bool NeedsReview { get; init; }
+    public bool NewSignatureRequested { get; init; }
     public IReadOnlyList<string> ReviewReasons { get; init; } = [];
     public string? EmployeeNote { get; init; }
     public DateTimeOffset UploadedAtUtc { get; init; }

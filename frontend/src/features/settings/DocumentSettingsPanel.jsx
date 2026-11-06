@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { confirmAction } from '../../components/ConfirmDialog'
 import {
-  documentCategories, draftsEqual, expiryRuleLabel, expiryRules, requirementConditions,
+  documentCategories, documentKinds, draftsEqual, expiryRuleLabel, expiryRules, requirementConditions,
   setRequirement, toDrafts, toListRequest, visibleTypes,
 } from '../../lib/documentSettings'
+import { DocumentTemplateEditor } from './DocumentTemplateEditor'
 
 const jsonOptions = (method, body) => ({
   method,
@@ -11,7 +12,7 @@ const jsonOptions = (method, body) => ({
   body: JSON.stringify(body),
 })
 
-const emptyType = { name: '', expiryRule: 'Printed', hasReference: true, isActive: true }
+const emptyType = { name: '', kind: 'Upload', expiryRule: 'Printed', hasReference: true, requiresBothSides: false, isActive: true }
 
 export function DocumentSettingsPanel({ fetchJson }) {
   const [types, setTypes] = useState(null)
@@ -154,13 +155,15 @@ function DocumentTypesEditor({ types, fetchJson, onSaved, onDeleted }) {
     event.preventDefault()
     setState({ status: 'saving', message: '' })
     try {
-      const { id, name, expiryRule, hasReference, isActive } = editing
-      const body = { name, expiryRule, hasReference, isActive }
-      onSaved(await fetchJson(
+      const { id, name, kind, expiryRule, hasReference, requiresBothSides, isActive } = editing
+      const body = { name, kind, expiryRule, hasReference, requiresBothSides, isActive }
+      const saved = await fetchJson(
         id ? `/api/admin/document-types/${id}` : '/api/admin/document-types',
         jsonOptions(id ? 'PUT' : 'POST', body),
-      ))
-      setEditing(null)
+      )
+      onSaved(saved)
+      // A new signed type stays open so its form can be uploaded next.
+      setEditing(!id && saved.kind === 'Sign' ? saved : null)
       setState({ status: 'idle', message: '' })
     } catch (error) {
       setState({ status: 'error', message: error.message })
@@ -197,6 +200,12 @@ function DocumentTypesEditor({ types, fetchJson, onSaved, onDeleted }) {
           <input id="document-type-name" value={editing.name} maxLength={100} required autoFocus onChange={(event) => update('name', event.target.value)} />
         </div>
         <div className="absent-field">
+          <label htmlFor="document-type-kind">How employees provide it</label>
+          <select id="document-type-kind" value={editing.kind} onChange={(event) => update('kind', event.target.value)}>
+            {documentKinds.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </div>
+        <div className="absent-field">
           <label htmlFor="document-type-expiry">Expiry</label>
           <select id="document-type-expiry" value={editing.expiryRule} onChange={(event) => update('expiryRule', event.target.value)}>
             {expiryRules.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
@@ -205,6 +214,10 @@ function DocumentTypesEditor({ types, fetchJson, onSaved, onDeleted }) {
         <label className="document-type-toggle">
           <input type="checkbox" checked={editing.hasReference} onChange={(event) => update('hasReference', event.target.checked)} />
           <span>Has a reference number</span>
+        </label>
+        <label className="document-type-toggle">
+          <input type="checkbox" checked={editing.requiresBothSides} onChange={(event) => update('requiresBothSides', event.target.checked)} />
+          <span>Needs both sides</span>
         </label>
         <label className="document-type-toggle">
           <input type="checkbox" checked={editing.isActive} onChange={(event) => update('isActive', event.target.checked)} />
@@ -218,11 +231,16 @@ function DocumentTypesEditor({ types, fetchJson, onSaved, onDeleted }) {
         {editing.id && !editing.isBuiltIn && <button type="button" className="danger-button" onClick={remove} disabled={busy}>Delete</button>}
       </div>
     </form>}
+    {editing?.id && editing.kind === 'Sign' && <DocumentTemplateEditor documentTypeId={editing.id} fetchJson={fetchJson}
+      onUploaded={() => onSaved({ ...editing, hasTemplate: true })} />}
     <ul className="document-type-list">
       {types.map((type) => <li key={type.id}>
         <div>
           <strong>{type.name}</strong>
-          <small>{expiryRuleLabel(type.expiryRule)}{type.isActive ? '' : ' · Turned off'}</small>
+          <small>
+            {type.kind === 'Sign' ? (type.hasTemplate ? 'Signed in the app' : 'Signed in the app · Form needed') : 'Uploaded'}
+            {' · '}{expiryRuleLabel(type.expiryRule)}{type.isActive ? '' : ' · Turned off'}
+          </small>
         </div>
         <button type="button" className="secondary-button" onClick={() => open(type)} disabled={busy} aria-label={`Edit ${type.name}`}>Edit</button>
       </li>)}

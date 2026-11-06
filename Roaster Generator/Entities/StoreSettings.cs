@@ -10,4 +10,6 @@ public sealed class StoreSettings
     public string StoreId { get; set; } = string.Empty;
 
     public string StoreName { get; set; } = string.Empty;
+
+    public string FranchiseeName { get; set; } = string.Empty;
 }

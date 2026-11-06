@@ -14,7 +14,7 @@ namespace Roaster_Generator.Services;
 /// </summary>
 public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger<ClaudeDocumentAnalyser> logger) : IDocumentAnalyser
 {
-    private const string DefaultModel = "claude-opus-5-5";
+    private const string DefaultModel = "claude-sonnet-5-5";
     private const string FallbackBeta = "server-side-fallback-2026-07-01";
     private const int MaxOutputTokens = 8000;
     private const string PdfContentType = "application/pdf";
@@ -140,6 +140,7 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
             Report only what is printed. Leave a field null when it is missing or you cannot read it with confidence, and do not guess.
             - documentType: the code of the matching type below, or "unknown".
             - readable: false when glare, blur or cropping stops you reading the important fields.
+            - bothSides: true only when the front and the back of a two-sided card can both be seen in the files.
             - holderName: the person's full name as printed.
             - referenceNumber: the document's own number.
             - issuingCountry: ISO 3166-1 alpha-2 code of the issuing country.
@@ -170,6 +171,7 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
         {
             ["documentType"] = new { type = "string" },
             ["readable"] = new { type = "boolean" },
+            ["bothSides"] = new { type = "boolean" },
             ["penaltyPoints"] = new { type = new[] { "integer", "null" } },
             ["problems"] = new { type = "array", items = new { type = "string" } }
         };

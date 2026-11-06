@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchJson } from '../../api/client'
-import { documentFilterStates, stateDetails, toDocumentListQuery } from '../../lib/documents'
+import { documentFilterStates, stateDetails, stateFor, toDocumentListQuery } from '../../lib/documents'
 import { formatDateOnly, formatHolidayDate } from '../../lib/format'
 import { AdminDocumentDetail } from './AdminDocumentDetail'
 import { DocumentUploadFlow } from './DocumentUploadFlow'
@@ -121,17 +121,18 @@ export function AdminDocumentsPanel({ realtimeKey = 0 }) {
       requestedTypeId={upload.documentTypeId}
       onFinish={finishUpload}
       onVehicleChanged={reload}
+      enforceBothSides={false}
     />}
   </section>
 }
 
 function AdminDocumentRow({ row, canUpload, onOpen, onUpload }) {
-  const state = stateDetails[row.state] ?? { label: row.state, tone: 'neutral' }
+  const state = stateFor(row)
   const details = [
     row.satisfiedByName && `Covered by ${row.satisfiedByName}`,
     row.referenceNumber && `Ref ${row.referenceNumber}`,
     row.expiryDate && `Expires ${formatDateOnly(row.expiryDate)}`,
-    row.uploadedAtUtc && `Uploaded ${formatHolidayDate(row.uploadedAtUtc)}`,
+    row.uploadedAtUtc && `${row.kind === 'Sign' ? 'Signed' : 'Uploaded'} ${formatHolidayDate(row.uploadedAtUtc)}`,
   ].filter(Boolean)
 
   return <li>

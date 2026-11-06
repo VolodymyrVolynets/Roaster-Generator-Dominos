@@ -65,14 +65,14 @@ public sealed class ApplicationEventPublisher(
         }, [ApplicationEventGroups.Management, ApplicationEventGroups.Role(employeeRole)], ct);
     }
 
-    /// <summary>Document activity is limited to administrators and the owner; Managers have no access.</summary>
+    /// <summary>Only says something changed; Managers use it to refresh forms waiting for their signature.</summary>
     public Task DocumentsChangedAsync(Guid employeeId, CancellationToken ct = default) => PublishAsync(
         new ApplicationChangedEvent
         {
             Type = ApplicationEventTypes.DocumentsChanged,
             EntityId = employeeId
         },
-        [ApplicationEventGroups.Role(RoleNames.Admin), ApplicationEventGroups.Employee(employeeId)], ct);
+        [ApplicationEventGroups.Role(RoleNames.Admin), ApplicationEventGroups.Role(RoleNames.Manager), ApplicationEventGroups.Employee(employeeId)], ct);
 
     public Task SickLeaveChangedAsync(Guid requestId, Guid employeeId, bool affectsDriverPlanning,
         CancellationToken ct = default) => PublishAsync(

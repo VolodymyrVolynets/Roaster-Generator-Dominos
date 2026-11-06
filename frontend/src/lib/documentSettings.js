@@ -15,6 +15,34 @@ export const requirementConditions = [
   { id: 'Stamp2', label: 'Stamp 2 only' },
 ]
 
+export const documentKinds = [
+  { id: 'Upload', label: 'Uploaded by the employee' },
+  { id: 'Sign', label: 'Signed in the app' },
+]
+
+export const fieldSources = [
+  { id: 'Ask', label: 'Ask the employee' },
+  { id: 'FullName', label: 'Full name' },
+  { id: 'FirstName', label: 'First name' },
+  { id: 'LastName', label: 'Last name' },
+  { id: 'EmployeeNumber', label: 'Employee number' },
+  { id: 'PhoneNumber', label: 'Phone number' },
+  { id: 'PayrollNumber', label: 'Payroll number' },
+  { id: 'VehicleRegistration', label: 'Vehicle registration' },
+  { id: 'PenaltyPoints', label: 'Penalty points (ask)' },
+  { id: 'Today', label: "Today's date" },
+  { id: 'StoreId', label: 'Store ID' },
+  { id: 'StoreName', label: 'Store name' },
+  { id: 'FranchiseeName', label: 'Franchisee name' },
+  { id: 'AlwaysTicked', label: 'Always ticked' },
+  { id: 'TickedForMoped', label: 'Ticked for moped drivers' },
+  { id: 'Signature', label: 'Employee signature' },
+  { id: 'ManagerName', label: 'Manager name' },
+  { id: 'ManagerSignature', label: 'Manager signature' },
+  { id: 'ManagerDate', label: 'Manager signing date' },
+  { id: 'Ignore', label: 'Leave blank' },
+]
+
 export const expiryRules = [
   { id: 'Printed', label: 'Printed expiry date' },
   { id: 'None', label: 'No expiry' },

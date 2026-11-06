@@ -15,9 +15,12 @@ public sealed class DocumentTypeConfiguration : IEntityTypeConfiguration<Documen
             .ValueGeneratedOnAdd().HasDefaultValueSql("gen_random_uuid()");
         builder.Property(type => type.Code).HasColumnName("code").HasMaxLength(40).IsRequired();
         builder.Property(type => type.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
+        builder.Property(type => type.Kind).HasColumnName("kind").HasConversion<string>()
+            .HasMaxLength(16).HasDefaultValue(DocumentKind.Upload).IsRequired();
         builder.Property(type => type.ExpiryRule).HasColumnName("expiry_rule").HasConversion<string>()
             .HasMaxLength(16).IsRequired();
         builder.Property(type => type.HasReference).HasColumnName("has_reference").IsRequired();
+        builder.Property(type => type.RequiresBothSides).HasColumnName("requires_both_sides").IsRequired();
         builder.Property(type => type.IsActive).HasColumnName("is_active").IsRequired();
         builder.Property(type => type.SortOrder).HasColumnName("sort_order").IsRequired();
         builder.HasIndex(type => type.Code).IsUnique();
@@ -67,6 +70,10 @@ public sealed class EmployeeDocumentConfiguration : IEntityTypeConfiguration<Emp
             .HasMaxLength(16).HasDefaultValue(DocumentReviewStatus.Clear).IsRequired();
         builder.Property(document => document.ReviewReasons).HasColumnName("review_reasons").IsRequired();
         builder.Property(document => document.EmployeeNote).HasColumnName("employee_note").HasMaxLength(500);
+        builder.Property(document => document.NewSignatureRequested).HasColumnName("new_signature_requested").IsRequired();
+        builder.Property(document => document.AwaitingManagerSignature).HasColumnName("awaiting_manager_signature").IsRequired();
+        builder.Property(document => document.ManagerSignedByName).HasColumnName("manager_signed_by_name").HasMaxLength(200);
+        builder.Property(document => document.ManagerSignedAtUtc).HasColumnName("manager_signed_at_utc");
         builder.Property(document => document.UploadedAtUtc).HasColumnName("uploaded_at_utc").IsRequired();
         builder.Property(document => document.UploadedByUserId).HasColumnName("uploaded_by_user_id");
         builder.Property(document => document.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired();
@@ -92,6 +99,7 @@ public sealed class DocumentDraftConfiguration : IEntityTypeConfiguration<Docume
         builder.Property(draft => draft.EmployeeId).HasColumnName("employee_id").HasColumnType("uuid").IsRequired();
         builder.Property(draft => draft.CreatedByUserId).HasColumnName("created_by_user_id");
         builder.Property(draft => draft.AnalysisResult).HasColumnName("analysis_result").HasColumnType("jsonb");
+        builder.Property(draft => draft.PageCount).HasColumnName("page_count").HasDefaultValue(1).IsRequired();
         builder.Property(draft => draft.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
         builder.Property(draft => draft.ExpiresAtUtc).HasColumnName("expires_at_utc").IsRequired();
         builder.HasIndex(draft => draft.ExpiresAtUtc);
@@ -180,5 +188,38 @@ public sealed class VehicleChangeConfiguration : IEntityTypeConfiguration<Vehicl
         builder.HasIndex(change => change.EmployeeId).IsUnique().HasFilter("status = 'Open'");
         builder.HasOne(change => change.Employee).WithMany()
             .HasForeignKey(change => change.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class DocumentTemplateConfiguration : IEntityTypeConfiguration<DocumentTemplate>
+{
+    public void Configure(EntityTypeBuilder<DocumentTemplate> builder)
+    {
+        builder.ToTable("document_templates");
+        builder.HasKey(template => template.DocumentTypeId);
+        builder.Property(template => template.DocumentTypeId).HasColumnName("document_type_id").HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(template => template.Content).HasColumnName("content").HasColumnType("bytea").IsRequired();
+        builder.Property(template => template.FileName).HasColumnName("file_name").HasMaxLength(255).IsRequired();
+        builder.Property(template => template.Fields).HasColumnName("fields").HasColumnType("jsonb").IsRequired();
+        builder.Property(template => template.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired();
+        builder.HasOne(template => template.DocumentType).WithOne()
+            .HasForeignKey<DocumentTemplate>(template => template.DocumentTypeId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class DocumentManagerSignatureConfiguration : IEntityTypeConfiguration<DocumentManagerSignature>
+{
+    public void Configure(EntityTypeBuilder<DocumentManagerSignature> builder)
+    {
+        builder.ToTable("document_manager_signatures");
+        builder.HasKey(signature => signature.Id);
+        builder.Property(signature => signature.Id).HasColumnName("id").HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(signature => signature.ManagerName).HasColumnName("manager_name").HasMaxLength(200).IsRequired();
+        builder.Property(signature => signature.ManagerEmployeeId).HasColumnName("manager_employee_id").HasColumnType("uuid");
+        builder.Property(signature => signature.EncryptedContent).HasColumnName("encrypted_content").HasColumnType("bytea").IsRequired();
+        builder.Property(signature => signature.Nonce).HasColumnName("nonce").HasColumnType("bytea").IsRequired();
+        builder.Property(signature => signature.Tag).HasColumnName("tag").HasColumnType("bytea").IsRequired();
+        builder.Property(signature => signature.KeyId).HasColumnName("key_id").HasMaxLength(32).IsRequired();
+        builder.Property(signature => signature.SavedAtUtc).HasColumnName("saved_at_utc").IsRequired();
     }
 }

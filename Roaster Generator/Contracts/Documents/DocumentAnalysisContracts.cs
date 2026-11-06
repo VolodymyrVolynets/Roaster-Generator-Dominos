@@ -30,6 +30,9 @@ public sealed class DocumentAnalysisResponse
 
     /// <summary>Set when a vehicle document shows a different car and no car change is open.</summary>
     public DocumentVehiclePrompt? VehiclePrompt { get; init; }
+
+    /// <summary>More than one page was provided, or the analysis saw both sides on one.</summary>
+    public bool HasBothSides { get; init; }
 }
 
 public sealed class DocumentVehiclePrompt
@@ -74,6 +77,10 @@ public sealed class DocumentChecklistItem
 {
     public Guid DocumentTypeId { get; init; }
     public string DocumentTypeName { get; init; } = string.Empty;
+    public DocumentKind Kind { get; init; }
+
+    /// <summary>A signed form with a template, which the employee needs to sign now.</summary>
+    public bool CanSign { get; init; }
     public DocumentRowState State { get; init; }
     public bool IsRequired { get; init; }
     public Guid? DocumentId { get; init; }
@@ -89,8 +96,10 @@ public sealed class DocumentChecklistType
     public Guid Id { get; init; }
     public string Code { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
+    public DocumentKind Kind { get; init; }
     public DocumentExpiryRule ExpiryRule { get; init; }
     public bool HasReference { get; init; }
+    public bool RequiresBothSides { get; init; }
 }
 
 public sealed class DocumentChecklistResponse

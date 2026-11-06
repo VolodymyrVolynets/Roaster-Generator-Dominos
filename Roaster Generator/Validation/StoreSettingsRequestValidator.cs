@@ -9,5 +9,6 @@ public sealed class StoreSettingsRequestValidator : AbstractValidator<StoreSetti
     {
         RuleFor(request => request.StoreId).NotEmpty().MaximumLength(100);
         RuleFor(request => request.StoreName).NotEmpty().MaximumLength(200);
+        RuleFor(request => request.FranchiseeName).MaximumLength(200);
     }
 }

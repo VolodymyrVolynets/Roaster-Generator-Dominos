@@ -119,7 +119,7 @@ jobs:
           printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> "$env_file"
           printf 'OPENAI_MODEL=%s\n' "${OPENAI_MODEL:-gpt-6-astra}" >> "$env_file"
           printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> "$env_file"
-          printf 'ANTHROPIC_MODEL=%s\n' "${ANTHROPIC_MODEL:-claude-opus-5-5}" >> "$env_file"
+          printf 'ANTHROPIC_MODEL=%s\n' "${ANTHROPIC_MODEL:-claude-sonnet-5-5}" >> "$env_file"
           printf 'DOCUMENTS_ENCRYPTION_KEY=%s\n' "$DOCUMENTS_ENCRYPTION_KEY" >> "$env_file"
           chmod 600 "$env_file"
 
