@@ -261,7 +261,8 @@ public sealed class DocumentSigningService(
             EmployeeName = FullName(document.Employee),
             DocumentTypeName = document.DocumentType.Name,
             ManagerName = manager.DisplayName,
-            AsksForManagerName = mapping.Any(item => item.Source == DocumentFieldSource.ManagerName)
+            AsksForManagerName = mapping.Any(item => item.Source == DocumentFieldSource.ManagerName),
+            ReviewReasons = document.ReviewReasons
         };
     }
 
@@ -279,6 +280,7 @@ public sealed class DocumentSigningService(
         return content;
     }
 
+    /// <summary>The manager reads the form and any flags before signing, so signing also clears the review.</summary>
     /// <exception cref="DocumentSettingsException">The manager is signing their own form, or the signature is missing.</exception>
     /// <returns>False when this document isn't waiting for a manager.</returns>
     public async Task<bool> ManagerSignAsync(
@@ -310,6 +312,13 @@ public sealed class DocumentSigningService(
         document.ManagerSignedAtUtc = now;
         document.UpdatedAtUtc = now;
         db.DocumentAuditEvents.Add(Audit(document.EmployeeId, document.Id, manager.Actor, DocumentAuditAction.ManagerSigned, document.DocumentType.Code, now));
+        if (document.ReviewStatus == DocumentReviewStatus.NeedsReview)
+        {
+            document.ReviewStatus = DocumentReviewStatus.Clear;
+            document.ReviewReasons = [];
+            db.DocumentAuditEvents.Add(Audit(document.EmployeeId, document.Id, manager.Actor, DocumentAuditAction.Reviewed, document.DocumentType.Code, now));
+        }
+
         await db.SaveChangesAsync(ct);
         if (events is not null) await events.DocumentsChangedAsync(document.EmployeeId, ct);
         return true;

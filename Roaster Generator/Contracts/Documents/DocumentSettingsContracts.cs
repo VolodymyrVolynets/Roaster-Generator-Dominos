@@ -105,6 +105,7 @@ public sealed class DocumentSignOffForm
     public string DocumentTypeName { get; init; } = string.Empty;
     public string ManagerName { get; init; } = string.Empty;
     public bool AsksForManagerName { get; init; }
+    public IReadOnlyList<string> ReviewReasons { get; init; } = [];
 }
 
 public sealed class DocumentSignOffRequest
