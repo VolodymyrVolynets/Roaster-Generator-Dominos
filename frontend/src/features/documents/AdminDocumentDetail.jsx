@@ -12,7 +12,10 @@ export function AdminDocumentDetail({ documentId, onClose, onChanged }) {
   const [document, setDocument] = useState(null)
   const [fields, setFields] = useState(toFormFields())
   const [state, setState] = useState({ status: 'loading', message: '' })
+  const [redoOpen, setRedoOpen] = useState(false)
+  const [redoReason, setRedoReason] = useState('')
   const busy = state.status === 'saving'
+  const signs = document?.documentType.kind === 'Sign'
 
   useEffect(() => {
     let cancelled = false
@@ -48,11 +51,16 @@ export function AdminDocumentDetail({ documentId, onClose, onChanged }) {
     }
   }
 
-  async function requestSignature() {
+  async function requestRedo() {
     setState({ status: 'saving', message: '' })
     try {
-      setDocument(await fetchJson(`/api/admin/documents/${documentId}/request-signature`, { method: 'POST' }))
-      setState({ status: 'idle', message: 'The employee will be asked to sign again.' })
+      setDocument(await fetchJson(`/api/admin/documents/${documentId}/request-redo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: redoReason }),
+      }))
+      setRedoOpen(false)
+      setState({ status: 'idle', message: `The employee will be asked to ${signs ? 'sign' : 'upload'} it again.` })
       onChanged()
     } catch (error) {
       setState({ status: 'error', message: error.message })
@@ -111,11 +119,25 @@ export function AdminDocumentDetail({ documentId, onClose, onChanged }) {
         {document.documentType.expiryRule === 'PenaltyPoints' && document.fields.expiryDate && <p className="holiday-help">
           Due date {document.fields.expiryDate}, calculated from the signing date and points.
         </p>}
+        {document.newSignatureRequested && <p className="holiday-help">
+          <strong>Asked to {signs ? 'sign' : 'upload'} again.</strong>{document.redoReason && ` Reason: ${document.redoReason}`}
+        </p>}
+        {redoOpen && <div className="absent-field document-note">
+          <label htmlFor="document-redo-reason">Reason for the employee (optional)</label>
+          <textarea id="document-redo-reason" value={redoReason} maxLength={500} rows={3} disabled={busy}
+            onChange={(event) => setRedoReason(event.target.value)} />
+          <div className="document-type-actions">
+            <button type="button" onClick={requestRedo} disabled={busy}>Send request</button>
+            <button type="button" className="secondary-button" onClick={() => setRedoOpen(false)} disabled={busy}>Cancel</button>
+          </div>
+        </div>}
         {state.message && <p className="save-message success" role="status">{state.message}</p>}
         <div className="document-sheet-actions document-type-actions">
           <button type="submit" disabled={busy}>{busy ? 'Saving…' : document.needsReview ? 'Save and mark reviewed' : 'Save changes'}</button>
-          {document.documentType.kind === 'Sign' && <button type="button" className="secondary-button" onClick={requestSignature}
-            disabled={busy || document.newSignatureRequested}>{document.newSignatureRequested ? 'Signature requested' : 'Ask to sign again'}</button>}
+          <button type="button" className="secondary-button" onClick={() => setRedoOpen(true)}
+            disabled={busy || redoOpen || document.newSignatureRequested}>
+            {document.newSignatureRequested ? 'Redo requested' : `Ask to ${signs ? 'sign' : 'upload'} again`}
+          </button>
           <button type="button" className="danger-button" onClick={remove} disabled={busy}>Delete</button>
         </div>
         <div className="document-audit">

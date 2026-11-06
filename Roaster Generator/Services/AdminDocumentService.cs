@@ -193,14 +193,15 @@ public sealed class AdminDocumentService(
         return await GetAsync(id, ct);
     }
 
-    /// <returns>The document, or null when it is missing or is not a signed form.</returns>
-    public async Task<AdminDocumentDetail?> RequestSignatureAsync(Guid id, DocumentActor actor, CancellationToken ct)
+    /// <returns>The document, or null when it is missing.</returns>
+    public async Task<AdminDocumentDetail?> RequestRedoAsync(Guid id, string? reason, DocumentActor actor, CancellationToken ct)
     {
         var document = await db.EmployeeDocuments.Include(item => item.DocumentType)
-            .SingleOrDefaultAsync(item => item.Id == id && item.DocumentType.Kind == DocumentKind.Sign, ct);
+            .SingleOrDefaultAsync(item => item.Id == id, ct);
         if (document is null) return null;
 
         document.NewSignatureRequested = true;
+        document.RedoReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         document.UpdatedAtUtc = timeProvider.GetUtcNow();
         document.Revision++;
         db.DocumentAuditEvents.Add(Audit(document.EmployeeId, document.Id, actor, DocumentAuditAction.Edited, document.DocumentType.Code));
@@ -295,6 +296,7 @@ public sealed class AdminDocumentService(
         },
         NeedsReview = document.ReviewStatus == DocumentReviewStatus.NeedsReview,
         NewSignatureRequested = document.NewSignatureRequested,
+        RedoReason = document.RedoReason,
         ReviewReasons = document.ReviewReasons,
         EmployeeNote = document.EmployeeNote,
         UploadedAtUtc = document.UploadedAtUtc,

@@ -103,6 +103,7 @@ function DocumentRow({ item, onSign }) {
       </div>
       {item.holderName && <span>{item.holderName}</span>}
       {details.length > 0 && <small>{details.join(' · ')}</small>}
+      {item.redoReason && <small>Reason: {item.redoReason}</small>}
       {item.state === 'DependsOnPassport' && <small>Upload your passport first. This applies to non-EU passports.</small>}
     </div>
     {item.canSign && <button type="button" onClick={() => onSign(item)} aria-label={`Sign ${item.documentTypeName}`}>Sign</button>}

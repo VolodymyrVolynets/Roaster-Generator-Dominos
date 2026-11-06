@@ -16,7 +16,8 @@ namespace Roaster_Generator.Controllers;
 public sealed class AdminDocumentsController(
     AdminDocumentService documents,
     UserManager<ApplicationUser> userManager,
-    IValidator<DocumentAdminUpdateRequest> validator) : ApiControllerBase
+    IValidator<DocumentAdminUpdateRequest> validator,
+    IValidator<DocumentRedoRequest> redoValidator) : ApiControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] AdminDocumentFilters filters, CancellationToken ct) =>
@@ -62,9 +63,14 @@ public sealed class AdminDocumentsController(
         }
     }
 
-    [HttpPost("{id:guid}/request-signature")]
-    public async Task<IActionResult> RequestSignature(Guid id, CancellationToken ct) =>
-        await documents.RequestSignatureAsync(id, CurrentActor(), ct) is { } updated ? Ok(updated) : DocumentNotFound();
+    [HttpPost("{id:guid}/request-redo")]
+    public async Task<IActionResult> RequestRedo(Guid id, [FromBody] DocumentRedoRequest request, CancellationToken ct)
+    {
+        var validationError = await ValidateRequestAsync(redoValidator, request, "The reason is too long.", ct);
+        if (validationError is not null) return validationError;
+
+        return await documents.RequestRedoAsync(id, request.Reason, CurrentActor(), ct) is { } updated ? Ok(updated) : DocumentNotFound();
+    }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct) =>

@@ -73,12 +73,18 @@ public sealed class AdminDocumentDetail
     public DocumentFields Fields { get; init; } = new();
     public bool NeedsReview { get; init; }
     public bool NewSignatureRequested { get; init; }
+    public string? RedoReason { get; init; }
     public IReadOnlyList<string> ReviewReasons { get; init; } = [];
     public string? EmployeeNote { get; init; }
     public DateTimeOffset UploadedAtUtc { get; init; }
     public int Revision { get; init; }
     public IReadOnlyList<AdminDocumentFile> Files { get; init; } = [];
     public IReadOnlyList<AdminDocumentAuditEntry> Audit { get; init; } = [];
+}
+
+public sealed class DocumentRedoRequest
+{
+    public string? Reason { get; set; }
 }
 
 public sealed class DocumentAdminUpdateRequest : DocumentFields

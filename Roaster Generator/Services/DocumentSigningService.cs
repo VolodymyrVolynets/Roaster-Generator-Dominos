@@ -174,8 +174,8 @@ public sealed class DocumentSigningService(
         if (healthAnswers.Contains(true)) reviewReasons.Add(HealthYesReason);
         reviewReasons.AddRange(await analyser.CheckSignedFormAsync(pdf, type.Name, employeeName, Answers(mapping, values), ct) ?? [FormCheckUnavailable]);
 
-        // Anything flagged needs a person to read the form, so it never gets the saved signature.
-        var automatic = needsManager && reviewReasons.Count == 0 ? await AutomaticSignatureAsync(employee.Id, ct) : null;
+        // A flagged form still gets the saved signature and stays flagged for an administrator.
+        var automatic = needsManager ? await AutomaticSignatureAsync(employee.Id, ct) : null;
         if (automatic is not null)
             pdf = CompleteManagerPart(pdf, mapping, automatic.ManagerName, automatic.Png);
         var existing = await db.EmployeeDocuments.Include(item => item.Files)

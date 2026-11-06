@@ -102,6 +102,7 @@ export function toDocumentListQuery({ search, documentTypeId, state, includeInac
 /** Signed forms read differently from uploads while nothing is on file yet. */
 export function stateFor(item) {
   if (item.kind === 'Sign' && item.state === 'NotUploaded') return { label: 'Not signed yet', tone: 'warning' }
+  if (item.kind === 'Upload' && item.state === 'NeedsNewSignature') return { label: 'Please upload again', tone: 'warning' }
   return stateDetails[item.state] ?? { label: item.state, tone: 'neutral' }
 }
 

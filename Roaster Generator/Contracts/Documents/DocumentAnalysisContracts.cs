@@ -89,6 +89,7 @@ public sealed class DocumentChecklistItem
     public string? ReferenceNumber { get; init; }
     public DateOnly? ExpiryDate { get; init; }
     public DateTimeOffset? UploadedAtUtc { get; init; }
+    public string? RedoReason { get; init; }
 }
 
 public sealed class DocumentChecklistType

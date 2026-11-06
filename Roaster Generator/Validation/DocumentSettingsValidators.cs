@@ -55,6 +55,11 @@ public sealed class DocumentSubmitRequestValidator : AbstractValidator<DocumentS
     }
 }
 
+public sealed class DocumentRedoRequestValidator : AbstractValidator<DocumentRedoRequest>
+{
+    public DocumentRedoRequestValidator() => RuleFor(request => request.Reason).MaximumLength(500);
+}
+
 public sealed class DocumentAdminUpdateRequestValidator : AbstractValidator<DocumentAdminUpdateRequest>
 {
     public DocumentAdminUpdateRequestValidator() => Include(new DocumentFieldsValidator());

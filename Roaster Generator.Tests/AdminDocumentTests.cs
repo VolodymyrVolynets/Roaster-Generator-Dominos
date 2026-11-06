@@ -69,7 +69,7 @@ public sealed class AdminDocumentTests : IDisposable
             new UpperInvariantLookupNormalizer(), new IdentityErrorDescriber(), services,
             NullLogger<UserManager<ApplicationUser>>.Instance);
         service = new AdminDocumentService(db, users, protector, new DocumentVehicleService(db, TimeProvider.System), TimeProvider.System, NullLogger<AdminDocumentService>.Instance);
-        controller = new AdminDocumentsController(service, users, new DocumentAdminUpdateRequestValidator())
+        controller = new AdminDocumentsController(service, users, new DocumentAdminUpdateRequestValidator(), new DocumentRedoRequestValidator())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -322,6 +322,41 @@ public sealed class AdminDocumentTests : IDisposable
     }
 
     [Fact]
+    public async Task UploadedDocumentCanBeAskedForAgainWithAReason()
+    {
+        var document = await AddDocument(driver, passport);
+
+        var updated = await service.RequestRedoAsync(document.Id, "  The photo is cut off.  ", admin, default);
+
+        Assert.True(updated!.NewSignatureRequested);
+        Assert.Equal("The photo is cut off.", updated.RedoReason);
+        var rows = (await service.ListAsync(new AdminDocumentFilters { DocumentTypeId = passport.Id }, default)).Groups.SelectMany(group => group.Documents);
+        Assert.Equal(DocumentRowState.NeedsNewSignature, rows.Single(row => row.DocumentId == document.Id).State);
+    }
+
+    [Fact]
+    public async Task ReasonForRedoIsOptional()
+    {
+        var document = await AddDocument(driver, passport);
+
+        var updated = await service.RequestRedoAsync(document.Id, "   ", admin, default);
+
+        Assert.True(updated!.NewSignatureRequested);
+        Assert.Null(updated.RedoReason);
+    }
+
+    [Fact]
+    public async Task ReasonForRedoHasALimit()
+    {
+        var document = await AddDocument(driver, passport);
+
+        var result = await controller.RequestRedo(document.Id, new DocumentRedoRequest { Reason = new string('x', 501) }, default);
+
+        Assert.IsNotType<OkObjectResult>(result);
+        Assert.False((await db.EmployeeDocuments.SingleAsync()).NewSignatureRequested);
+    }
+
+    [Fact]
     public async Task UnknownDocumentIsNotFound()
     {
         var id = Guid.NewGuid();
@@ -330,6 +365,7 @@ public sealed class AdminDocumentTests : IDisposable
         Assert.IsType<NotFoundObjectResult>(await controller.Delete(id, default));
         Assert.IsType<NotFoundObjectResult>(await controller.ReadFile(id, Guid.NewGuid(), false, default));
         Assert.IsType<NotFoundObjectResult>(await controller.Update(id, new DocumentAdminUpdateRequest(), default));
+        Assert.IsType<NotFoundObjectResult>(await controller.RequestRedo(id, new DocumentRedoRequest(), default));
     }
 
     private async Task<EmployeeDocument> AddDocument(

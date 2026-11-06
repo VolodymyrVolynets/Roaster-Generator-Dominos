@@ -93,6 +93,7 @@ public sealed class DocumentChecklistService(
         HolderName = row.Document?.HolderName,
         ReferenceNumber = row.Document?.ReferenceNumber,
         ExpiryDate = row.Document?.ExpiryDate,
-        UploadedAtUtc = row.Document?.UploadedAtUtc
+        UploadedAtUtc = row.Document?.UploadedAtUtc,
+        RedoReason = row.Document?.RedoReason
     };
 }
