@@ -130,7 +130,7 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
         _ => MediaType.ImageJpeg
     };
 
-    private static string SystemPrompt(IReadOnlyList<DocumentCatalogueEntry> catalogue)
+    internal static string SystemPrompt(IReadOnlyList<DocumentCatalogueEntry> catalogue)
     {
         var prompt = new StringBuilder("""
             You read compliance documents uploaded by employees of a delivery business in Ireland.
@@ -144,12 +144,16 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
             - holderName: the person's full name as printed.
             - referenceNumber: the document's own number.
             - issuingCountry: ISO 3166-1 alpha-2 code of the issuing country.
-            - issueDate, expiryDate, signingDate: YYYY-MM-DD. Irish and European dates are day first. If a date is ambiguous, leave it null and describe it in problems.
+            - issueDate, expiryDate, signingDate: YYYY-MM-DD. Irish and European dates are day first. If a date is ambiguous, leave it null and describe it in problems. If an expiry shows only a month and year, as discs often do, use the last day of that month.
             - stamp: the immigration stamp printed on an IRP, such as "Stamp 2" or "Stamp 4".
             - vehicleRegistration: the registration on vehicle documents.
             - penaltyPoints: the number of penalty points stated on a penalty points confirmation.
             - summary: one short sentence describing the document, for the employee.
             - problems: short plain sentences about anything wrong, such as a missing side, glare, or a document that looks incomplete. Leave it empty when nothing is wrong.
+
+            Vehicle documents:
+            - nct, motor-tax and insurance can each be the full document or just the disc. A disc on its own is complete, so never report it as incomplete, and don't report details a disc doesn't show.
+            - insurance can be any type of cover. Never report the type of cover or its lack of business or delivery use as a problem.
 
             Document types:
 
