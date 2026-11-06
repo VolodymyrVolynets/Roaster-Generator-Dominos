@@ -1126,6 +1126,11 @@ namespace Roaster_Generator.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("penalty_points");
 
+                    b.Property<string>("RedoReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("redo_reason");
+
                     b.Property<string>("ReferenceNumber")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")

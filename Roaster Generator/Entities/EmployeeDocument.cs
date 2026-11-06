@@ -41,8 +41,11 @@ public sealed class EmployeeDocument
 
     public string? EmployeeNote { get; set; }
 
-    /// <summary>An administrator has asked the employee to sign this form again.</summary>
+    /// <summary>An administrator has asked the employee to sign or upload this document again.</summary>
     public bool NewSignatureRequested { get; set; }
+
+    /// <summary>Why it has to be redone, shown to the employee. Replacing the document removes it.</summary>
+    public string? RedoReason { get; set; }
 
     /// <summary>The employee has signed a form that also needs a manager's signature.</summary>
     public bool AwaitingManagerSignature { get; set; }

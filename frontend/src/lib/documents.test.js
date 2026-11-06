@@ -82,6 +82,8 @@ test('stateFor describes unsigned forms as not signed', () => {
   assert.equal(stateFor({ kind: 'Sign', state: 'NotUploaded' }).label, 'Not signed yet')
   assert.equal(stateFor({ kind: 'Upload', state: 'NotUploaded' }).label, 'Not uploaded yet')
   assert.equal(stateFor({ kind: 'Sign', state: 'Expired' }).label, 'Expired')
+  assert.equal(stateFor({ kind: 'Sign', state: 'NeedsNewSignature' }).label, 'Please sign again')
+  assert.equal(stateFor({ kind: 'Upload', state: 'NeedsNewSignature' }).label, 'Please upload again')
 })
 
 test('missingSignFields finds empty required text and unticked boxes', () => {

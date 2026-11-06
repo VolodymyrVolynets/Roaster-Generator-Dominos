@@ -477,7 +477,7 @@ public sealed class DocumentSigningTests : IDisposable
     }
 
     [Fact]
-    public async Task AFlaggedFormIsNotSignedAutomatically()
+    public async Task AFlaggedFormIsSignedAutomaticallyAndStaysFlagged()
     {
         await AddObuTemplate(HealthFields, ManagerSignatureField);
         await service.SaveAutomaticSignatureAsync(Manager(), new DocumentSignOffRequest { ManagerName = "Mary", Signature = Signature }, default);
@@ -486,8 +486,9 @@ public sealed class DocumentSigningTests : IDisposable
         await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
 
         var document = await db.EmployeeDocuments.SingleAsync();
-        Assert.True(document.AwaitingManagerSignature);
-        Assert.Null(document.ManagerSignedByName);
+        Assert.False(document.AwaitingManagerSignature);
+        Assert.Equal("Mary", document.ManagerSignedByName);
+        Assert.Equal(DocumentReviewStatus.NeedsReview, document.ReviewStatus);
     }
 
     [Fact]
@@ -541,7 +542,7 @@ public sealed class DocumentSigningTests : IDisposable
     }
 
     [Fact]
-    public async Task HealthFormWithAYesWaitsForAManagerEvenWithASavedSignature()
+    public async Task HealthFormWithAYesIsSignedAutomaticallyAndStaysFlagged()
     {
         await AddObuTemplate(HealthFields, ManagerSignatureField);
         await service.SaveAutomaticSignatureAsync(Manager(), new DocumentSignOffRequest { ManagerName = "Mary", Signature = Signature }, default);
@@ -549,9 +550,10 @@ public sealed class DocumentSigningTests : IDisposable
         await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_yes", "true")), default);
 
         var document = await db.EmployeeDocuments.SingleAsync();
-        Assert.True(document.AwaitingManagerSignature);
-        Assert.Null(document.ManagerSignedByName);
-        Assert.Single(await service.ListSignOffsAsync(default));
+        Assert.False(document.AwaitingManagerSignature);
+        Assert.Equal("Mary", document.ManagerSignedByName);
+        Assert.Equal(DocumentReviewStatus.NeedsReview, document.ReviewStatus);
+        Assert.Empty(await service.ListSignOffsAsync(default));
     }
 
     private static DocumentSignOffActor Manager() =>
@@ -618,11 +620,14 @@ public sealed class DocumentSigningTests : IDisposable
         await service.SignAsync(driver, actor, points.Id, Request(), default);
         var signed = await db.EmployeeDocuments.SingleAsync();
         signed.NewSignatureRequested = true;
+        signed.RedoReason = "Wrong date.";
         await db.SaveChangesAsync();
 
         await service.SignAsync(driver, actor, points.Id, Request(), default);
 
-        Assert.False((await db.EmployeeDocuments.SingleAsync()).NewSignatureRequested);
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.False(document.NewSignatureRequested);
+        Assert.Null(document.RedoReason);
     }
 
     [Fact]

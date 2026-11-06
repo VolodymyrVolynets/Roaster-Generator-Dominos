@@ -71,6 +71,7 @@ public sealed class EmployeeDocumentConfiguration : IEntityTypeConfiguration<Emp
         builder.Property(document => document.ReviewReasons).HasColumnName("review_reasons").IsRequired();
         builder.Property(document => document.EmployeeNote).HasColumnName("employee_note").HasMaxLength(500);
         builder.Property(document => document.NewSignatureRequested).HasColumnName("new_signature_requested").IsRequired();
+        builder.Property(document => document.RedoReason).HasColumnName("redo_reason").HasMaxLength(500);
         builder.Property(document => document.AwaitingManagerSignature).HasColumnName("awaiting_manager_signature").IsRequired();
         builder.Property(document => document.ManagerSignedByName).HasColumnName("manager_signed_by_name").HasMaxLength(200);
         builder.Property(document => document.ManagerSignedAtUtc).HasColumnName("manager_signed_at_utc");

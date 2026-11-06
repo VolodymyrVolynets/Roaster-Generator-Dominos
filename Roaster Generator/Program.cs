@@ -131,6 +131,7 @@ builder.Services.AddScoped<IValidator<DocumentTemplateFieldsRequest>, DocumentTe
 builder.Services.AddScoped<IValidator<VehicleChangeRequest>, VehicleChangeRequestValidator>();
 builder.Services.AddScoped<AdminDocumentService>();
 builder.Services.AddScoped<IValidator<DocumentAdminUpdateRequest>, DocumentAdminUpdateRequestValidator>();
+builder.Services.AddScoped<IValidator<DocumentRedoRequest>, DocumentRedoRequestValidator>();
 builder.Services.AddSingleton<IDocumentAnalyser, ClaudeDocumentAnalyser>();
 builder.Services.AddHostedService<DocumentDraftCleanupService>();
 builder.Services.AddRateLimiter(DocumentRateLimits.Configure);
