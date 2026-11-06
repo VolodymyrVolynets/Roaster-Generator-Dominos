@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Roaster_Generator.Enums;
 using Roaster_Generator.Services;
 
 namespace Roaster_Generator.Contracts.Documents;
@@ -55,9 +56,22 @@ public sealed class DocumentChecklistItem
     public DateTimeOffset? UploadedAtUtc { get; init; }
 }
 
+public sealed class DocumentChecklistType
+{
+    public Guid Id { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public DocumentExpiryRule ExpiryRule { get; init; }
+    public bool HasReference { get; init; }
+}
+
 public sealed class DocumentChecklistResponse
 {
     public IReadOnlyList<DocumentChecklistItem> Items { get; init; } = [];
+
+    /// <summary>Active types the employee can choose when correcting an upload.</summary>
+    public IReadOnlyList<DocumentChecklistType> DocumentTypes { get; init; } = [];
+
     public bool CanAnalyse { get; init; }
 }
 

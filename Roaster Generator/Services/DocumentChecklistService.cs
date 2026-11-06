@@ -33,6 +33,15 @@ public sealed class DocumentChecklistService(
         return new DocumentChecklistResponse
         {
             Items = rows.Select(ToItem).ToArray(),
+            DocumentTypes = types.Where(type => type.IsActive).OrderBy(type => type.SortOrder)
+                .Select(type => new DocumentChecklistType
+                {
+                    Id = type.Id,
+                    Code = type.Code,
+                    Name = type.Name,
+                    ExpiryRule = type.ExpiryRule,
+                    HasReference = type.HasReference
+                }).ToArray(),
             CanAnalyse = protector.IsConfigured
         };
     }

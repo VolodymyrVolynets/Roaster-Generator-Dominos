@@ -7,6 +7,7 @@ import { getWeekOffsetFromDate } from '../../lib/weekSelection'
 import { AbsentPanel } from '../absence/AbsentPanel'
 import { AvailabilityHeatmap } from '../availability/DriverAvailabilityHeatmap'
 import { RosterGenerationPanel, SavedRosterPanel } from '../roster/RosterAdmin'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { DocumentSettingsPanel } from '../settings/DocumentSettingsPanel'
 import { StoreSettingsPanel } from '../settings/StoreSettingsPanel'
 import { fetchJson } from '../../api/client'
@@ -203,6 +204,8 @@ export function AdminConsole({
     : (realtimeVersions.rosterDrivers || 0) + (realtimeVersions.demandDrivers || 0)
 
   const isSystemAdmin = authState.user.isAdmin
+  const hasOwnDocuments = Boolean(authState.user.employeeId) &&
+    authState.user.roles?.some((role) => ['Driver', 'InStore', 'Manager'].includes(role))
   const weekScopedTabs = new Set(['roster', 'employee-availability', 'my-availability', 'demand', 'generate-roster', 'saved-rosters'])
   const navGroups = [
     {
@@ -212,7 +215,8 @@ export function AdminConsole({
         { id: 'holiday', label: 'Holiday', icon: 'sun' },
         { id: 'sick-leave', label: 'Sick leave', icon: 'cross' },
         { id: 'absent', label: 'Absent', icon: 'absent' },
-      ],
+        hasOwnDocuments && { id: 'my-documents', label: 'My documents', icon: 'document' },
+      ].filter(Boolean),
     },
     {
       label: 'Availability',
@@ -634,6 +638,8 @@ export function AdminConsole({
         {activeTab === 'sick-leave' && <AdminSickLeavePanel setErrorPopup={setErrorPopup} includeOwnRequest={!authState.user.isAdmin && Boolean(authState.user.employeeId)} realtimeKey={realtimeVersions.sickLeave} />}
 
         {activeTab === 'absent' && <AbsentPanel management admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
+
+        {activeTab === 'my-documents' && hasOwnDocuments && <DocumentsPanel realtimeKey={realtimeVersions.documents} />}
 
         {activeTab === 'store-settings' && authState.user.isAdmin && <StoreSettingsPanel fetchJson={fetchJson} />}
 

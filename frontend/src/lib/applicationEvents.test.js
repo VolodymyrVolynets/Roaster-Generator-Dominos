@@ -67,3 +67,10 @@ test('absent form submissions refresh forms without changing scheduling data', (
   assert.equal(next.availability, 0)
   assert.equal(next.sickLeave, 0)
 })
+
+test('document changes refresh the document list', () => {
+  const next = applyApplicationChangedEvent(initialApplicationEventVersions, { type: 'documentsChanged' }, 'employee')
+
+  assert.equal(next.documents, 1)
+  assert.equal(next.employees, 0)
+})

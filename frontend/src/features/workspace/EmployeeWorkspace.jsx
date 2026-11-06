@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { WeekSelector } from '../../components/SelectionControls'
 import { AppShell } from '../../components/AppShell'
 import { AbsentPanel } from '../absence/AbsentPanel'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { fetchJson } from '../../api/client'
 import { ErrorPopup } from '../../components/ErrorPopup'
 import { ScheduleEditor } from '../availability/ScheduleEditor'
@@ -64,6 +65,7 @@ export function EmployeeWorkspace({
       { id: 'holiday', label: 'Holiday', icon: 'sun' },
       { id: 'sick-leave', label: 'Sick leave', icon: 'cross' },
       isDriver && { id: 'absent', label: 'Absent', icon: 'absent' },
+      { id: 'documents', label: 'Documents', icon: 'document' },
     ].filter(Boolean),
   }]
   const showsWeek = activeTab === 'availability' || activeTab === 'roster'
@@ -90,7 +92,9 @@ export function EmployeeWorkspace({
           />
         )}
       >
-        {activeTab === 'holiday' ? (
+        {activeTab === 'documents' ? (
+          <DocumentsPanel realtimeKey={realtimeVersions.documents} />
+        ) : activeTab === 'holiday' ? (
           <HolidayPanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.holiday} />
         ) : activeTab === 'sick-leave' ? (
           <SickLeavePanel setErrorPopup={setErrorPopup} realtimeKey={realtimeVersions.sickLeave} />

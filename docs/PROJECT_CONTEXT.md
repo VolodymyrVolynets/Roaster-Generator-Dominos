@@ -128,7 +128,7 @@ Enforce these rules in the API and validator/service layer; UI limits are only c
 
 ## Employee documents
 
-Administrators configure document types and required lists under **Document settings**. The upload and AI analysis API exists; the employee Documents tab and admin document list are not built yet, and no signed-file concept is modelled.
+Administrators configure document types and required lists under **Document settings**. Employees use the **Documents** tab, and Managers or Admins with an employee role use **My documents**. The admin document list is not built yet, and no signed-file concept is modelled.
 
 - `DocumentType` is the catalogue. `Code` is stable and is what the rules and AI analysis use. `DocumentRequirement` holds one required list per `DocumentCategory` (`CarOwn`, `CarCompany`, `MopedOwn`, `MopedCompany`, `EBikeOwn`, `EBikeCompany`, `InStore`, `Manager`), each item marked `Always`, `NonEuPassport` or `Stamp2`.
 - `EmployeeDocument` is the current document of one type for one employee, enforced by a unique index. Files are in `EmployeeDocumentFile`, a separate table so list queries never load bytes. A file belongs to exactly one document or `DocumentDraft`, enforced by a check constraint.
@@ -145,6 +145,8 @@ Uploading has two steps. `POST /api/documents/analyses` validates the files, sen
 The employee can always continue. A failed analysis, an unreadable or unidentified file, a problem Claude reports, a failed check or an edited field sets `NeedsReview` with reasons for the administrator. Administrator uploads are not flagged. The refusal, cut-off response, API errors and timeouts all count as a failed analysis.
 
 `ClaudeDocumentAnalyser` makes one Messages call with no tools and a fixed output schema, sends files only in the request, and uses `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` (default `claude-opus-5-5`). It may fall back to another Claude model on a refusal. `DocumentAnalysisParser` treats the output as untrusted and limits it. Never log document content, file names, names or reference numbers. Analyses are limited to 20 per user per hour, in memory, because each is a paid call. Without `Documents__EncryptionKey` uploads return `503`; without `ANTHROPIC_API_KEY` they continue as failed analyses.
+
+The browser resizes photos and re-encodes them as JPEG before upload, which removes EXIF location data. Adding another page re-runs the analysis on all pages and keeps anything the person already typed.
 
 Removing an employee archives the row, so the foreign-key cascade does not run. `EmployeeDocumentRemoval` therefore permanently deletes their documents, files and drafts in the removal transaction and records a `Deleted` audit event per document. Deactivating an employee keeps their documents.
 
