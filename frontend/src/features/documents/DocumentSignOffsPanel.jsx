@@ -182,6 +182,10 @@ function SignOffSheet({ documentId, onFinish }) {
       {state.status === 'loading' && <p className="message info-message" role="status">Loading the form…</p>}
       {state.status === 'error' && <p className="message error-message" role="alert">{state.message}</p>}
       {form && <form className="document-review" onSubmit={save}>
+        {form.reviewReasons.length > 0 && <div className="message info-message document-warnings">
+          <strong>Check before signing</strong>
+          <ul>{form.reviewReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+        </div>}
         <a className="secondary-button document-link-button" href={`${url}/form`} target="_blank" rel="noreferrer">Read the completed form</a>
         {form.asksForManagerName && <div className="absent-field">
           <label htmlFor="signoff-name">Your name</label>

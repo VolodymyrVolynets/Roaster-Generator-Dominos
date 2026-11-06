@@ -205,6 +205,23 @@ public sealed class DocumentSigningTests : IDisposable
     }
 
     [Fact]
+    public async Task ManagerSeesTheFlagsAndSigningClearsTheReview()
+    {
+        await Setup(points, ("manager_signature", DocumentFieldSource.ManagerSignature));
+        analyser.Problems = ["The phone number can't be valid."];
+        var id = (await service.SignAsync(driver, actor, points.Id, Request(), default))!.Value;
+
+        var form = await service.GetSignOffAsync(id, Manager(), default);
+        await service.ManagerSignAsync(id, Manager(), new DocumentSignOffRequest { Signature = Signature }, default);
+
+        Assert.Equal(["The phone number can't be valid."], form!.ReviewReasons);
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.Equal(DocumentReviewStatus.Clear, document.ReviewStatus);
+        Assert.Empty(document.ReviewReasons);
+        Assert.Contains(db.DocumentAuditEvents, item => item.Action == DocumentAuditAction.Reviewed);
+    }
+
+    [Fact]
     public async Task ManagerCannotSignTheirOwnForm()
     {
         await Setup(points, ("manager_signature", DocumentFieldSource.ManagerSignature));
