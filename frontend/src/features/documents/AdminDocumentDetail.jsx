@@ -112,7 +112,7 @@ export function AdminDocumentDetail({ documentId, onClose, onChanged }) {
           Due date {document.fields.expiryDate}, calculated from the signing date and points.
         </p>}
         {state.message && <p className="save-message success" role="status">{state.message}</p>}
-        <div className="document-type-actions">
+        <div className="document-sheet-actions document-type-actions">
           <button type="submit" disabled={busy}>{busy ? 'Saving…' : document.needsReview ? 'Save and mark reviewed' : 'Save changes'}</button>
           {document.documentType.kind === 'Sign' && <button type="button" className="secondary-button" onClick={requestSignature}
             disabled={busy || document.newSignatureRequested}>{document.newSignatureRequested ? 'Signature requested' : 'Ask to sign again'}</button>}
@@ -162,6 +162,6 @@ function FilePreview({ documentId, file }) {
   return <li>
     {url && <img src={url} alt={`Page ${file.pageIndex + 1} of the document`} />}
     {!url && <span>{failed ? 'Preview unavailable' : isImage ? 'Loading…' : 'PDF document'}</span>}
-    <a className="table-link" href={fileUrl(documentId, file.id)}>Download page {file.pageIndex + 1}</a>
+    <a className="secondary-button document-link-button" href={fileUrl(documentId, file.id)}>Download page {file.pageIndex + 1}</a>
   </li>
 }
