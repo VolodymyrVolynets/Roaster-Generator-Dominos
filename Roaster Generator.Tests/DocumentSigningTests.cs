@@ -416,6 +416,33 @@ public sealed class DocumentSigningTests : IDisposable
         Assert.DoesNotContain("Skin", Assert.Single(document.ReviewReasons));
     }
 
+    private const string ManagerSignatureField = "{\"name\":\"manager_signature\",\"label\":\"m\",\"source\":\"ManagerSignature\"}";
+
+    [Fact]
+    public async Task HealthFormWithAllNoIsSignedAutomatically()
+    {
+        await AddObuTemplate(HealthFields, ManagerSignatureField);
+        await service.SaveAutomaticSignatureAsync(Manager(), new DocumentSignOffRequest { ManagerName = "Mary", Signature = Signature }, default);
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
+
+        Assert.False((await db.EmployeeDocuments.SingleAsync()).AwaitingManagerSignature);
+    }
+
+    [Fact]
+    public async Task HealthFormWithAYesWaitsForAManagerEvenWithASavedSignature()
+    {
+        await AddObuTemplate(HealthFields, ManagerSignatureField);
+        await service.SaveAutomaticSignatureAsync(Manager(), new DocumentSignOffRequest { ManagerName = "Mary", Signature = Signature }, default);
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_yes", "true")), default);
+
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.True(document.AwaitingManagerSignature);
+        Assert.Null(document.ManagerSignedByName);
+        Assert.Single(await service.ListSignOffsAsync(default));
+    }
+
     private static DocumentSignOffActor Manager() =>
         new(new DocumentActor(Guid.NewGuid(), "mary", false), Guid.NewGuid(), "Mary Manager");
 

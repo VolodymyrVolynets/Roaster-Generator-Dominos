@@ -167,7 +167,8 @@ public sealed class DocumentSigningService(
         var now = timeProvider.GetUtcNow();
         var today = DocumentDates.Today(timeProvider);
         var needsManager = mapping.Any(item => item.Source == DocumentFieldSource.ManagerSignature);
-        var automatic = needsManager ? await AutomaticSignatureAsync(employee.Id, ct) : null;
+        // A Yes needs a manager to read the form, so it never gets the saved signature.
+        var automatic = needsManager && !healthAnswers.Contains(true) ? await AutomaticSignatureAsync(employee.Id, ct) : null;
         if (automatic is not null)
             pdf = CompleteManagerPart(pdf, mapping, automatic.ManagerName, automatic.Png);
         var existing = await db.EmployeeDocuments.Include(item => item.Files)
@@ -367,7 +368,9 @@ public sealed class DocumentSigningService(
         var today = DocumentDates.Today(timeProvider).ToString(DateFormat, CultureInfo.InvariantCulture);
         var values = mapping.Where(item => DocumentTemplatePdf.IsManagerSource(item.Source)).ToDictionary(
             item => item.Name,
-            item => (string?)(item.Source == DocumentFieldSource.ManagerDate ? today : name),
+            item => (string?)(item.Source == DocumentFieldSource.ManagerDate ? today
+                : item.Name.EndsWith("_capitals", StringComparison.Ordinal) ? name.ToUpperInvariant()
+                : name),
             StringComparer.Ordinal);
         try
         {
