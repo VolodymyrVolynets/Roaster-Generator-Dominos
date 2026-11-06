@@ -116,7 +116,14 @@ export function groupSignFields(fields) {
     if (field.isCheckbox && field.name.endsWith('_no') && byName.has(`${field.name.slice(0, -3)}_yes`)) continue
     const no = field.isCheckbox && field.name.endsWith('_yes') ? byName.get(`${field.name.slice(0, -4)}_no`) : null
     if (no) {
-      groups.push({ kind: 'question', key: field.name, label: field.label.replace(/:\s*Yes$/, ''), yes: field, no })
+      const question = { kind: 'question', key: field.name, label: field.label.replace(/:\s*Yes$/, ''), yes: field, no }
+      if (field.name.startsWith('health_')) {
+        const health = groups.find((group) => group.kind === 'health')
+        if (health) health.questions.push(question)
+        else groups.push({ kind: 'health', key: 'health', questions: [question] })
+      } else {
+        groups.push(question)
+      }
       continue
     }
 
@@ -131,6 +138,15 @@ export function groupSignFields(fields) {
     groups.push({ kind: 'field', key: field.name, field })
   }
   return groups
+}
+
+export const hasUnansweredHealthQuestion = (groups, values) => groups
+  .filter((group) => group.kind === 'health')
+  .some((group) => group.questions.some(({ yes, no }) => values[yes.name] !== 'true' && values[no.name] !== 'true'))
+
+/** The employee's answer to "None of these apply", applied to every question. */
+export function answerAllHealthQuestions(group, noneApply) {
+  return Object.fromEntries(group.questions.flatMap(({ yes, no }) => [[yes.name, 'false'], [no.name, String(noneApply)]]))
 }
 
 export function missingSignFields(fields, values) {

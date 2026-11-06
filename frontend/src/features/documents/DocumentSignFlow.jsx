@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchJson } from '../../api/client'
-import { groupSignFields, missingSignFields } from '../../lib/documents'
+import { answerAllHealthQuestions, groupSignFields, hasUnansweredHealthQuestion, missingSignFields } from '../../lib/documents'
 import { SignaturePad } from './SignaturePad'
 
 export function DocumentSignFlow({ documentTypeId, onFinish }) {
@@ -8,6 +8,7 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
   const [values, setValues] = useState({})
   const [signed, setSigned] = useState(false)
   const [state, setState] = useState({ status: 'loading', message: '' })
+  const [healthChoice, setHealthChoice] = useState('')
   const padRef = useRef(null)
   const saving = state.status === 'saving'
 
@@ -26,6 +27,19 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
     return () => { cancelled = true }
   }, [documentTypeId])
 
+  function renderQuestion(group) {
+    return <div className="document-question document-note" key={group.key} role="radiogroup" aria-label={group.label}>
+      <span className="document-question-label">{group.label}</span>
+      <div className="document-question-options">
+        {[[group.yes, 'Yes', group.no], [group.no, 'No', group.yes]].map(([field, label, other]) => <label key={field.name} className="document-choice">
+          <input type="radio" name={group.key} checked={values[field.name] === 'true'}
+            onChange={() => setValues((current) => ({ ...current, [field.name]: 'true', [other.name]: 'false' }))} />
+          <span>{label}</span>
+        </label>)}
+      </div>
+    </div>
+  }
+
   function renderField(field) {
     if (field.isCheckbox) return <label key={field.name} className="document-type-toggle document-note">
       <input type="checkbox" checked={values[field.name] === 'true'}
@@ -42,6 +56,10 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
 
   async function save(event) {
     event.preventDefault()
+    if (hasUnansweredHealthQuestion(groupSignFields(form.fields), values)) {
+      setState({ status: 'error', message: 'Please answer the health questions.' })
+      return
+    }
     const missing = missingSignFields(form.fields, values)
     if (missing.length > 0) {
       setState({ status: 'error', message: `Please complete: ${missing.map((field) => field.label).join(', ')}.` })
@@ -77,16 +95,27 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
               <div className="document-section-fields">{group.fields.map(renderField)}</div>
             </details>
             if (group.kind === 'field') return renderField(group.field)
-            return <div className="document-question document-note" key={group.key} role="radiogroup" aria-label={group.label}>
-              <span className="document-question-label">{group.label}</span>
-              <div className="document-question-options">
-                {[[group.yes, 'Yes', group.no], [group.no, 'No', group.yes]].map(([field, label, other]) => <label key={field.name} className="document-choice">
-                  <input type="radio" name={group.key} checked={values[field.name] === 'true'}
-                    onChange={() => setValues((current) => ({ ...current, [field.name]: 'true', [other.name]: 'false' }))} />
-                  <span>{label}</span>
-                </label>)}
+            if (group.kind === 'health') return <div className="document-health document-note" key={group.key}>
+              <strong>Health questions</strong>
+              <ul>{group.questions.map((question) => <li key={question.key}>{question.label}</li>)}</ul>
+              <div className="document-question" role="radiogroup" aria-label="Do any of these apply to you?">
+                <span className="document-question-label">Do any of these apply to you?</span>
+                <div className="document-question-options">
+                  {[['none', 'None apply'], ['some', 'Something applies']].map(([choice, label]) => <label key={choice} className="document-choice">
+                    <input type="radio" name="health-choice" checked={healthChoice === choice} onChange={() => {
+                      setHealthChoice(choice)
+                      setValues((current) => ({ ...current, ...answerAllHealthQuestions(group, choice === 'none') }))
+                    }} />
+                    <span>{label}</span>
+                  </label>)}
+                </div>
               </div>
+              {healthChoice === 'some' && <>
+                <p className="holiday-help">Answer each question. A manager will read your answers.</p>
+                {group.questions.map(renderQuestion)}
+              </>}
             </div>
+            return renderQuestion(group)
           })}
         </fieldset>
         <SignaturePad ref={padRef} disabled={saving} onChange={setSigned} />

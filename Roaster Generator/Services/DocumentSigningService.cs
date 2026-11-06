@@ -19,6 +19,7 @@ public sealed class DocumentSigningService(
 {
     private const int MaxSignatureBytes = 1024 * 1024;
     private const string DateFormat = "dd/MM/yyyy";
+    private const string HealthYesReason = "The employee answered Yes to a health question. Read the form and assess it before they handle food.";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -144,6 +145,7 @@ public sealed class DocumentSigningService(
             else if (field.Source == DocumentFieldSource.TickedForMoped && isMoped) values[field.Name] = "true";
         }
 
+        var healthAnswers = ReadHealthAnswers(mapping, values);
         var points = ReadPoints(mapping, values);
         var registration = mapping.FirstOrDefault(item => item.Source == DocumentFieldSource.VehicleRegistration) is { } registrationField
             ? values.GetValueOrDefault(registrationField.Name)
@@ -187,6 +189,8 @@ public sealed class DocumentSigningService(
             IssueDate = today,
             PenaltyPoints = points,
             ExpiryDate = DocumentChecks.ResolveExpiry(type.ExpiryRule, null, today, points),
+            ReviewStatus = healthAnswers.Contains(true) ? DocumentReviewStatus.NeedsReview : DocumentReviewStatus.Clear,
+            ReviewReasons = healthAnswers.Contains(true) ? [HealthYesReason] : [],
             AwaitingManagerSignature = needsManager && automatic is null,
             ManagerSignedByName = automatic?.ManagerName,
             ManagerSignedAtUtc = automatic is null ? null : now,
@@ -423,6 +427,22 @@ public sealed class DocumentSigningService(
             [DocumentFieldSource.StoreName] = store.StoreName,
             [DocumentFieldSource.FranchiseeName] = store.FranchiseeName
         };
+    }
+
+    /// <summary>Every health question needs one answer. The review reason stays general, so health details remain only in the encrypted form.</summary>
+    private static IReadOnlyList<bool> ReadHealthAnswers(
+        IEnumerable<DocumentTemplateField> mapping, IReadOnlyDictionary<string, string?> values)
+    {
+        var answers = new List<bool>();
+        foreach (var yesField in mapping.Where(item => item.Name.StartsWith("health_", StringComparison.Ordinal) && item.Name.EndsWith("_yes", StringComparison.Ordinal)))
+        {
+            var yes = values.GetValueOrDefault(yesField.Name) == "true";
+            var no = values.GetValueOrDefault(string.Concat(yesField.Name.AsSpan(0, yesField.Name.Length - 3), "no")) == "true";
+            if (yes == no) throw new DocumentSettingsException("Please answer every health question.");
+            answers.Add(yes);
+        }
+
+        return answers;
     }
 
     private static int? ReadPoints(IEnumerable<DocumentTemplateField> mapping, IReadOnlyDictionary<string, string?> values)

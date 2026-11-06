@@ -56,7 +56,8 @@ public sealed class DocumentCatalogueService(AppDbContext db)
 
     private static readonly string[] SignedCodes =
     [
-        DocumentTypeCodes.Spf, DocumentTypeCodes.Obu, DocumentTypeCodes.PenaltyPoints, DocumentTypeCodes.BikeSafety
+        DocumentTypeCodes.Spf, DocumentTypeCodes.Obu, DocumentTypeCodes.PenaltyPoints, DocumentTypeCodes.BikeSafety,
+        DocumentTypeCodes.FoodHandler
     ];
 
     private static readonly DocumentCategory[] BikeCategories =

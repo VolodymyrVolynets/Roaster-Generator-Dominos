@@ -75,6 +75,12 @@ public sealed class DocumentSigningTests : IDisposable
     }
 
     [Fact]
+    public void AcceptsAFormWhosePagesCanBeDrawnOn()
+    {
+        Assert.NotEmpty(DocumentTemplatePdf.ReadFields(Template()));
+    }
+
+    [Fact]
     public void RejectsAFileThatIsNotAPdf()
     {
         Assert.Throws<InvalidDataException>(() => DocumentTemplatePdf.ReadFields([1, 2, 3]));
@@ -372,6 +378,42 @@ public sealed class DocumentSigningTests : IDisposable
         var form = await service.GetFormAsync(driver, obu.Id, default);
 
         Assert.False(Assert.Single(form!.Fields).ReadOnly);
+    }
+
+    private const string HealthFields =
+        "{\"name\":\"health_skin_yes\",\"label\":\"Skin: Yes\",\"isCheckbox\":true,\"required\":false,\"source\":\"Ask\"}," +
+        "{\"name\":\"health_skin_no\",\"label\":\"Skin: No\",\"isCheckbox\":true,\"required\":false,\"source\":\"Ask\"}";
+
+    [Fact]
+    public async Task HealthQuestionsMustAllBeAnswered()
+    {
+        await AddObuTemplate(HealthFields);
+
+        await Assert.ThrowsAsync<DocumentSettingsException>(() => service.SignAsync(driver, actor, obu.Id, Request(), default));
+        await Assert.ThrowsAsync<DocumentSettingsException>(() => service.SignAsync(driver, actor, obu.Id,
+            Request(("health_skin_yes", "true"), ("health_skin_no", "true")), default));
+    }
+
+    [Fact]
+    public async Task AnsweringNoToHealthQuestionsNeedsNoReview()
+    {
+        await AddObuTemplate(HealthFields);
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
+
+        Assert.Equal(DocumentReviewStatus.Clear, (await db.EmployeeDocuments.SingleAsync()).ReviewStatus);
+    }
+
+    [Fact]
+    public async Task AnsweringYesFlagsTheFormWithoutRepeatingHealthDetails()
+    {
+        await AddObuTemplate(HealthFields);
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_yes", "true")), default);
+
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.Equal(DocumentReviewStatus.NeedsReview, document.ReviewStatus);
+        Assert.DoesNotContain("Skin", Assert.Single(document.ReviewReasons));
     }
 
     private static DocumentSignOffActor Manager() =>
