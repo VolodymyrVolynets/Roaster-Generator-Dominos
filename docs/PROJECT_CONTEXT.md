@@ -126,6 +126,22 @@ Sick-note contents are stored temporarily in PostgreSQL so review and permanent 
 
 Enforce these rules in the API and validator/service layer; UI limits are only convenience checks.
 
+## Employee documents
+
+Administrators configure document types and required lists under **Document settings**. Employee upload, AI analysis and the admin document list are not built yet, and no signed-file concept is modelled.
+
+- `DocumentType` is the catalogue. `Code` is stable and is what the rules and AI analysis use. `DocumentRequirement` holds one required list per `DocumentCategory` (`CarOwn`, `CarCompany`, `MopedOwn`, `MopedCompany`, `EBikeOwn`, `EBikeCompany`, `InStore`, `Manager`), each item marked `Always`, `NonEuPassport` or `Stamp2`.
+- `EmployeeDocument` is the current document of one type for one employee, enforced by a unique index. Files are in `EmployeeDocumentFile`, a separate table so list queries never load bytes. A file belongs to exactly one document or `DocumentDraft`, enforced by a check constraint.
+- `DocumentAuditEvent` has no foreign keys so it survives deletion, and must never hold file contents or reference numbers.
+- Files are encrypted by `DocumentFileProtector` (AES-256-GCM, bound to the file id) using the base64 32-byte `Documents__EncryptionKey`. Losing that key makes every stored file unreadable, so keep it apart from database backups.
+- `DocumentRequirementResolver` works out an employee's list from Identity roles plus matching profiles. Multiple roles use the union. EU or non-EU comes from the passport's ISO alpha-2 issuing country, with EU, EEA, Switzerland and the UK exempt. An IRP is satisfied by a valid IRP, or by LMP and TRC together. Only Stamp 2 applies the college-letter rule; Stamp 2A or an unread stamp goes to an administrator. Its output never names the category, because driver profile details stay out of the driver workspace.
+- `DocumentChecks` holds the deterministic warnings (expiry, name, EU-issued licence, registration) and the PP due date: signing date plus 3 months for 0 to 3 points, or 1 month for more than 3. AI analysis only reads documents; it does not decide these.
+- `DocumentFileValidator` accepts one PDF (up to 20 pages, not encrypted) or up to 4 JPEG, PNG or WebP images (5 MB each), 20 MB in total, so base64 fits the 32 MB Claude request limit.
+- Startup seeds the catalogue and every required list only while the catalogue is empty, so administrator changes are never undone. All six driver lists start from the onboarding driver list, and `InStore` and `Manager` from the in-store list; administrators adjust them from there.
+- `GET/POST /api/admin/document-types`, `PUT/DELETE /api/admin/document-types/{id}`, `GET /api/admin/document-requirements` and `PUT /api/admin/document-requirements/{category}` are Admin-only. `Code` is generated once and never changes. Built-in types and types on a list or with uploaded documents cannot be deleted, only turned off.
+
+Removing an employee archives the row, so the foreign-key cascade does not run. `EmployeeDocumentRemoval` therefore permanently deletes their documents, files and drafts in the removal transaction and records a `Deleted` audit event per document. Deactivating an employee keeps their documents.
+
 ## Absent forms
 
 Drivers can submit any number of absent forms through `GET/POST /api/absent`. Only an active employee with the current `Driver` Identity role can use these endpoints. Reads include only that driver's forms and shifts from saved driver rosters across all weeks. A submission can either reference one of those saved shifts or provide its own shift date, start hour and finish hour when the roster is missing or out of date. Saved selections are verified against the authenticated driver and a saved driver roster; inside shifts and another driver's shifts are rejected. A manually entered shift is stored only on the absent form and does not alter the saved roster.

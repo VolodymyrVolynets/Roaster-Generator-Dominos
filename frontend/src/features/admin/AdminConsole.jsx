@@ -7,6 +7,7 @@ import { getWeekOffsetFromDate } from '../../lib/weekSelection'
 import { AbsentPanel } from '../absence/AbsentPanel'
 import { AvailabilityHeatmap } from '../availability/DriverAvailabilityHeatmap'
 import { RosterGenerationPanel, SavedRosterPanel } from '../roster/RosterAdmin'
+import { DocumentSettingsPanel } from '../settings/DocumentSettingsPanel'
 import { StoreSettingsPanel } from '../settings/StoreSettingsPanel'
 import { fetchJson } from '../../api/client'
 import { ErrorPopup } from '../../components/ErrorPopup'
@@ -231,7 +232,10 @@ export function AdminConsole({
     },
     isSystemAdmin && {
       label: 'Store',
-      items: [{ id: 'store-settings', label: 'Store settings', icon: 'gear' }],
+      items: [
+        { id: 'store-settings', label: 'Store settings', icon: 'gear' },
+        { id: 'document-settings', label: 'Document settings', icon: 'document' },
+      ],
     },
   ].filter(Boolean)
 
@@ -632,6 +636,8 @@ export function AdminConsole({
         {activeTab === 'absent' && <AbsentPanel management admin={authState.user.isAdmin} fetchJson={fetchJson} realtimeKey={realtimeVersions.absent + realtimeVersions.employees + realtimeVersions.rosterDrivers} />}
 
         {activeTab === 'store-settings' && authState.user.isAdmin && <StoreSettingsPanel fetchJson={fetchJson} />}
+
+        {activeTab === 'document-settings' && authState.user.isAdmin && <DocumentSettingsPanel fetchJson={fetchJson} />}
 
         {activeTab === 'roster' && (
           <section className="availability-section admin-tools">

@@ -40,6 +40,18 @@ public sealed class AppDbContext(
 
     public DbSet<StoreSettings> StoreSettings => Set<StoreSettings>();
 
+    public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
+
+    public DbSet<DocumentRequirement> DocumentRequirements => Set<DocumentRequirement>();
+
+    public DbSet<EmployeeDocument> EmployeeDocuments => Set<EmployeeDocument>();
+
+    public DbSet<DocumentDraft> DocumentDrafts => Set<DocumentDraft>();
+
+    public DbSet<EmployeeDocumentFile> EmployeeDocumentFiles => Set<EmployeeDocumentFile>();
+
+    public DbSet<DocumentAuditEvent> DocumentAuditEvents => Set<DocumentAuditEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
