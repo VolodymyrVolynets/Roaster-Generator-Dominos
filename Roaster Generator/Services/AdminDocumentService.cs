@@ -56,7 +56,7 @@ public sealed class AdminDocumentService(
             var matchesEmployee = string.IsNullOrEmpty(search) || Contains(name, search) || Contains(employee.EmployeeNumber, search);
             var shown = rows
                 .Where(row => filters.DocumentTypeId is not Guid typeId || row.DocumentType.Id == typeId)
-                .Where(row => filters.State is not DocumentRowState state || row.State == state)
+                .Where(row => filters.State is not DocumentRowState state || MatchesState(row, state))
                 .Where(row => matchesEmployee || Contains(row.Document?.ReferenceNumber, search!) || Contains(row.Document?.HolderName, search!))
                 .ToArray();
             var unfiltered = filters.DocumentTypeId is null && filters.State is null && matchesEmployee;
@@ -83,6 +83,14 @@ public sealed class AdminDocumentService(
             CanAnalyse = protector.IsConfigured
         };
     }
+
+    /// <summary>A row shows one state, but a signed form can wait for a manager and a review at once.</summary>
+    private static bool MatchesState(DocumentChecklistRow row, DocumentRowState state) => row.State == state || state switch
+    {
+        DocumentRowState.WaitingForReview => row.Document?.ReviewStatus == DocumentReviewStatus.NeedsReview,
+        DocumentRowState.WaitingForManager => row.Document?.AwaitingManagerSignature == true,
+        _ => false
+    };
 
     public async Task<AdminDocumentDetail?> GetAsync(Guid id, CancellationToken ct)
     {

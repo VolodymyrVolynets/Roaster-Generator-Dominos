@@ -140,6 +140,7 @@ function AdminDocumentRow({ row, canUpload, onOpen, onUpload }) {
       <div className="documents-row-title">
         <strong>{row.documentTypeName}</strong>
         <span className={`document-state ${state.tone}`}>{state.label}</span>
+        {row.needsReview && row.state !== 'WaitingForReview' && <span className="document-state neutral">To review</span>}
       </div>
       {row.holderName && <span>{row.holderName}</span>}
       {details.length > 0 && <small>{details.join(' · ')}</small>}
