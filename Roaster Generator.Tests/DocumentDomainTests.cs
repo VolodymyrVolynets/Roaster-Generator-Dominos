@@ -490,6 +490,7 @@ public sealed class DocumentChecksTests
 
         Assert.Contains("nct, motor-tax and insurance can each be the full document or just the disc", prompt);
         Assert.Contains("insurance can be any type of cover.", prompt);
+        Assert.Contains("An nct disc can show more than one date. Its expiryDate is the latest one.", prompt);
         Assert.Contains("use the last day of that month", prompt);
     }
 
