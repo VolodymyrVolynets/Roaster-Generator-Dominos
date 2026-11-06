@@ -4,7 +4,7 @@ using Roaster_Generator.Services;
 
 namespace Roaster_Generator.Validation;
 
-public sealed class DocumentUploadRequestValidator : AbstractValidator<DocumentUploadRequest>
+public sealed class DocumentUploadRequestValidator : AbstractValidator<DocumentAnalyseForm>
 {
     public DocumentUploadRequestValidator()
     {

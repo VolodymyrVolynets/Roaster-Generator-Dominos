@@ -123,7 +123,13 @@ builder.Services.AddScoped<IValidator<StoreSettingsRequest>, StoreSettingsReques
 builder.Services.AddScoped<DocumentCatalogueService>();
 builder.Services.AddSingleton<DocumentFileProtector>();
 builder.Services.AddScoped<DocumentSettingsService>();
-builder.Services.AddScoped<IValidator<DocumentUploadRequest>, DocumentUploadRequestValidator>();
+builder.Services.AddScoped<DocumentDraftService>();
+builder.Services.AddScoped<DocumentChecklistService>();
+builder.Services.AddSingleton<IDocumentAnalyser, ClaudeDocumentAnalyser>();
+builder.Services.AddHostedService<DocumentDraftCleanupService>();
+builder.Services.AddRateLimiter(DocumentRateLimits.Configure);
+builder.Services.AddScoped<IValidator<DocumentSubmitRequest>, DocumentSubmitRequestValidator>();
+builder.Services.AddScoped<IValidator<DocumentAnalyseForm>, DocumentUploadRequestValidator>();
 builder.Services.AddScoped<IValidator<DocumentTypeRequest>, DocumentTypeRequestValidator>();
 builder.Services.AddScoped<IValidator<DocumentRequirementListRequest>, DocumentRequirementListRequestValidator>();
 builder.Services.AddScoped<IValidator<DemandImportRequest>, DemandImportRequestValidator>();
@@ -154,6 +160,7 @@ app.UseForwardedHeaders();
 app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {

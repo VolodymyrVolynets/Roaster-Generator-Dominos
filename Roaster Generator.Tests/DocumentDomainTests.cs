@@ -693,10 +693,10 @@ public sealed class DocumentFileValidatorTests
     {
         var validator = new DocumentUploadRequestValidator();
 
-        validator.TestValidate(new DocumentUploadRequest()).ShouldHaveValidationErrorFor(request => request.Files);
-        validator.TestValidate(new DocumentUploadRequest { Files = [File("a.jpg", [])] })
+        validator.TestValidate(new DocumentAnalyseForm()).ShouldHaveValidationErrorFor(request => request.Files);
+        validator.TestValidate(new DocumentAnalyseForm { Files = [File("a.jpg", [])] })
             .ShouldHaveValidationErrorFor(request => request.Files);
-        validator.TestValidate(new DocumentUploadRequest { Files = [File("a.jpg", Jpeg)] })
+        validator.TestValidate(new DocumentAnalyseForm { Files = [File("a.jpg", Jpeg)] })
             .ShouldNotHaveAnyValidationErrors();
     }
 

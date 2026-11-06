@@ -128,7 +128,7 @@ Enforce these rules in the API and validator/service layer; UI limits are only c
 
 ## Employee documents
 
-Administrators configure document types and required lists under **Document settings**. Employee upload, AI analysis and the admin document list are not built yet, and no signed-file concept is modelled.
+Administrators configure document types and required lists under **Document settings**. The upload and AI analysis API exists; the employee Documents tab and admin document list are not built yet, and no signed-file concept is modelled.
 
 - `DocumentType` is the catalogue. `Code` is stable and is what the rules and AI analysis use. `DocumentRequirement` holds one required list per `DocumentCategory` (`CarOwn`, `CarCompany`, `MopedOwn`, `MopedCompany`, `EBikeOwn`, `EBikeCompany`, `InStore`, `Manager`), each item marked `Always`, `NonEuPassport` or `Stamp2`.
 - `EmployeeDocument` is the current document of one type for one employee, enforced by a unique index. Files are in `EmployeeDocumentFile`, a separate table so list queries never load bytes. A file belongs to exactly one document or `DocumentDraft`, enforced by a check constraint.
@@ -139,6 +139,12 @@ Administrators configure document types and required lists under **Document sett
 - `DocumentFileValidator` accepts one PDF (up to 20 pages, not encrypted) or up to 4 JPEG, PNG or WebP images (5 MB each), 20 MB in total, so base64 fits the 32 MB Claude request limit.
 - Startup seeds the catalogue and every required list only while the catalogue is empty, so administrator changes are never undone. All six driver lists start from the onboarding driver list, and `InStore` and `Manager` from the in-store list; administrators adjust them from there.
 - `GET/POST /api/admin/document-types`, `PUT/DELETE /api/admin/document-types/{id}`, `GET /api/admin/document-requirements` and `PUT /api/admin/document-requirements/{category}` are Admin-only. `Code` is generated once and never changes. Built-in types and types on a list or with uploaded documents cannot be deleted, only turned off.
+
+Uploading has two steps. `POST /api/documents/analyses` validates the files, sends them to Claude, encrypts them into a `DocumentDraft` and returns what was read with any warnings. `POST /api/documents/analyses/{id}/submit` confirms the draft with possibly edited fields; a new document replaces and permanently deletes the old one of that type. `DELETE` discards a draft. Drafts belong to the person who created them, are replaced by that person's next analysis, and expire after an hour, after which `DocumentDraftCleanupService` deletes them. Administrators use the same steps under `/api/admin/employees/{employeeId}/documents/analyses`. `GET /api/documents` returns the checklist. There is deliberately no employee route that returns file contents.
+
+The employee can always continue. A failed analysis, an unreadable or unidentified file, a problem Claude reports, a failed check or an edited field sets `NeedsReview` with reasons for the administrator. Administrator uploads are not flagged. The refusal, cut-off response, API errors and timeouts all count as a failed analysis.
+
+`ClaudeDocumentAnalyser` makes one Messages call with no tools and a fixed output schema, sends files only in the request, and uses `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` (default `claude-opus-5-5`). It may fall back to another Claude model on a refusal. `DocumentAnalysisParser` treats the output as untrusted and limits it. Never log document content, file names, names or reference numbers. Analyses are limited to 20 per user per hour, in memory, because each is a paid call. Without `Documents__EncryptionKey` uploads return `503`; without `ANTHROPIC_API_KEY` they continue as failed analyses.
 
 Removing an employee archives the row, so the foreign-key cascade does not run. `EmployeeDocumentRemoval` therefore permanently deletes their documents, files and drafts in the removal transaction and records a `Deleted` audit event per document. Deactivating an employee keeps their documents.
 

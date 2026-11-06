@@ -33,6 +33,9 @@ services:
       AbsencePdf__StoreName: ${ABSENCE_PDF_STORE_NAME:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-astra}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+      Documents__EncryptionKey: ${DOCUMENTS_ENCRYPTION_KEY:-}
       DataProtection__KeysPath: /home/app/.aspnet/DataProtection-Keys
     volumes:
       - data_protection_keys:/home/app/.aspnet/DataProtection-Keys
