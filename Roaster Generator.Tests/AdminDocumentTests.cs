@@ -150,6 +150,22 @@ public sealed class AdminDocumentTests : IDisposable
         Assert.True(Assert.Single(group.Documents).NeedsReview);
     }
 
+    [Theory]
+    [InlineData(DocumentRowState.WaitingForReview)]
+    [InlineData(DocumentRowState.WaitingForManager)]
+    public async Task SignedFormWaitingForBothShowsUnderEitherFilter(DocumentRowState state)
+    {
+        var document = await AddDocument(driver, passport, review: DocumentReviewStatus.NeedsReview, reasons: ["Check this"]);
+        document.AwaitingManagerSignature = true;
+        await db.SaveChangesAsync();
+
+        var result = await service.ListAsync(new AdminDocumentFilters { State = state }, default);
+
+        var row = Assert.Single(Assert.Single(result.Groups).Documents);
+        Assert.Equal(DocumentRowState.WaitingForManager, row.State);
+        Assert.True(row.NeedsReview);
+    }
+
     [Fact]
     public async Task FiltersByType()
     {

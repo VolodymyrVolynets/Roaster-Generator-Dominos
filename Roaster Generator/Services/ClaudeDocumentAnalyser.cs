@@ -181,6 +181,7 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
 
             Vehicle documents:
             - nct, motor-tax and insurance can each be the full document or just the disc. A disc on its own is complete, so never report it as incomplete, and don't report details a disc doesn't show.
+            - An nct disc can show more than one date. Its expiryDate is the latest one.
             - insurance can be any type of cover. Never report the type of cover or its lack of business or delivery use as a problem.
 
             Document types:
