@@ -449,6 +449,50 @@ public sealed class DocumentChecksTests
         Assert.Equal([DocumentWarningCode.NameMismatch], Codes(facts));
     }
 
+    [Fact]
+    public void InsuranceMustBeInTheEmployeesName()
+    {
+        var facts = Facts() with
+        {
+            DocumentTypeCode = DocumentTypeCodes.Insurance,
+            PrintedExpiryDate = Today.AddDays(1),
+            HolderName = "Jane Doe"
+        };
+
+        Assert.Equal([DocumentWarningCode.NameMismatch], Codes(facts));
+    }
+
+    [Fact]
+    public void DiscWithNoNameIsNotAMismatch()
+    {
+        var facts = Facts() with
+        {
+            DocumentTypeCode = DocumentTypeCodes.MotorTax,
+            PrintedExpiryDate = Today.AddDays(1),
+            HolderName = null
+        };
+
+        Assert.Empty(Evaluate(facts));
+    }
+
+    [Fact]
+    public void InsuranceStillHasToBeInDate()
+    {
+        var facts = Facts() with { DocumentTypeCode = DocumentTypeCodes.Insurance, PrintedExpiryDate = Today.AddDays(-1) };
+
+        Assert.Equal([DocumentWarningCode.Expired], Codes(facts));
+    }
+
+    [Fact]
+    public void AnalysisAcceptsDiscsAndAnyInsurance()
+    {
+        var prompt = ClaudeDocumentAnalyser.SystemPrompt([]);
+
+        Assert.Contains("nct, motor-tax and insurance can each be the full document or just the disc", prompt);
+        Assert.Contains("insurance can be any type of cover.", prompt);
+        Assert.Contains("use the last day of that month", prompt);
+    }
+
     [Theory]
     [InlineData("IN", true)]
     [InlineData("GB", true)]
