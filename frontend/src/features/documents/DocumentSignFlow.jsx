@@ -77,10 +77,10 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
               <div className="document-section-fields">{group.fields.map(renderField)}</div>
             </details>
             if (group.kind === 'field') return renderField(group.field)
-            return <div className="absent-field document-note" key={group.key} role="group" aria-label={group.label}>
-              <span className="absent-field-label">{group.label}</span>
-              <div className="document-type-actions">
-                {[[group.yes, 'Yes', group.no], [group.no, 'No', group.yes]].map(([field, label, other]) => <label key={field.name} className="document-type-toggle">
+            return <div className="document-question document-note" key={group.key} role="radiogroup" aria-label={group.label}>
+              <span className="document-question-label">{group.label}</span>
+              <div className="document-question-options">
+                {[[group.yes, 'Yes', group.no], [group.no, 'No', group.yes]].map(([field, label, other]) => <label key={field.name} className="document-choice">
                   <input type="radio" name={group.key} checked={values[field.name] === 'true'}
                     onChange={() => setValues((current) => ({ ...current, [field.name]: 'true', [other.name]: 'false' }))} />
                   <span>{label}</span>
