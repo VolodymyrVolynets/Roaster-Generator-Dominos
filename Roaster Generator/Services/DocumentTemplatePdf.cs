@@ -26,6 +26,7 @@ public static class DocumentTemplatePdf
     {
         using var document = Open(content, PdfDocumentOpenMode.Import);
         var fields = FieldsOf(document);
+        EnsurePagesCanBeDrawnOn(document);
         var usable = fields is null
             ? []
             : fields.Names.Select(name => (Name: name, Field: fields[name])).Where(item => IsUsable(item.Field)).ToList();
@@ -108,6 +109,19 @@ public static class DocumentTemplatePdf
     }
 
     public static bool IsPng(ReadOnlySpan<byte> content) => content.StartsWith(PngSignature);
+
+    /// <summary>Some PDFs compress pages in a way PDFsharp can't read, which would only fail when an employee signs.</summary>
+    private static void EnsurePagesCanBeDrawnOn(PdfDocument document)
+    {
+        try
+        {
+            foreach (var page in document.Pages.Cast<PdfPage>()) _ = page.Contents;
+        }
+        catch (InvalidOperationException)
+        {
+            throw new InvalidDataException("This PDF can't be used. Open it, save it again as a PDF, and upload that copy.");
+        }
+    }
 
     private static PdfAcroField.PdfAcroFieldCollection? FieldsOf(PdfDocument document)
     {

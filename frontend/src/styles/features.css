@@ -4192,3 +4192,20 @@
   outline: 2px solid var(--accent-border-strong);
   outline-offset: 2px;
 }
+
+.document-health {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+}
+
+.document-health ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}

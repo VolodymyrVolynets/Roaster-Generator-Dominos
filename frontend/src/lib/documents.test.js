@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { checklistSummary, fieldsChanged, fieldsFor, fitWithin, groupSignFields, missingSignFields, stateFor, toDocumentListQuery, toFormFields, toSubmitRequest } from './documents.js'
+import { answerAllHealthQuestions, checklistSummary, fieldsChanged, fieldsFor, fitWithin, groupSignFields, hasUnansweredHealthQuestion, missingSignFields, stateFor, toDocumentListQuery, toFormFields, toSubmitRequest } from './documents.js'
 
 test('fitWithin never scales up', () => {
   assert.deepEqual(fitWithin(800, 600), { width: 800, height: 600 })
@@ -117,4 +117,18 @@ test('groupSignFields pairs yes and no into one question', () => {
   assert.deepEqual(groups.map((group) => group.kind), ['field', 'question', 'field'])
   assert.equal(groups[1].label, 'Current licence')
   assert.equal(groups[1].no.name, 'licence_no')
+})
+
+test('health questions are grouped and can all be answered no', () => {
+  const groups = groupSignFields([
+    { name: 'health_a_yes', isCheckbox: true, label: 'A: Yes' }, { name: 'health_a_no', isCheckbox: true, label: 'A: No' },
+    { name: 'health_b_yes', isCheckbox: true, label: 'B: Yes' }, { name: 'health_b_no', isCheckbox: true, label: 'B: No' },
+  ])
+
+  assert.deepEqual(groups.map((group) => group.kind), ['health'])
+  assert.equal(hasUnansweredHealthQuestion(groups, {}), true)
+  const values = answerAllHealthQuestions(groups[0], true)
+  assert.deepEqual(values, { health_a_yes: 'false', health_a_no: 'true', health_b_yes: 'false', health_b_no: 'true' })
+  assert.equal(hasUnansweredHealthQuestion(groups, values), false)
+  assert.equal(hasUnansweredHealthQuestion(groups, answerAllHealthQuestions(groups[0], false)), true)
 })
