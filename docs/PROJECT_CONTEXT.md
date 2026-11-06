@@ -154,7 +154,7 @@ Each `DocumentType` has a `Kind`. `Upload` types are uploaded through one button
 
 A form needs signing again when the penalty points date passes, after a car change, or when an administrator asks.
 
-Checkbox pairs named `health_*_yes` and `health_*_no` are health questions. The employee reads them and answers one question, or each one separately, but they are never pre-answered, because the employee signs that the answers are true. Every question needs an answer, and any Yes flags the form for review with a general reason, so health details stay in the encrypted PDF.
+Checkbox pairs named `health_*_yes` and `health_*_no` are health questions. The employee reads them and answers one question, or each one separately, but they are never pre-answered, because the employee signs that the answers are true. Every question needs an answer, and any Yes flags the form for review with a general reason, so health details stay in the encrypted PDF. A form with a Yes never gets the automatic signature; it waits under **Forms to sign** for a manager to read it.
 
 Documents never affect rostering. Expired, missing, flagged or wrong-vehicle documents do not change availability, roster eligibility, generation or saved rosters.
 
