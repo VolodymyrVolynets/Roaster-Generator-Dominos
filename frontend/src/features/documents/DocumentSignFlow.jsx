@@ -120,7 +120,7 @@ export function DocumentSignFlow({ documentTypeId, onFinish }) {
         </fieldset>
         <SignaturePad ref={padRef} disabled={saving} onChange={setSigned} />
         <div className="document-sheet-actions">
-          <button type="submit" disabled={!signed || saving}>{saving ? 'Saving…' : 'Sign and save'}</button>
+          <button type="submit" disabled={!signed || saving}>{saving ? 'Checking…' : 'Sign and save'}</button>
         </div>
       </form>}
     </section>
