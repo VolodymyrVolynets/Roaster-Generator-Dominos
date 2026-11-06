@@ -27,6 +27,7 @@ public sealed class DocumentSigningTests : IDisposable
         EncryptionKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
     }));
     private readonly DocumentSigningService service;
+    private readonly FakeAnalyser analyser = new();
     private readonly Employee driver = new()
     {
         Id = Guid.NewGuid(), FirstName = "Anna", LastName = "Driver", EmployeeNumber = "100", DriverProfile = new DriverProfile()
@@ -50,7 +51,7 @@ public sealed class DocumentSigningTests : IDisposable
     {
         var time = TimeProvider.System;
         service = new DocumentSigningService(db, protector, new DocumentVehicleService(db, time),
-            new StoreSettingsService(db, Options.Create(new AbsencePdfOptions { StoreId = "S1", StoreName = "Main" })), time);
+            new StoreSettingsService(db, Options.Create(new AbsencePdfOptions { StoreId = "S1", StoreName = "Main" })), analyser, time);
         db.Employees.Add(driver);
         db.DocumentTypes.AddRange(points, obu, passport);
         var role = new IdentityRole<Guid> { Id = Guid.NewGuid(), Name = RoleNames.Driver };
@@ -416,6 +417,99 @@ public sealed class DocumentSigningTests : IDisposable
         Assert.DoesNotContain("Skin", Assert.Single(document.ReviewReasons));
     }
 
+    [Fact]
+    public async Task ProblemsFoundAfterSigningFlagTheFormForReview()
+    {
+        await AddObuTemplate(HealthFields);
+        analyser.Problems = ["The phone number can't be valid."];
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
+
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.Equal(DocumentReviewStatus.NeedsReview, document.ReviewStatus);
+        Assert.Equal(["The phone number can't be valid."], document.ReviewReasons);
+    }
+
+    [Fact]
+    public async Task ACleanCheckLeavesTheFormClear()
+    {
+        await AddObuTemplate(HealthFields);
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
+
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.Equal(DocumentReviewStatus.Clear, document.ReviewStatus);
+        Assert.Empty(document.ReviewReasons);
+        Assert.Equal(1, analyser.Calls);
+        Assert.Equal("OBU", analyser.LastFormName);
+        Assert.True(analyser.LastPdf?.Length > 0);
+        Assert.Contains(analyser.LastAnswers, answer => answer.EndsWith(": ticked", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AFormThatCouldNotBeCheckedIsFlagged()
+    {
+        await AddObuTemplate(HealthFields);
+        analyser.Problems = null;
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
+
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.Equal(DocumentReviewStatus.NeedsReview, document.ReviewStatus);
+        Assert.Contains("couldn't be checked", Assert.Single(document.ReviewReasons));
+    }
+
+    [Fact]
+    public async Task AFlaggedFormIsNotSignedAutomatically()
+    {
+        await AddObuTemplate(HealthFields, ManagerSignatureField);
+        await service.SaveAutomaticSignatureAsync(Manager(), new DocumentSignOffRequest { ManagerName = "Mary", Signature = Signature }, default);
+        analyser.Problems = ["The answers contradict each other."];
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
+
+        var document = await db.EmployeeDocuments.SingleAsync();
+        Assert.True(document.AwaitingManagerSignature);
+        Assert.Null(document.ManagerSignedByName);
+    }
+
+    [Fact]
+    public async Task TheFormIsCheckedBeforeTheManagerPartIsAdded()
+    {
+        await AddObuTemplate(HealthFields, ManagerSignatureField);
+        await service.SaveAutomaticSignatureAsync(Manager(), new DocumentSignOffRequest { ManagerName = "Mary", Signature = Signature }, default);
+
+        await service.SignAsync(driver, actor, obu.Id, Request(("health_skin_no", "true")), default);
+
+        var file = await db.EmployeeDocumentFiles.SingleAsync();
+        var pdf = protector.Unprotect(file.Id, new(file.EncryptedContent, file.Nonce, file.Tag, file.KeyId));
+        Assert.NotEqual(pdf, analyser.LastPdf);
+    }
+
+    [Fact]
+    public void FormCheckOutputIsLimitedAndRejectedWhenUnusable()
+    {
+        var problems = string.Join(",", Enumerable.Repeat($"\"{new string('x', 300)}\"", 9));
+
+        var parsed = DocumentAnalysisParser.ParseFormCheck($$"""{"problems":[{{problems}}]}""")!;
+
+        Assert.Equal(5, parsed.Count);
+        Assert.All(parsed, problem => Assert.Equal(200, problem.Length));
+        Assert.Empty(DocumentAnalysisParser.ParseFormCheck("""{"problems":[]}""")!);
+        Assert.Null(DocumentAnalysisParser.ParseFormCheck("""{"other":1}"""));
+        Assert.Null(DocumentAnalysisParser.ParseFormCheck("not json"));
+    }
+
+    [Fact]
+    public void FormCheckRequestListsTheAnswers()
+    {
+        var request = ClaudeDocumentAnalyser.FormCheckRequest("Food handler", "John Smith", ["Phone: 123"]);
+
+        Assert.Contains("Food handler", request);
+        Assert.Contains("John Smith", request);
+        Assert.Contains("- Phone: 123", request);
+    }
+
     private const string ManagerSignatureField = "{\"name\":\"manager_signature\",\"label\":\"m\",\"source\":\"ManagerSignature\"}";
 
     [Fact]
@@ -557,6 +651,30 @@ public sealed class DocumentSigningTests : IDisposable
     }
 
     private const string Signed = "reason_for_sickness";
+
+    private sealed class FakeAnalyser : IDocumentAnalyser
+    {
+        public IReadOnlyList<string>? Problems { get; set; } = [];
+        public int Calls { get; private set; }
+        public string? LastFormName { get; private set; }
+        public byte[]? LastPdf { get; private set; }
+        public IReadOnlyList<string> LastAnswers { get; private set; } = [];
+        public bool IsConfigured => true;
+
+        public Task<DocumentAnalysis?> AnalyseAsync(
+            IReadOnlyList<ValidatedDocumentFile> files, IReadOnlyList<DocumentCatalogueEntry> catalogue, CancellationToken cancellationToken) =>
+            Task.FromResult<DocumentAnalysis?>(null);
+
+        public Task<IReadOnlyList<string>?> CheckSignedFormAsync(
+            byte[] pdf, string formName, string employeeName, IReadOnlyList<string> answers, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastFormName = formName;
+            LastPdf = pdf;
+            LastAnswers = answers;
+            return Task.FromResult(Problems);
+        }
+    }
 
     private static byte[] Template()
     {

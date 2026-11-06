@@ -27,6 +27,15 @@ public interface IDocumentAnalyser
         IReadOnlyList<ValidatedDocumentFile> files,
         IReadOnlyList<DocumentCatalogueEntry> catalogue,
         CancellationToken cancellationToken);
+
+    /// <summary>Reads a form an employee has just signed, with their typed answers beside it.</summary>
+    /// <returns>The problems found, empty when there are none, or null when the form could not be checked. Only cancellation throws.</returns>
+    Task<IReadOnlyList<string>?> CheckSignedFormAsync(
+        byte[] pdf,
+        string formName,
+        string employeeName,
+        IReadOnlyList<string> answers,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -98,6 +107,24 @@ public static class DocumentAnalysisParser
         value.TryGetInt32(out var points) && points is >= 0 and <= 100
             ? points
             : null;
+
+    /// <returns>The problems reported on a signed form, or null when the output is not usable.</returns>
+    public static IReadOnlyList<string>? ParseFormCheck(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object &&
+                   root.TryGetProperty("problems", out var problems) && problems.ValueKind == JsonValueKind.Array
+                ? Problems(root)
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static List<string> Problems(JsonElement root)
     {

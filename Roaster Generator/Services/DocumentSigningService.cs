@@ -14,12 +14,14 @@ public sealed class DocumentSigningService(
     DocumentFileProtector protector,
     DocumentVehicleService vehicles,
     StoreSettingsService storeSettings,
+    IDocumentAnalyser analyser,
     TimeProvider timeProvider,
     ApplicationEventPublisher? events = null)
 {
     private const int MaxSignatureBytes = 1024 * 1024;
     private const string DateFormat = "dd/MM/yyyy";
     private const string HealthYesReason = "The employee answered Yes to a health question. Read the form and assess it before they handle food.";
+    private const string FormCheckUnavailable = "This form couldn't be checked automatically. Read it before approving it.";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -167,8 +169,13 @@ public sealed class DocumentSigningService(
         var now = timeProvider.GetUtcNow();
         var today = DocumentDates.Today(timeProvider);
         var needsManager = mapping.Any(item => item.Source == DocumentFieldSource.ManagerSignature);
-        // A Yes needs a manager to read the form, so it never gets the saved signature.
-        var automatic = needsManager && !healthAnswers.Contains(true) ? await AutomaticSignatureAsync(employee.Id, ct) : null;
+        var employeeName = $"{employee.FirstName} {employee.LastName}".Trim();
+        var reviewReasons = new List<string>();
+        if (healthAnswers.Contains(true)) reviewReasons.Add(HealthYesReason);
+        reviewReasons.AddRange(await analyser.CheckSignedFormAsync(pdf, type.Name, employeeName, Answers(mapping, values), ct) ?? [FormCheckUnavailable]);
+
+        // Anything flagged needs a person to read the form, so it never gets the saved signature.
+        var automatic = needsManager && reviewReasons.Count == 0 ? await AutomaticSignatureAsync(employee.Id, ct) : null;
         if (automatic is not null)
             pdf = CompleteManagerPart(pdf, mapping, automatic.ManagerName, automatic.Png);
         var existing = await db.EmployeeDocuments.Include(item => item.Files)
@@ -184,14 +191,14 @@ public sealed class DocumentSigningService(
             Id = Guid.NewGuid(),
             EmployeeId = employee.Id,
             DocumentTypeId = type.Id,
-            HolderName = $"{employee.FirstName} {employee.LastName}".Trim(),
+            HolderName = employeeName,
             VehicleRegistration = registration,
             SigningDate = today,
             IssueDate = today,
             PenaltyPoints = points,
             ExpiryDate = DocumentChecks.ResolveExpiry(type.ExpiryRule, null, today, points),
-            ReviewStatus = healthAnswers.Contains(true) ? DocumentReviewStatus.NeedsReview : DocumentReviewStatus.Clear,
-            ReviewReasons = healthAnswers.Contains(true) ? [HealthYesReason] : [],
+            ReviewStatus = reviewReasons.Count > 0 ? DocumentReviewStatus.NeedsReview : DocumentReviewStatus.Clear,
+            ReviewReasons = reviewReasons,
             AwaitingManagerSignature = needsManager && automatic is null,
             ManagerSignedByName = automatic?.ManagerName,
             ManagerSignedAtUtc = automatic is null ? null : now,
@@ -433,6 +440,14 @@ public sealed class DocumentSigningService(
     }
 
     /// <summary>Every health question needs one answer. The review reason stays general, so health details remain only in the encrypted form.</summary>
+    private static IReadOnlyList<string> Answers(
+        IEnumerable<DocumentTemplateField> mapping, IReadOnlyDictionary<string, string?> values) =>
+        mapping.Where(IsEmployeeField)
+            .Select(field => (field.Label, Value: values.GetValueOrDefault(field.Name)))
+            .Where(answer => !string.IsNullOrEmpty(answer.Value))
+            .Select(answer => $"{answer.Label}: {(answer.Value == "true" ? "ticked" : answer.Value)}")
+            .ToArray();
+
     private static IReadOnlyList<bool> ReadHealthAnswers(
         IEnumerable<DocumentTemplateField> mapping, IReadOnlyDictionary<string, string?> values)
     {
