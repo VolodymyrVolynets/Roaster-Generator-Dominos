@@ -58,3 +58,15 @@ public sealed class DocumentAdminUpdateRequestValidator : AbstractValidator<Docu
 {
     public DocumentAdminUpdateRequestValidator() => Include(new DocumentFieldsValidator());
 }
+
+public sealed class VehicleChangeRequestValidator : AbstractValidator<VehicleChangeRequest>
+{
+    public VehicleChangeRequestValidator()
+    {
+        RuleFor(request => request.Registration)
+            .NotEmpty().WithMessage("Enter the new registration.")
+            .MaximumLength(20)
+            .Must(registration => DocumentChecks.NormalizeRegistration(registration ?? string.Empty).Length >= 2)
+            .WithMessage("Enter a valid registration.");
+    }
+}

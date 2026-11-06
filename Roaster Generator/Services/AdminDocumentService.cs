@@ -15,6 +15,7 @@ public sealed class AdminDocumentService(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
     DocumentFileProtector protector,
+    DocumentVehicleService vehicles,
     TimeProvider timeProvider,
     ILogger<AdminDocumentService> logger,
     ApplicationEventPublisher? events = null)
@@ -35,13 +36,22 @@ public sealed class AdminDocumentService(
             .ToLookup(item => item.EmployeeId);
         var today = DocumentDates.Today(timeProvider);
         var search = filters.Search?.Trim();
+        var registrations = await db.EmployeeVehicles.AsNoTracking()
+            .ToDictionaryAsync(item => item.EmployeeId, item => item.Registration, ct);
+        var openChanges = await db.VehicleChanges.AsNoTracking()
+            .Where(item => item.Status == VehicleChangeStatus.Open)
+            .ToDictionaryAsync(item => item.EmployeeId, ct);
 
         var groups = new List<AdminDocumentGroup>();
         foreach (var employee in employees)
         {
+            var categories = DocumentRequirementResolver.CategoriesFor(employee, roles[employee.Id]);
+            var vehicle = new EmployeeVehicleState(
+                DocumentRequirementResolver.TracksVehicle(categories),
+                registrations.GetValueOrDefault(employee.Id),
+                openChanges.GetValueOrDefault(employee.Id));
             var rows = DocumentRequirementResolver.Resolve(
-                DocumentRequirementResolver.CategoriesFor(employee, roles[employee.Id]),
-                requirements, types, documents[employee.Id], today);
+                categories, requirements, types, documents[employee.Id], today, vehicle.Context);
             var name = $"{employee.FirstName} {employee.LastName}".Trim();
             var matchesEmployee = string.IsNullOrEmpty(search) || Contains(name, search) || Contains(employee.EmployeeNumber, search);
             var shown = rows
@@ -58,7 +68,9 @@ public sealed class AdminDocumentService(
                 EmployeeName = name,
                 EmployeeNumber = employee.EmployeeNumber,
                 IsActive = employee.IsActive,
-                Outstanding = rows.Count(row => row.IsRequired && row.State is DocumentRowState.NotUploaded or DocumentRowState.Expired),
+                Outstanding = rows.Count(row => row.IsRequired && row.State is DocumentRowState.NotUploaded
+                    or DocumentRowState.Expired or DocumentRowState.WrongVehicle or DocumentRowState.NeedsVehicleUpdate),
+                Vehicle = DocumentChecklistService.ToVehicleSummary(vehicle, rows),
                 NeedingReview = rows.Count(row => row.Document?.ReviewStatus == DocumentReviewStatus.NeedsReview),
                 Documents = shown.Select(ToRow).ToArray()
             });
@@ -167,6 +179,8 @@ public sealed class AdminDocumentService(
             throw new DocumentConflictException();
         }
 
+        if (DocumentChecks.IsVehicleDocument(document.DocumentType.Code))
+            await vehicles.DocumentSavedAsync(document.EmployeeId, actor, fields.VehicleRegistration, ct);
         if (events is not null) await events.DocumentsChangedAsync(document.EmployeeId, ct);
         return await GetAsync(id, ct);
     }

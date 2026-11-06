@@ -19,6 +19,7 @@ public sealed class DocumentDraftService(
     AppDbContext db,
     IDocumentAnalyser analyser,
     DocumentFileProtector protector,
+    DocumentVehicleService vehicles,
     TimeProvider timeProvider,
     ApplicationEventPublisher? events = null)
 {
@@ -67,7 +68,9 @@ public sealed class DocumentDraftService(
             analysedType?.Code ?? DocumentAnalysis.UnknownType, now));
         await db.SaveChangesAsync(ct);
 
-        var warnings = await WarningsAsync(employee, analysis, analysedType, ct);
+        var vehicle = await vehicles.GetAsync(employee.Id, ct);
+        var warnings = await WarningsAsync(employee, analysis, analysedType, vehicle, ct);
+        var vehiclePrompt = VehiclePrompt(analysis, analysedType, vehicle);
         if (analysedType is not null && requestedType is not null && analysedType.Id != requestedType.Id)
             warnings.Add($"This looks like {analysedType.Name}, not {requestedType.Name}.");
 
@@ -79,7 +82,8 @@ public sealed class DocumentDraftService(
             DocumentTypeId = analysedType?.Id ?? requestedType?.Id,
             Summary = analysis?.Summary,
             Fields = analysis?.Fields ?? new DocumentFields(),
-            Warnings = warnings
+            Warnings = warnings,
+            VehiclePrompt = vehiclePrompt
         };
     }
 
@@ -141,6 +145,8 @@ public sealed class DocumentDraftService(
         db.DocumentAuditEvents.Add(Audit(employee.Id, document.Id, actor, DocumentAuditAction.Uploaded, type.Code, now));
         await db.SaveChangesAsync(ct);
 
+        if (DocumentChecks.IsVehicleDocument(type.Code))
+            await vehicles.DocumentSavedAsync(employee.Id, actor, fields.VehicleRegistration, ct);
         if (events is not null) await events.DocumentsChangedAsync(employee.Id, ct);
         return new DocumentSubmitResponse
         {
@@ -179,12 +185,13 @@ public sealed class DocumentDraftService(
             if (changed.Count > 0) reasons.Add($"Changed by the employee: {string.Join(", ", changed)}.");
         }
 
-        reasons.AddRange((await CheckAsync(employee, type, fields, ct)).Select(warning => warning.Message));
+        var vehicle = await vehicles.GetAsync(employee.Id, ct);
+        reasons.AddRange(Check(employee, type, fields, vehicle).Select(warning => warning.Message));
         return reasons.Distinct(StringComparer.Ordinal).ToList();
     }
 
     private async Task<List<string>> WarningsAsync(
-        Employee employee, DocumentAnalysis? analysis, DocumentType? type, CancellationToken ct)
+        Employee employee, DocumentAnalysis? analysis, DocumentType? type, EmployeeVehicleState vehicle, CancellationToken ct)
     {
         if (analysis is null) return [AnalysisUnavailable];
 
@@ -193,25 +200,33 @@ public sealed class DocumentDraftService(
         if (analysis.DocumentType == DocumentAnalysis.UnknownType) warnings.Add(UnknownType);
         warnings.AddRange(analysis.Problems);
         if (type is not null)
-            warnings.AddRange((await CheckAsync(employee, type, analysis.Fields, ct)).Select(warning => warning.Message));
+            warnings.AddRange(Check(employee, type, analysis.Fields, vehicle)
+                .Where(warning => warning.Code != DocumentWarningCode.RegistrationMismatch || vehicle.OpenChange is not null)
+                .Select(warning => warning.Message));
         return warnings.Distinct(StringComparer.Ordinal).ToList();
     }
 
-    private async Task<IReadOnlyList<DocumentWarning>> CheckAsync(
-        Employee employee, DocumentType type, DocumentFields fields, CancellationToken ct)
+    /// <summary>With no change open, a different registration is asked about rather than warned about.</summary>
+    private static DocumentVehiclePrompt? VehiclePrompt(DocumentAnalysis? analysis, DocumentType? type, EmployeeVehicleState vehicle)
     {
-        var registrations = await db.EmployeeDocuments.AsNoTracking()
-            .Where(item => item.EmployeeId == employee.Id && item.DocumentTypeId != type.Id && item.VehicleRegistration != null)
-            .Select(item => new { item.DocumentType.Code, Registration = item.VehicleRegistration! })
-            .ToListAsync(ct);
-        return DocumentChecks.Evaluate(
+        if (type is null || !DocumentChecks.IsVehicleDocument(type.Code) || !vehicle.TracksVehicle ||
+            vehicle.OpenChange is not null || vehicle.Registration is null ||
+            analysis?.Fields.VehicleRegistration is not { } detected ||
+            DocumentChecks.NormalizeRegistration(detected) == DocumentChecks.NormalizeRegistration(vehicle.Registration))
+            return null;
+
+        return new DocumentVehiclePrompt { CurrentRegistration = vehicle.Registration, DetectedRegistration = detected };
+    }
+
+    private IReadOnlyList<DocumentWarning> Check(
+        Employee employee, DocumentType type, DocumentFields fields, EmployeeVehicleState vehicle) =>
+        DocumentChecks.Evaluate(
             new DocumentFacts(type.Code, type.Name, type.ExpiryRule, fields.HolderName, fields.IssuingCountry,
                 fields.ExpiryDate, fields.SigningDate, fields.PenaltyPoints, fields.VehicleRegistration),
             employee.FirstName,
             employee.LastName,
-            registrations.Where(item => DocumentChecks.IsVehicleDocument(item.Code)).Select(item => item.Registration),
+            vehicle.TracksVehicle && vehicle.Registration is not null ? [vehicle.Registration] : [],
             DocumentDates.Today(timeProvider));
-    }
 
     private static List<string> ChangedFields(DocumentAnalysis analysis, DocumentType type, DocumentFields fields)
     {

@@ -10,6 +10,7 @@ public sealed class DocumentChecklistService(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
     DocumentFileProtector protector,
+    DocumentVehicleService vehicles,
     TimeProvider timeProvider)
 {
     public async Task<DocumentChecklistResponse> GetAsync(Guid employeeId, CancellationToken ct)
@@ -27,12 +28,14 @@ public sealed class DocumentChecklistService(
             .Where(item => item.EmployeeId == employeeId)
             .ToListAsync(ct);
 
+        var vehicle = await vehicles.GetAsync(employeeId, ct);
         var rows = DocumentRequirementResolver.Resolve(
             DocumentRequirementResolver.CategoriesFor(employee, roles), requirements, types, documents,
-            DocumentDates.Today(timeProvider));
+            DocumentDates.Today(timeProvider), vehicle.Context);
         return new DocumentChecklistResponse
         {
             Items = rows.Select(ToItem).ToArray(),
+            Vehicle = ToVehicleSummary(vehicle, rows),
             DocumentTypes = types.Where(type => type.IsActive).OrderBy(type => type.SortOrder)
                 .Select(type => new DocumentChecklistType
                 {
@@ -45,6 +48,23 @@ public sealed class DocumentChecklistService(
             CanAnalyse = protector.IsConfigured
         };
     }
+
+    internal static DocumentVehicleSummary? ToVehicleSummary(
+        EmployeeVehicleState vehicle, IReadOnlyList<DocumentChecklistRow> rows) => !vehicle.TracksVehicle
+        ? null
+        : new DocumentVehicleSummary
+        {
+            CurrentRegistration = vehicle.Registration,
+            OpenChange = vehicle.OpenChange is not { } change
+                ? null
+                : new VehicleChangeSummary
+                {
+                    OldRegistration = change.OldRegistration,
+                    NewRegistration = change.NewRegistration,
+                    StartedAtUtc = change.StartedAtUtc,
+                    DocumentsRemaining = DocumentRequirementResolver.VehicleDocumentsOutstanding(rows)
+                }
+        };
 
     private static DocumentChecklistItem ToItem(DocumentChecklistRow row) => new()
     {

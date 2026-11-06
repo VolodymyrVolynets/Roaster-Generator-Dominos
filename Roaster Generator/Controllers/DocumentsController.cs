@@ -56,6 +56,24 @@ public sealed class DocumentsController(
         return employee is null ? Forbid() : await DiscardCoreAsync(employee, draftId, ct);
     }
 
+    [HttpPost("vehicle-change")]
+    public async Task<IActionResult> StartVehicleChange(
+        [FromBody] VehicleChangeRequest request,
+        [FromServices] DocumentVehicleService vehicles,
+        [FromServices] IValidator<VehicleChangeRequest> validator,
+        CancellationToken ct)
+    {
+        var employee = await GetCurrentEmployeeAsync(ct);
+        return employee is null ? Forbid() : await StartVehicleChangeCoreAsync(employee, request, vehicles, validator, ct);
+    }
+
+    [HttpDelete("vehicle-change")]
+    public async Task<IActionResult> CancelVehicleChange([FromServices] DocumentVehicleService vehicles, CancellationToken ct)
+    {
+        var employee = await GetCurrentEmployeeAsync(ct);
+        return employee is null ? Forbid() : await CancelVehicleChangeCoreAsync(employee, vehicles, ct);
+    }
+
     private async Task<Employee?> GetCurrentEmployeeAsync(CancellationToken ct)
     {
         var user = await Users.GetUserAsync(User);

@@ -7,7 +7,7 @@ import { prepareDocumentImage } from '../../lib/prepareDocumentImage'
 const dateFields = new Set(['expiryDate', 'signingDate'])
 const supportsCamera = () => navigator.maxTouchPoints > 0
 
-export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, basePath = '/api/documents' }) {
+export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, onVehicleChanged, basePath = '/api/documents' }) {
   const [step, setStep] = useState('choose')
   const [files, setFiles] = useState([])
   const [error, setError] = useState('')
@@ -15,6 +15,7 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, b
   const [fields, setFields] = useState(toFormFields())
   const [typeId, setTypeId] = useState(requestedTypeId ?? '')
   const [note, setNote] = useState('')
+  const [vehiclePrompt, setVehiclePrompt] = useState(null)
   const cameraRef = useRef(null)
   const imageRef = useRef(null)
   const pdfRef = useRef(null)
@@ -49,6 +50,7 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, b
       setFields(analysis ? mergeFields(original, fields, nextFields) : nextFields)
       setTypeId((current) => (analysis && current !== (analysis.documentTypeId ?? '') ? current : result.documentTypeId ?? ''))
       setAnalysis(result)
+      setVehiclePrompt(result.vehiclePrompt)
       setStep('review')
     } catch (requestError) {
       setFiles(previousFiles)
@@ -67,6 +69,21 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, b
       await analyse([...files, prepared])
     } catch (selectionError) {
       setError(selectionError.message)
+    }
+  }
+
+  async function confirmNewCar() {
+    setError('')
+    try {
+      await fetchJson(`${basePath}/vehicle-change`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registration: vehiclePrompt.detectedRegistration }),
+      })
+      setVehiclePrompt(null)
+      onVehicleChanged?.()
+    } catch (requestError) {
+      setError(requestError.message)
     }
   }
 
@@ -135,6 +152,14 @@ export function DocumentUploadFlow({ documentTypes, requestedTypeId, onFinish, b
         </ul>
         {canAddPage && <button type="button" className="secondary-button" onClick={() => addRef.current.click()} disabled={busy}>Add another side or page</button>}
         {analysis.summary && <p className="holiday-help">{analysis.summary}</p>}
+        {vehiclePrompt && <div className="message info-message document-warnings" role="status">
+          <strong>This shows a different car</strong>
+          <span>This document says {vehiclePrompt.detectedRegistration}, but the current car is {vehiclePrompt.currentRegistration}. Did you change your car?</span>
+          <div className="document-type-actions">
+            <button type="button" onClick={confirmNewCar} disabled={busy}>Yes, I changed my car</button>
+            <button type="button" className="secondary-button" onClick={() => setVehiclePrompt(null)} disabled={busy}>No</button>
+          </div>
+        </div>}
         {analysis.warnings.length > 0 && <div className="message info-message document-warnings" role="status">
           <strong>Please check</strong>
           <ul>{analysis.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>

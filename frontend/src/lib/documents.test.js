@@ -63,9 +63,11 @@ test('checklistSummary counts only required documents that need action', () => {
     { isRequired: true, state: 'Valid' },
     { isRequired: true, state: 'Expired' },
     { isRequired: true, state: 'NotUploaded' },
+    { isRequired: true, state: 'WrongVehicle' },
+    { isRequired: true, state: 'NeedsVehicleUpdate' },
     { isRequired: true, state: 'DependsOnPassport' },
     { isRequired: false, state: 'Expired' },
-  ]), { required: 4, outstanding: 2 })
+  ]), { required: 6, outstanding: 4 })
 })
 
 test('mergeFields keeps typed values and takes new readings for the rest', () => {

@@ -95,7 +95,7 @@ public static class DocumentChecks
             var registration = NormalizeRegistration(facts.VehicleRegistration);
             if (registrationsOnFile.Any(other => NormalizeRegistration(other) != registration))
                 warnings.Add(new(DocumentWarningCode.RegistrationMismatch,
-                    "The vehicle registration does not match your other vehicle documents."));
+                    "The vehicle registration does not match the current vehicle."));
         }
 
         return warnings;

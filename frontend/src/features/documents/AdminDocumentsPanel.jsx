@@ -4,6 +4,7 @@ import { documentFilterStates, stateDetails, toDocumentListQuery } from '../../l
 import { formatDateOnly, formatHolidayDate } from '../../lib/format'
 import { AdminDocumentDetail } from './AdminDocumentDetail'
 import { DocumentUploadFlow } from './DocumentUploadFlow'
+import { VehiclePanel } from './VehiclePanel'
 
 const emptyFilters = { search: '', documentTypeId: '', state: '', includeInactive: false }
 const searchDelayMs = 250
@@ -94,12 +95,14 @@ export function AdminDocumentsPanel({ realtimeKey = 0 }) {
             <small>#{group.employeeNumber}{group.isActive ? '' : ' · Inactive'}</small>
           </span>
           <span className="document-group-counts">
+            {group.vehicle?.openChange && <span className="document-state warning">Changing car</span>}
             {group.needingReview > 0 && <span className="document-state neutral">{group.needingReview} to review</span>}
             {group.outstanding > 0
               ? <span className="document-state warning">{group.outstanding} outstanding</span>
               : <span className="document-state good">Complete</span>}
           </span>
         </summary>
+        {group.vehicle && <VehiclePanel vehicle={group.vehicle} basePath={`/api/admin/employees/${group.employeeId}/documents`} onChanged={reload} />}
         <ul className="documents-list">
           {group.documents.map((row) => <AdminDocumentRow
             key={`${row.documentTypeId}-${row.isRequired}`}
@@ -117,6 +120,7 @@ export function AdminDocumentsPanel({ realtimeKey = 0 }) {
       documentTypes={state.documentTypes}
       requestedTypeId={upload.documentTypeId}
       onFinish={finishUpload}
+      onVehicleChanged={reload}
     />}
   </section>
 }

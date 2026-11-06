@@ -146,3 +146,39 @@ public sealed class DocumentAuditEventConfiguration : IEntityTypeConfiguration<D
         builder.HasIndex(item => item.DocumentId);
     }
 }
+
+public sealed class EmployeeVehicleConfiguration : IEntityTypeConfiguration<EmployeeVehicle>
+{
+    public void Configure(EntityTypeBuilder<EmployeeVehicle> builder)
+    {
+        builder.ToTable("employee_vehicles");
+        builder.HasKey(vehicle => vehicle.EmployeeId);
+        builder.Property(vehicle => vehicle.EmployeeId).HasColumnName("employee_id").HasColumnType("uuid").ValueGeneratedNever();
+        builder.Property(vehicle => vehicle.Registration).HasColumnName("registration").HasMaxLength(20).IsRequired();
+        builder.Property(vehicle => vehicle.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired();
+        builder.HasOne(vehicle => vehicle.Employee).WithOne()
+            .HasForeignKey<EmployeeVehicle>(vehicle => vehicle.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class VehicleChangeConfiguration : IEntityTypeConfiguration<VehicleChange>
+{
+    public void Configure(EntityTypeBuilder<VehicleChange> builder)
+    {
+        builder.ToTable("vehicle_changes");
+        builder.HasKey(change => change.Id);
+        builder.Property(change => change.Id).HasColumnName("id").HasColumnType("uuid")
+            .ValueGeneratedOnAdd().HasDefaultValueSql("gen_random_uuid()");
+        builder.Property(change => change.EmployeeId).HasColumnName("employee_id").HasColumnType("uuid").IsRequired();
+        builder.Property(change => change.OldRegistration).HasColumnName("old_registration").HasMaxLength(20).IsRequired();
+        builder.Property(change => change.NewRegistration).HasColumnName("new_registration").HasMaxLength(20).IsRequired();
+        builder.Property(change => change.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(change => change.StartedAtUtc).HasColumnName("started_at_utc").IsRequired();
+        builder.Property(change => change.StartedByUserId).HasColumnName("started_by_user_id");
+        builder.Property(change => change.StartedByName).HasColumnName("started_by_name").HasMaxLength(256).IsRequired();
+        builder.Property(change => change.ClosedAtUtc).HasColumnName("closed_at_utc");
+        builder.HasIndex(change => change.EmployeeId).IsUnique().HasFilter("status = 'Open'");
+        builder.HasOne(change => change.Employee).WithMany()
+            .HasForeignKey(change => change.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+    }
+}

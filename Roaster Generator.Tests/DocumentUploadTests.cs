@@ -37,7 +37,7 @@ public sealed class DocumentDraftServiceTests : IDisposable
 
     public DocumentDraftServiceTests()
     {
-        service = new DocumentDraftService(db, analyser, protector, time);
+        service = new DocumentDraftService(db, analyser, protector, new DocumentVehicleService(db, time), time);
         db.Employees.Add(employee);
         db.DocumentTypes.AddRange(passport, points, nct);
         db.SaveChanges();
@@ -78,7 +78,8 @@ public sealed class DocumentDraftServiceTests : IDisposable
     public async Task MissingEncryptionKeyStopsBeforeCallingTheAnalyser()
     {
         var unconfigured = new DocumentDraftService(
-            db, analyser, new DocumentFileProtector(Options.Create(new DocumentStorageOptions())), time);
+            db, analyser, new DocumentFileProtector(Options.Create(new DocumentStorageOptions())),
+            new DocumentVehicleService(db, time), time);
 
         await Assert.ThrowsAsync<DocumentUnavailableException>(
             () => unconfigured.AnalyseAsync(employee, actor, Files(), null, default));
@@ -466,7 +467,7 @@ public sealed class DocumentEndpointAccessTests
             .Where(route => route.Template?.Contains("file", StringComparison.OrdinalIgnoreCase) == true);
 
         Assert.Empty(returnsFiles);
-        Assert.Equal(["GET", "POST", "POST", "DELETE"],
+        Assert.Equal(["GET", "POST", "POST", "DELETE", "POST", "DELETE"],
             typeof(DocumentsController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                 .SelectMany(method => method.GetCustomAttributes<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>())
                 .SelectMany(route => route.HttpMethods));

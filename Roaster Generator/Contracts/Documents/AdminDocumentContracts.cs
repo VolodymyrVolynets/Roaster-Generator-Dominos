@@ -36,6 +36,7 @@ public sealed class AdminDocumentGroup
     public bool IsActive { get; init; }
     public int Outstanding { get; init; }
     public int NeedingReview { get; init; }
+    public DocumentVehicleSummary? Vehicle { get; init; }
     public IReadOnlyList<AdminDocumentRow> Documents { get; init; } = [];
 }
 

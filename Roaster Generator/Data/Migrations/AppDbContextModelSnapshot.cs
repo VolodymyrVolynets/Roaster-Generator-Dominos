@@ -1146,6 +1146,27 @@ namespace Roaster_Generator.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Roaster_Generator.Entities.EmployeeVehicle", b =>
+                {
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("employee_id");
+
+                    b.Property<string>("Registration")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("registration");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("EmployeeId");
+
+                    b.ToTable("employee_vehicles", (string)null);
+                });
+
             modelBuilder.Entity("Roaster_Generator.Entities.HolidayRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1633,6 +1654,63 @@ namespace Roaster_Generator.Data.Migrations
                     b.ToTable("store_settings", (string)null);
                 });
 
+            modelBuilder.Entity("Roaster_Generator.Entities.VehicleChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("employee_id");
+
+                    b.Property<string>("NewRegistration")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("new_registration");
+
+                    b.Property<string>("OldRegistration")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("old_registration");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at_utc");
+
+                    b.Property<string>("StartedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("started_by_name");
+
+                    b.Property<Guid?>("StartedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("started_by_user_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeId")
+                        .IsUnique()
+                        .HasFilter("status = 'Open'");
+
+                    b.ToTable("vehicle_changes", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
@@ -1815,6 +1893,17 @@ namespace Roaster_Generator.Data.Migrations
                     b.Navigation("Draft");
                 });
 
+            modelBuilder.Entity("Roaster_Generator.Entities.EmployeeVehicle", b =>
+                {
+                    b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
+                        .WithOne()
+                        .HasForeignKey("Roaster_Generator.Entities.EmployeeVehicle", "EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Employee");
+                });
+
             modelBuilder.Entity("Roaster_Generator.Entities.HolidayRequest", b =>
                 {
                     b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
@@ -1882,6 +1971,17 @@ namespace Roaster_Generator.Data.Migrations
                 {
                     b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
                         .WithMany("SickLeaveRequests")
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Employee");
+                });
+
+            modelBuilder.Entity("Roaster_Generator.Entities.VehicleChange", b =>
+                {
+                    b.HasOne("Roaster_Generator.Entities.Employee", "Employee")
+                        .WithMany()
                         .HasForeignKey("EmployeeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

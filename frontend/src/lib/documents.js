@@ -5,7 +5,7 @@ const vehicleCodes = new Set(['nct', 'motor-tax', 'insurance', 'obu'])
 const countryCodes = new Set(['passport', 'driving-licence', 'irp'])
 
 export const documentFilterStates = [
-  'WaitingForReview', 'Expired', 'ExpiringSoon', 'NotUploaded', 'Valid',
+  'WaitingForReview', 'WrongVehicle', 'NeedsVehicleUpdate', 'Expired', 'ExpiringSoon', 'NotUploaded', 'Valid',
 ]
 
 export const fieldLabels = {
@@ -23,13 +23,15 @@ export const stateDetails = {
   Valid: { label: 'Valid', tone: 'good' },
   ExpiringSoon: { label: 'Expiring soon', tone: 'warning' },
   WaitingForReview: { label: 'Waiting for review', tone: 'neutral' },
+  NeedsVehicleUpdate: { label: 'Needs updating for new car', tone: 'warning' },
+  WrongVehicle: { label: 'Wrong vehicle', tone: 'danger' },
   NeedsAdminDecision: { label: 'An admin will confirm', tone: 'neutral' },
   DependsOnPassport: { label: 'Depends on passport', tone: 'neutral' },
   NotUploaded: { label: 'Not uploaded yet', tone: 'warning' },
   Expired: { label: 'Expired', tone: 'danger' },
 }
 
-const needsAction = new Set(['NotUploaded', 'Expired'])
+const needsAction = new Set(['NotUploaded', 'Expired', 'WrongVehicle', 'NeedsVehicleUpdate'])
 
 export function checklistSummary(items) {
   const required = items.filter((item) => item.isRequired)

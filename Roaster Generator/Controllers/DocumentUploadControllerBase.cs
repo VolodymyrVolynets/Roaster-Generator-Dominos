@@ -71,6 +71,37 @@ public abstract class DocumentUploadControllerBase(
     protected async Task<IActionResult> DiscardCoreAsync(Employee employee, Guid draftId, CancellationToken ct) =>
         await drafts.DiscardAsync(employee, CurrentActor(), draftId, ct) ? NoContent() : DraftNotFound();
 
+    protected async Task<IActionResult> StartVehicleChangeCoreAsync(
+        Employee employee,
+        VehicleChangeRequest request,
+        DocumentVehicleService vehicles,
+        IValidator<VehicleChangeRequest> validator,
+        CancellationToken ct)
+    {
+        var validationError = await ValidateRequestAsync(validator, request, "The registration is invalid.", ct);
+        if (validationError is not null) return validationError;
+
+        try
+        {
+            await vehicles.StartChangeAsync(employee, CurrentActor(), request.Registration, ct);
+            return NoContent();
+        }
+        catch (DocumentSettingsException exception)
+        {
+            return ValidationError(new Dictionary<string, string[]> { ["registration"] = [exception.Message] }, "The registration is invalid.");
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { message = "This car change was just updated. Reload and try again." });
+        }
+    }
+
+    protected async Task<IActionResult> CancelVehicleChangeCoreAsync(
+        Employee employee, DocumentVehicleService vehicles, CancellationToken ct) =>
+        await vehicles.CancelChangeAsync(employee, CurrentActor(), ct)
+            ? NoContent()
+            : NotFound(new { message = "No car change is open." });
+
     private NotFoundObjectResult DraftNotFound() =>
         NotFound(new { message = "This upload has expired. Choose the file again." });
 }

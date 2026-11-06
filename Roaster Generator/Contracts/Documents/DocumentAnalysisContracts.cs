@@ -27,6 +27,34 @@ public sealed class DocumentAnalysisResponse
     public string? Summary { get; init; }
     public DocumentFields Fields { get; init; } = new();
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>Set when a vehicle document shows a different car and no car change is open.</summary>
+    public DocumentVehiclePrompt? VehiclePrompt { get; init; }
+}
+
+public sealed class DocumentVehiclePrompt
+{
+    public string CurrentRegistration { get; init; } = string.Empty;
+    public string DetectedRegistration { get; init; } = string.Empty;
+}
+
+public sealed class VehicleChangeRequest
+{
+    public string Registration { get; set; } = string.Empty;
+}
+
+public sealed class VehicleChangeSummary
+{
+    public string OldRegistration { get; init; } = string.Empty;
+    public string NewRegistration { get; init; } = string.Empty;
+    public DateTimeOffset StartedAtUtc { get; init; }
+    public int DocumentsRemaining { get; init; }
+}
+
+public sealed class DocumentVehicleSummary
+{
+    public string? CurrentRegistration { get; init; }
+    public VehicleChangeSummary? OpenChange { get; init; }
 }
 
 public sealed class DocumentSubmitRequest : DocumentFields
@@ -68,6 +96,9 @@ public sealed class DocumentChecklistType
 public sealed class DocumentChecklistResponse
 {
     public IReadOnlyList<DocumentChecklistItem> Items { get; init; } = [];
+
+    /// <summary>Null when registrations aren't tracked for this employee.</summary>
+    public DocumentVehicleSummary? Vehicle { get; init; }
 
     /// <summary>Active types the employee can choose when correcting an upload.</summary>
     public IReadOnlyList<DocumentChecklistType> DocumentTypes { get; init; } = [];

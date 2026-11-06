@@ -3972,3 +3972,23 @@
   padding: 6px;
   font-size: 0.8125rem;
 }
+
+.document-vehicle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
+.document-group .document-vehicle {
+  margin-bottom: 10px;
+}
+
+.document-vehicle .message {
+  flex-basis: 100%;
+  margin: 0;
+}

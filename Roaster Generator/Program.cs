@@ -125,6 +125,8 @@ builder.Services.AddSingleton<DocumentFileProtector>();
 builder.Services.AddScoped<DocumentSettingsService>();
 builder.Services.AddScoped<DocumentDraftService>();
 builder.Services.AddScoped<DocumentChecklistService>();
+builder.Services.AddScoped<DocumentVehicleService>();
+builder.Services.AddScoped<IValidator<VehicleChangeRequest>, VehicleChangeRequestValidator>();
 builder.Services.AddScoped<AdminDocumentService>();
 builder.Services.AddScoped<IValidator<DocumentAdminUpdateRequest>, DocumentAdminUpdateRequestValidator>();
 builder.Services.AddSingleton<IDocumentAnalyser, ClaudeDocumentAnalyser>();

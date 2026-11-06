@@ -42,5 +42,15 @@ public enum DocumentAuditAction
     Downloaded,
     Edited,
     Reviewed,
-    Deleted
+    Deleted,
+    VehicleChanged,
+    VehicleCancelled,
+    VehicleCompleted
+}
+
+public enum VehicleChangeStatus
+{
+    Open,
+    Completed,
+    Cancelled
 }

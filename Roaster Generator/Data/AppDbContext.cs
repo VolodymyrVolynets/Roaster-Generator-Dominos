@@ -52,6 +52,10 @@ public sealed class AppDbContext(
 
     public DbSet<DocumentAuditEvent> DocumentAuditEvents => Set<DocumentAuditEvent>();
 
+    public DbSet<EmployeeVehicle> EmployeeVehicles => Set<EmployeeVehicle>();
+
+    public DbSet<VehicleChange> VehicleChanges => Set<VehicleChange>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -41,5 +41,7 @@ public static class EmployeeDocumentRemoval
         }));
         db.EmployeeDocuments.RemoveRange(documents);
         db.DocumentDrafts.RemoveRange(drafts);
+        db.EmployeeVehicles.RemoveRange(await db.EmployeeVehicles.Where(item => item.EmployeeId == employeeId).ToListAsync(cancellationToken));
+        db.VehicleChanges.RemoveRange(await db.VehicleChanges.Where(item => item.EmployeeId == employeeId).ToListAsync(cancellationToken));
     }
 }

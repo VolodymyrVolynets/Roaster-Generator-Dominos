@@ -9,11 +9,16 @@ public enum DocumentRowState
     Valid,
     ExpiringSoon,
     WaitingForReview,
+    NeedsVehicleUpdate,
+    WrongVehicle,
     NeedsAdminDecision,
     DependsOnPassport,
     NotUploaded,
     Expired
 }
+
+/// <summary>The employee's current vehicle, when one is on record.</summary>
+public sealed record DocumentVehicleContext(string Registration, bool HasOpenChange);
 
 public sealed record DocumentChecklistRow(
     DocumentType DocumentType,
@@ -50,6 +55,15 @@ public static class DocumentRequirementResolver
         return categories;
     }
 
+    /// <summary>Registrations are only tracked for a vehicle the employee owns; e-bikes have none.</summary>
+    public static bool TracksVehicle(IEnumerable<DocumentCategory> categories) =>
+        categories.Any(category => category is DocumentCategory.CarOwn or DocumentCategory.MopedOwn);
+
+    /// <summary>Required vehicle documents not yet matching the current vehicle.</summary>
+    public static int VehicleDocumentsOutstanding(IEnumerable<DocumentChecklistRow> rows) => rows.Count(row =>
+        row.IsRequired && DocumentChecks.IsVehicleDocument(row.DocumentType.Code) &&
+        row.State is DocumentRowState.NotUploaded or DocumentRowState.NeedsVehicleUpdate or DocumentRowState.WrongVehicle);
+
     public static DocumentCategory CategoryFor(DriverType type, bool isOwn) => type switch
     {
         DriverType.Moped => isOwn ? DocumentCategory.MopedOwn : DocumentCategory.MopedCompany,
@@ -65,7 +79,8 @@ public static class DocumentRequirementResolver
         IEnumerable<DocumentRequirement> requirements,
         IEnumerable<DocumentType> documentTypes,
         IEnumerable<EmployeeDocument> documents,
-        DateOnly today)
+        DateOnly today,
+        DocumentVehicleContext? vehicle = null)
     {
         var categorySet = categories.ToHashSet();
         var byCode = documents.GroupBy(document => document.DocumentType.Code, StringComparer.Ordinal)
@@ -102,7 +117,20 @@ public static class DocumentRequirementResolver
             .Where(document => !consumedCodes.Contains(document.DocumentType.Code))
             .OrderBy(document => document.DocumentType.SortOrder)
             .Select(document => new DocumentChecklistRow(document.DocumentType, StateOf(document, today), false, document)));
-        return rows;
+        return vehicle is not null && TracksVehicle(categorySet)
+            ? rows.Select(row => ApplyVehicle(row, vehicle)).ToArray()
+            : rows;
+    }
+
+    /// <summary>Worked out from the registrations, so clearing a review cannot hide a mismatch.</summary>
+    private static DocumentChecklistRow ApplyVehicle(DocumentChecklistRow row, DocumentVehicleContext vehicle)
+    {
+        if (row.Document?.VehicleRegistration is not { } registration ||
+            !DocumentChecks.IsVehicleDocument(row.DocumentType.Code) ||
+            DocumentChecks.NormalizeRegistration(registration) == DocumentChecks.NormalizeRegistration(vehicle.Registration))
+            return row;
+
+        return row with { State = vehicle.HasOpenChange ? DocumentRowState.NeedsVehicleUpdate : DocumentRowState.WrongVehicle };
     }
 
     public static DocumentRowState StateOf(EmployeeDocument document, DateOnly today)

@@ -68,7 +68,7 @@ public sealed class AdminDocumentTests : IDisposable
             Options.Create(new IdentityOptions()), new PasswordHasher<ApplicationUser>(), [], [],
             new UpperInvariantLookupNormalizer(), new IdentityErrorDescriber(), services,
             NullLogger<UserManager<ApplicationUser>>.Instance);
-        service = new AdminDocumentService(db, users, protector, TimeProvider.System, NullLogger<AdminDocumentService>.Instance);
+        service = new AdminDocumentService(db, users, protector, new DocumentVehicleService(db, TimeProvider.System), TimeProvider.System, NullLogger<AdminDocumentService>.Instance);
         controller = new AdminDocumentsController(service, users, new DocumentAdminUpdateRequestValidator())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }

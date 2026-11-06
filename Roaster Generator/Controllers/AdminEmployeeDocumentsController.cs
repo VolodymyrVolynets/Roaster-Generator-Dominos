@@ -16,7 +16,7 @@ namespace Roaster_Generator.Controllers;
 /// <summary>Uploads on an employee's behalf. Administrators confirm what they upload, so these are not flagged for review.</summary>
 [ApiController]
 [Authorize(Policy = AuthorizationPolicies.Admin)]
-[Route("api/admin/employees/{employeeId:guid}/documents/analyses")]
+[Route("api/admin/employees/{employeeId:guid}/documents")]
 public sealed class AdminEmployeeDocumentsController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
@@ -25,7 +25,7 @@ public sealed class AdminEmployeeDocumentsController(
     IValidator<DocumentSubmitRequest> submitValidator)
     : DocumentUploadControllerBase(drafts, userManager, uploadValidator, submitValidator)
 {
-    [HttpPost]
+    [HttpPost("analyses")]
     [RequestSizeLimit(MaxRequestSize)]
     [EnableRateLimiting(DocumentRateLimits.AnalysisPolicy)]
     public async Task<IActionResult> Analyse(Guid employeeId, [FromForm] DocumentAnalyseForm form, CancellationToken ct)
@@ -34,7 +34,7 @@ public sealed class AdminEmployeeDocumentsController(
         return employee is null ? EmployeeNotFound() : await AnalyseCoreAsync(employee, form, ct);
     }
 
-    [HttpPost("{draftId:guid}/submit")]
+    [HttpPost("analyses/{draftId:guid}/submit")]
     public async Task<IActionResult> Submit(
         Guid employeeId, Guid draftId, [FromBody] DocumentSubmitRequest request, CancellationToken ct)
     {
@@ -42,11 +42,31 @@ public sealed class AdminEmployeeDocumentsController(
         return employee is null ? EmployeeNotFound() : await SubmitCoreAsync(employee, draftId, request, ct);
     }
 
-    [HttpDelete("{draftId:guid}")]
+    [HttpDelete("analyses/{draftId:guid}")]
     public async Task<IActionResult> Discard(Guid employeeId, Guid draftId, CancellationToken ct)
     {
         var employee = await FindEmployeeAsync(employeeId, ct);
         return employee is null ? EmployeeNotFound() : await DiscardCoreAsync(employee, draftId, ct);
+    }
+
+    [HttpPost("vehicle-change")]
+    public async Task<IActionResult> StartVehicleChange(
+        Guid employeeId,
+        [FromBody] VehicleChangeRequest request,
+        [FromServices] DocumentVehicleService vehicles,
+        [FromServices] IValidator<VehicleChangeRequest> validator,
+        CancellationToken ct)
+    {
+        var employee = await FindEmployeeAsync(employeeId, ct);
+        return employee is null ? EmployeeNotFound() : await StartVehicleChangeCoreAsync(employee, request, vehicles, validator, ct);
+    }
+
+    [HttpDelete("vehicle-change")]
+    public async Task<IActionResult> CancelVehicleChange(
+        Guid employeeId, [FromServices] DocumentVehicleService vehicles, CancellationToken ct)
+    {
+        var employee = await FindEmployeeAsync(employeeId, ct);
+        return employee is null ? EmployeeNotFound() : await CancelVehicleChangeCoreAsync(employee, vehicles, ct);
     }
 
     private Task<Employee?> FindEmployeeAsync(Guid employeeId, CancellationToken ct) =>
