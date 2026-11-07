@@ -124,12 +124,15 @@ public static class DocumentRequirementResolver
             : rows;
     }
 
-    /// <summary>Worked out from the registrations, so clearing a review cannot hide a mismatch.</summary>
+    /// <summary>
+    /// Worked out from the registrations, so clearing a review cannot hide a mismatch. A blank
+    /// registration counts as a different vehicle.
+    /// </summary>
     private static DocumentChecklistRow ApplyVehicle(DocumentChecklistRow row, DocumentVehicleContext vehicle)
     {
-        if (row.Document?.VehicleRegistration is not { } registration ||
-            !DocumentChecks.IsVehicleDocument(row.DocumentType.Code) ||
-            DocumentChecks.NormalizeRegistration(registration) == DocumentChecks.NormalizeRegistration(vehicle.Registration))
+        if (row.Document is not { } document || !DocumentChecks.IsVehicleDocument(row.DocumentType.Code) ||
+            DocumentChecks.NormalizeRegistration(document.VehicleRegistration ?? string.Empty) ==
+            DocumentChecks.NormalizeRegistration(vehicle.Registration))
             return row;
 
         return row with { State = vehicle.HasOpenChange ? DocumentRowState.NeedsVehicleUpdate : DocumentRowState.WrongVehicle };
