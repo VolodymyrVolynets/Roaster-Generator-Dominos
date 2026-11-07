@@ -10,7 +10,8 @@ public enum DocumentWarningCode
     MissingExpiry,
     NameMismatch,
     LicenceNotEuIssued,
-    RegistrationMismatch
+    RegistrationMismatch,
+    RegistrationMissing
 }
 
 public sealed record DocumentWarning(DocumentWarningCode Code, string Message);
@@ -89,6 +90,12 @@ public static class DocumentChecks
         if (facts.DocumentTypeCode == DocumentTypeCodes.DrivingLicence &&
             DocumentCountries.Normalize(facts.IssuingCountry) is { } country && !DocumentCountries.IsEuMember(country))
             warnings.Add(new(DocumentWarningCode.LicenceNotEuIssued, "The driving licence is not EU-issued."));
+
+        // With nothing to compare, a blank registration counts as a different vehicle.
+        if (IsVehicleDocument(facts.DocumentTypeCode) && string.IsNullOrWhiteSpace(facts.VehicleRegistration) &&
+            registrationsOnFile.Any())
+            warnings.Add(new(DocumentWarningCode.RegistrationMissing,
+                "No vehicle registration was found, so it counts as a different vehicle. Add the registration."));
 
         if (IsVehicleDocument(facts.DocumentTypeCode) && !string.IsNullOrWhiteSpace(facts.VehicleRegistration))
         {

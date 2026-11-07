@@ -102,6 +102,21 @@ public sealed class DocumentVehicleTests : IDisposable
     }
 
     [Fact]
+    public async Task BlankRegistrationIsWarnedFlaggedAndShowsWrongVehicle()
+    {
+        await Upload(DocumentTypeCodes.Obu, OldCar);
+        analyser.Result = Analysis(DocumentTypeCodes.MotorTax, null);
+
+        var response = await Analyse();
+        var saved = await Upload(DocumentTypeCodes.MotorTax, null);
+
+        Assert.Null(response.VehiclePrompt);
+        Assert.Contains(response.Warnings, warning => warning.Contains("No vehicle registration"));
+        Assert.True(saved.NeedsReview);
+        Assert.Equal(DocumentRowState.WrongVehicle, await StateOf(DocumentTypeCodes.MotorTax));
+    }
+
+    [Fact]
     public async Task ClearingAReviewDoesNotHideAMismatch()
     {
         await Upload(DocumentTypeCodes.Obu, OldCar);
@@ -264,7 +279,7 @@ public sealed class DocumentVehicleTests : IDisposable
         foreach (var code in types.Keys) await Upload(code, registration);
     }
 
-    private async Task<DocumentSubmitResponse> Upload(string code, string registration)
+    private async Task<DocumentSubmitResponse> Upload(string code, string? registration)
     {
         analyser.Result = Analysis(code, registration);
         var draft = await Analyse();
@@ -280,7 +295,7 @@ public sealed class DocumentVehicleTests : IDisposable
     private Task<DocumentAnalysisResponse> Analyse() => drafts.AnalyseAsync(
         driver, actor, [new ValidatedDocumentFile([0xFF, 0xD8, 0xFF], "a.jpg", "image/jpeg")], null, default);
 
-    private static DocumentAnalysis Analysis(string code, string registration) => new()
+    private static DocumentAnalysis Analysis(string code, string? registration) => new()
     {
         DocumentType = code,
         Readable = true,

@@ -539,6 +539,15 @@ public sealed class DocumentChecksTests
     }
 
     [Fact]
+    public void BlankRegistrationCountsAsADifferentVehicle()
+    {
+        var facts = Facts() with { DocumentTypeCode = DocumentTypeCodes.MotorTax, PrintedExpiryDate = Today.AddDays(1) };
+
+        Assert.Equal([DocumentWarningCode.RegistrationMissing], Evaluate(facts, ["241-D-99999"]).Select(warning => warning.Code));
+        Assert.Empty(Evaluate(facts));
+    }
+
+    [Fact]
     public void RegistrationIsOnlyComparedOnVehicleDocuments()
     {
         var facts = Facts() with { PrintedExpiryDate = Today.AddDays(1), VehicleRegistration = "241-D-12345" };
