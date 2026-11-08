@@ -327,7 +327,7 @@ public sealed class DocumentVehicleTests : IDisposable
             Task.FromResult(Result);
 
         public Task<IReadOnlyList<string>?> CheckSignedFormAsync(
-            byte[] pdf, string formName, string employeeName, IReadOnlyList<string> answers, CancellationToken cancellationToken) =>
+            byte[] pdf, string formName, string employeeName, string employeeRole, IReadOnlyList<string> answers, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<string>?>([]);
     }
 }

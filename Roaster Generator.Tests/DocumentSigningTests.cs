@@ -460,6 +460,7 @@ public sealed class DocumentSigningTests : IDisposable
         Assert.Empty(document.ReviewReasons);
         Assert.Equal(1, analyser.Calls);
         Assert.Equal("OBU", analyser.LastFormName);
+        Assert.Equal("delivery driver", analyser.LastRole);
         Assert.True(analyser.LastPdf?.Length > 0);
         Assert.Contains(analyser.LastAnswers, answer => answer.EndsWith(": ticked", StringComparison.Ordinal));
     }
@@ -520,12 +521,27 @@ public sealed class DocumentSigningTests : IDisposable
     }
 
     [Fact]
+    public void FormCheckAcceptsIrishMobilesTodaysDateAndUntickedServices()
+    {
+        var prompt = ClaudeDocumentAnalyser.FormCheckPrompt;
+
+        Assert.Contains("mobiles have 10 digits starting 08", prompt);
+        Assert.Contains("a date that is today or earlier", prompt);
+        Assert.Contains("leave the delivery driver option unticked", prompt);
+        Assert.Contains("08/11/2026 is 8 November 2026", prompt);
+        Assert.Contains("Today's date in Ireland is Sunday 8 November 2026 (2026-11-08).",
+            ClaudeDocumentAnalyser.UploadRequest(new DateOnly(2026, 11, 8)));
+    }
+
+    [Fact]
     public void FormCheckRequestListsTheAnswers()
     {
-        var request = ClaudeDocumentAnalyser.FormCheckRequest("Food handler", "John Smith", ["Phone: 123"]);
+        var request = ClaudeDocumentAnalyser.FormCheckRequest("Food handler", "John Smith", "in-store staff", new DateOnly(2026, 11, 8), ["Phone: 123"]);
 
         Assert.Contains("Food handler", request);
         Assert.Contains("John Smith", request);
+        Assert.Contains("Employee's role: in-store staff", request);
+        Assert.Contains("Sunday 8 November 2026 (2026-11-08)", request);
         Assert.Contains("- Phone: 123", request);
     }
 
@@ -682,6 +698,7 @@ public sealed class DocumentSigningTests : IDisposable
         public string? LastFormName { get; private set; }
         public byte[]? LastPdf { get; private set; }
         public IReadOnlyList<string> LastAnswers { get; private set; } = [];
+        public string? LastRole { get; private set; }
         public bool IsConfigured => true;
 
         public Task<DocumentAnalysis?> AnalyseAsync(
@@ -689,12 +706,13 @@ public sealed class DocumentSigningTests : IDisposable
             Task.FromResult<DocumentAnalysis?>(null);
 
         public Task<IReadOnlyList<string>?> CheckSignedFormAsync(
-            byte[] pdf, string formName, string employeeName, IReadOnlyList<string> answers, CancellationToken cancellationToken)
+            byte[] pdf, string formName, string employeeName, string employeeRole, IReadOnlyList<string> answers, CancellationToken cancellationToken)
         {
             Calls++;
             LastFormName = formName;
             LastPdf = pdf;
             LastAnswers = answers;
+            LastRole = employeeRole;
             return Task.FromResult(Problems);
         }
     }

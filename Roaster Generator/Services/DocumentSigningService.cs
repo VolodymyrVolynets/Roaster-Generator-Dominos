@@ -5,6 +5,7 @@ using Roaster_Generator.Contracts.Documents;
 using Roaster_Generator.Data;
 using Roaster_Generator.Entities;
 using Roaster_Generator.Enums;
+using Roaster_Generator.Security;
 
 namespace Roaster_Generator.Services;
 
@@ -172,7 +173,8 @@ public sealed class DocumentSigningService(
         var employeeName = $"{employee.FirstName} {employee.LastName}".Trim();
         var reviewReasons = new List<string>();
         if (healthAnswers.Contains(true)) reviewReasons.Add(HealthYesReason);
-        reviewReasons.AddRange(await analyser.CheckSignedFormAsync(pdf, type.Name, employeeName, Answers(mapping, values), ct) ?? [FormCheckUnavailable]);
+        var employeeRole = await RoleDescriptionAsync(employee.Id, ct);
+        reviewReasons.AddRange(await analyser.CheckSignedFormAsync(pdf, type.Name, employeeName, employeeRole, Answers(mapping, values), ct) ?? [FormCheckUnavailable]);
 
         // A flagged form still gets the saved signature and stays flagged for an administrator.
         var automatic = needsManager ? await AutomaticSignatureAsync(employee.Id, ct) : null;
@@ -439,6 +441,26 @@ public sealed class DocumentSigningService(
             [DocumentFieldSource.StoreName] = store.StoreName,
             [DocumentFieldSource.FranchiseeName] = store.FranchiseeName
         };
+    }
+
+    /// <summary>Lets the form check know an unticked delivery driver option is expected for in-store staff.</summary>
+    private async Task<string> RoleDescriptionAsync(Guid employeeId, CancellationToken ct)
+    {
+        var roles = await (
+            from user in db.Users
+            where user.EmployeeId == employeeId
+            join userRole in db.UserRoles on user.Id equals userRole.UserId
+            join role in db.Roles on userRole.RoleId equals role.Id
+            select role.Name).ToListAsync(ct);
+        var described = roles.Where(role => role is not null).Select(role => role switch
+        {
+            RoleNames.Driver => "delivery driver",
+            RoleNames.InStore => "in-store staff",
+            RoleNames.Manager => "manager",
+            RoleNames.Admin => "administrator",
+            _ => null
+        }).Where(role => role is not null).Distinct().ToArray();
+        return described.Length > 0 ? string.Join(", ", described) : "not recorded";
     }
 
     /// <summary>Every health question needs one answer. The review reason stays general, so health details remain only in the encrypted form.</summary>

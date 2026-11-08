@@ -34,6 +34,7 @@ public interface IDocumentAnalyser
         byte[] pdf,
         string formName,
         string employeeName,
+        string employeeRole,
         IReadOnlyList<string> answers,
         CancellationToken cancellationToken);
 }
