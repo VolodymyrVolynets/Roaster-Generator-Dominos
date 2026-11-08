@@ -115,7 +115,11 @@ function AppContent() {
           : ownEmployeeId
             ? payload.find((employee) => employee.id === ownEmployeeId)
             : payload.find((employee) => employee.isActive)
-        setSelectedEmployeeId(defaultEmployee ? String(defaultEmployee.id) : '')
+        // Refreshes (realtime events, saves, session re-checks) must not move the user off the employee they picked.
+        setSelectedEmployeeId((current) =>
+          current && payload.some((employee) => String(employee.id) === current)
+            ? current
+            : defaultEmployee ? String(defaultEmployee.id) : '')
         setEmployeesState({ status: 'success' })
       })
       .catch((error) => {
