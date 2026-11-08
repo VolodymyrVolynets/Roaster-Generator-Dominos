@@ -12,7 +12,8 @@ namespace Roaster_Generator.Services;
 /// produce wrong field values, which <see cref="DocumentChecks"/> and an administrator can see.
 /// Logs must never contain document content or file names.
 /// </summary>
-public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger<ClaudeDocumentAnalyser> logger) : IDocumentAnalyser
+public sealed class ClaudeDocumentAnalyser(
+    IConfiguration configuration, ILogger<ClaudeDocumentAnalyser> logger, TimeProvider timeProvider) : IDocumentAnalyser
 {
     private const string DefaultModel = "claude-sonnet-5-5";
     private const string FallbackBeta = "server-side-fallback-2026-07-01";
@@ -48,13 +49,14 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
         byte[] pdf,
         string formName,
         string employeeName,
+        string employeeRole,
         IReadOnlyList<string> answers,
         CancellationToken cancellationToken)
     {
         var content = new List<BetaContentBlockParam>
         {
             new BetaRequestDocumentBlock { Source = new BetaBase64PdfSource { Data = Convert.ToBase64String(pdf) } },
-            new BetaTextBlockParam { Text = FormCheckRequest(formName, employeeName, answers) }
+            new BetaTextBlockParam { Text = FormCheckRequest(formName, employeeName, employeeRole, DocumentDates.Today(timeProvider), answers) }
         };
         var usable = await RequestAsync(FormCheckPrompt, content, FormCheckSchema, cancellationToken);
         if (usable is null) return null;
@@ -133,7 +135,14 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
         return joined.Length > 0 ? joined : null;
     }
 
-    private static List<BetaContentBlockParam> ToContent(IReadOnlyList<ValidatedDocumentFile> files)
+    internal static string UploadRequest(DateOnly today) =>
+        $"Today's date in Ireland is {TodayText(today)}. Read these pages as one document and report what is printed.";
+
+    private static string TodayText(DateOnly today) =>
+        today.ToString("dddd d MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture) +
+        today.ToString(" (yyyy-MM-dd)", System.Globalization.CultureInfo.InvariantCulture);
+
+    private List<BetaContentBlockParam> ToContent(IReadOnlyList<ValidatedDocumentFile> files)
     {
         var content = new List<BetaContentBlockParam>(files.Count + 1);
         foreach (var file in files)
@@ -147,7 +156,7 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
                 });
         }
 
-        content.Add(new BetaTextBlockParam { Text = "Read these pages as one document and report what is printed." });
+        content.Add(new BetaTextBlockParam { Text = UploadRequest(DocumentDates.Today(timeProvider)) });
         return content;
     }
 
@@ -199,8 +208,12 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
         Report a problem only when something is clearly wrong:
         - an answer is gibberish, a placeholder, or doesn't fit its question
         - a detail can't be valid, such as an Irish PPS number, IBAN, phone number or date in the wrong form
+        - a date that is after today's date, which the request gives
         - answers contradict each other, or the name on the form isn't the employee's
         - the employee's signature is missing
+
+        Dates on these forms are written day first, as in Ireland: 08/11/2026 is 8 November 2026, never 11 August.
+        Judge every date against today's date given in the request, never against a date you assume.
 
         Never report:
         - a manager's section that is still blank, because a manager completes it later
@@ -208,13 +221,18 @@ public sealed class ClaudeDocumentAnalyser(IConfiguration configuration, ILogger
         - a health question answered Yes, because those are handled separately
         - how a signature looks, as long as there is one
         - the wording of the form itself
+        - a date that is today or earlier, such as a form signed today
+        - an Irish phone number: mobiles have 10 digits starting 08, such as 087 123 4567, or +353 8 then 8 digits, and landlines start with 0; spaces and hyphens are fine
+        - which services or roles are ticked: in-store staff and managers fill in the same Service Provider Form as drivers and leave the delivery driver option unticked
 
         problems: short plain sentences for an administrator, saying which field is wrong and why. Never repeat a PPS number, bank details or health details in them. Leave it empty when nothing is wrong.
         """;
 
-    internal static string FormCheckRequest(string formName, string employeeName, IReadOnlyList<string> answers)
+    internal static string FormCheckRequest(
+        string formName, string employeeName, string employeeRole, DateOnly today, IReadOnlyList<string> answers)
     {
-        var request = new StringBuilder($"Form: {formName}\nEmployee: {employeeName}\n\nWhat the employee entered:\n");
+        var request = new StringBuilder(
+            $"Today's date in Ireland: {TodayText(today)}\nForm: {formName}\nEmployee: {employeeName}\nEmployee's role: {employeeRole}\n\nWhat the employee entered:\n");
         foreach (var answer in answers) request.Append("- ").Append(answer).Append('\n');
         return request.ToString();
     }
