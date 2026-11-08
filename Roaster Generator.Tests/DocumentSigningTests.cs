@@ -205,7 +205,7 @@ public sealed class DocumentSigningTests : IDisposable
     }
 
     [Fact]
-    public async Task ManagerSeesTheFlagsAndSigningClearsTheReview()
+    public async Task ManagerSeesTheFlagsButSigningLeavesTheReview()
     {
         await Setup(points, ("manager_signature", DocumentFieldSource.ManagerSignature));
         analyser.Problems = ["The phone number can't be valid."];
@@ -216,9 +216,10 @@ public sealed class DocumentSigningTests : IDisposable
 
         Assert.Equal(["The phone number can't be valid."], form!.ReviewReasons);
         var document = await db.EmployeeDocuments.SingleAsync();
-        Assert.Equal(DocumentReviewStatus.Clear, document.ReviewStatus);
-        Assert.Empty(document.ReviewReasons);
-        Assert.Contains(db.DocumentAuditEvents, item => item.Action == DocumentAuditAction.Reviewed);
+        Assert.False(document.AwaitingManagerSignature);
+        Assert.Equal(DocumentReviewStatus.NeedsReview, document.ReviewStatus);
+        Assert.Equal(["The phone number can't be valid."], document.ReviewReasons);
+        Assert.DoesNotContain(db.DocumentAuditEvents, item => item.Action == DocumentAuditAction.Reviewed);
     }
 
     [Fact]
